@@ -8,6 +8,8 @@ import { BookBadge } from "@/components/admin/book-badge";
 import { PrintButton } from "@/components/admin/print-button";
 import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
 import { fetchCompanyProfile } from "@/lib/company-profile";
+import { fetchDeliveryCertById } from "@/lib/delivery-certificate";
+import { DeliveryCertButton } from "./delivery-cert-button";
 
 const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
 
@@ -43,7 +45,7 @@ export default async function SaleDetailPage({
       `
       id, book, doc_no, ordered_on, delivered_on, status,
       subtotal_krw, vat_krw, total_krw, vat_rate, site_name, is_documented,
-      tax_doc_type, tax_doc_no, payment_due_on, settled_on, notes,
+      tax_doc_type, tax_doc_no, payment_due_on, settled_on, notes, delivery_cert_id,
       partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email),
       receive_bank_account_id, receive_bank:bank_account!sale_receive_bank_account_id_fkey(code, bank_name),
       sale_line(
@@ -64,6 +66,11 @@ export default async function SaleDetailPage({
 
   // 공급자(우리) 회사 정보 fetch
   const company = await fetchCompanyProfile(supabase, book);
+
+  // 납품확인서 (이미 발급됐다면)
+  const cert = sale.delivery_cert_id
+    ? await fetchDeliveryCertById(supabase, sale.delivery_cert_id)
+    : null;
 
   // StatementData 구성
   const statementData: StatementData = {
@@ -132,7 +139,15 @@ export default async function SaleDetailPage({
             {STATUS_KO[sale.status] ?? sale.status}
           </span>
         </div>
-        <PrintButton />
+        <div className="flex items-center gap-2">
+          <DeliveryCertButton
+            saleId={sale.id}
+            cert={cert}
+            partnerName={partner?.name ?? "—"}
+            siteName={sale.site_name}
+          />
+          <PrintButton />
+        </div>
       </div>
 
       {/* 상단 메타 정보 — 인쇄 시 숨김 */}

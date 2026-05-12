@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import {
   CheckCircleIcon,
+  FileSignatureIcon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
@@ -55,6 +56,7 @@ export type SaleListRow = {
   payment_due_on: string | null;
   settled_on: string | null;
   partner_id: string;
+  delivery_cert_id: string | null;
   notes: string | null;
   partner: { id: string; name: string; code: string } | null;
   sale_line: SaleLine[];
@@ -218,6 +220,19 @@ export function SaleTable({
                       </Link>
                       {!s.is_documented ? (
                         <div className="text-[10px] text-amber-600">무자료</div>
+                      ) : null}
+                      {s.delivery_cert_id ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <span className="mt-0.5 inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1 py-0 text-[9px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" />
+                            }
+                          >
+                            <FileSignatureIcon className="size-2.5" />
+                            확인서
+                          </TooltipTrigger>
+                          <TooltipContent>납품확인서 발급됨</TooltipContent>
+                        </Tooltip>
                       ) : null}
                     </TableCell>
                     <TableCell>
