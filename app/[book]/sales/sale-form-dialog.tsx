@@ -39,6 +39,7 @@ export type SaleRow = {
   book: Book;
   doc_no: string;
   partner_id: string;
+  site_id: string | null;
   site_name: string | null;
   ordered_on: string;
   delivered_on: string | null;
@@ -75,6 +76,8 @@ const UNIT_OPTIONS = [
 const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
 const fmtNum = (n: number, d = 1) => n.toLocaleString("ko-KR", { maximumFractionDigits: d });
 
+export type SiteOption = { id: string; name: string };
+
 export function SaleFormDialog({
   open,
   onOpenChange,
@@ -83,6 +86,7 @@ export function SaleFormDialog({
   partners,
   items,
   rebarSpecs,
+  sites,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -91,6 +95,7 @@ export function SaleFormDialog({
   partners: Partner[];
   items: Item[];
   rebarSpecs: RebarSpec[];
+  sites: SiteOption[];
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -178,6 +183,7 @@ export function SaleFormDialog({
   const [paymentDueOn, setPaymentDueOn] = useState("");
   const [status, setStatus] = useState<string>(editing?.status ?? "reserved");
   const [siteName, setSiteName] = useState(editing?.site_name ?? "");
+  const matchedSite = sites.find((s) => s.name === siteName);
   const [notes, setNotes] = useState(editing?.notes ?? "");
 
   useEffect(() => {
@@ -235,6 +241,7 @@ export function SaleFormDialog({
     fd.set("is_documented", String(isDocumented));
     fd.set("tax_doc_type", taxDocType);
     fd.set("site_name", siteName);
+    if (matchedSite) fd.set("site_id", matchedSite.id);
     fd.set("notes", notes);
 
     if (!editing) {
@@ -320,10 +327,21 @@ export function SaleFormDialog({
           <div className="grid grid-cols-2 gap-3">
             <Field label="현장">
               <Input
+                list="sales-site-list"
                 value={siteName}
                 onChange={(e) => setSiteName(e.target.value)}
-                placeholder="안강 / 언양공장 / ..."
+                placeholder="현장 검색·신규 입력"
               />
+              <datalist id="sales-site-list">
+                {sites.map((s) => (
+                  <option key={s.id} value={s.name} />
+                ))}
+              </datalist>
+              {siteName && !matchedSite ? (
+                <p className="text-[10px] text-amber-600">
+                  미등록 현장 — 저장 시 자동 생성됩니다
+                </p>
+              ) : null}
             </Field>
             <Field label="주문일 *">
               <Input

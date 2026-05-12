@@ -39,6 +39,7 @@ type CreateInput = {
   book: Book;
   doc_no?: string;
   partner_id: string;
+  site_id?: string | null;
   site_name?: string | null;
   ordered_on: string;
   delivered_on?: string | null;
@@ -89,6 +90,7 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
     book,
     doc_no: str("doc_no") || undefined,
     partner_id,
+    site_id: str("site_id") || null,
     site_name: str("site_name") || null,
     ordered_on,
     delivered_on: str("delivered_on") || null,
@@ -104,6 +106,37 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
   };
 }
 
+/**
+ * site_id 가 없고 site_name 만 있는 경우(미등록 현장) site 마스터 자동 생성.
+ * UNIQUE(name) 충돌 시 기존 row 조회로 fallback.
+ */
+async function resolveSiteId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  siteId: string | null,
+  siteName: string | null,
+): Promise<string | null> {
+  if (siteId) return siteId;
+  if (!siteName) return null;
+  const trimmed = siteName.trim();
+  if (!trimmed) return null;
+
+  const { data: created } = await supabase
+    .from("site")
+    .insert({ name: trimmed })
+    .select("id")
+    .maybeSingle();
+  if (created) return created.id;
+
+  // UNIQUE 충돌 등 → 기존 row 조회
+  const { data: existing } = await supabase
+    .from("site")
+    .select("id")
+    .eq("name", trimmed)
+    .is("deleted_at", null)
+    .maybeSingle();
+  return existing?.id ?? null;
+}
+
 export async function createSale(formData: FormData): Promise<SaleActionResult> {
   const parsed = readCreateInput(formData);
   if ("error" in parsed) return { ok: false, error: parsed.error };
@@ -111,6 +144,7 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
   const supabase = await createClient();
 
   const docNo = parsed.doc_no ?? (await generateDocNo(parsed.ordered_on));
+  const resolvedSiteId = await resolveSiteId(supabase, parsed.site_id ?? null, parsed.site_name ?? null);
   const subtotal = Math.round(parsed.unit_price_krw * parsed.qty);
   const documented = parsed.is_documented;
   const vatType = documented && parsed.tax_doc_type !== "invoice" && parsed.tax_doc_type !== "none"
@@ -127,6 +161,7 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
       book: parsed.book,
       doc_no: docNo,
       partner_id: parsed.partner_id,
+      site_id: resolvedSiteId,
       site_name: parsed.site_name,
       sale_subtype: "external",
       ordered_on: parsed.ordered_on,
@@ -176,8 +211,13 @@ export async function updateSaleHeader(
     return typeof v === "string" ? v.trim() : "";
   };
 
+  const siteName = str("site_name") || null;
+  const siteIdInput = str("site_id") || null;
+  const resolvedSiteId = await resolveSiteId(supabase, siteIdInput, siteName);
+
   const updates: Record<string, unknown> = {
-    site_name: str("site_name") || null,
+    site_id: resolvedSiteId,
+    site_name: siteName,
     delivered_on: str("delivered_on") || null,
     payment_due_on: str("payment_due_on") || null,
     status: str("status"),

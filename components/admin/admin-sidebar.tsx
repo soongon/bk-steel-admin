@@ -11,6 +11,7 @@ import {
   FileDownIcon,
   LandmarkIcon,
   LayoutDashboardIcon,
+  MapPinIcon,
   LightbulbIcon,
   PackageIcon,
   PhoneCallIcon,
@@ -82,6 +83,7 @@ function buildMenuGroups(): MenuGroup[] {
       label: "공유 마스터",
       items: [
         { label: "거래처", href: "/partners", icon: Building2Icon },
+        { label: "현장", href: "/sites", icon: MapPinIcon },
         { label: "품목", href: "/items", icon: TagsIcon },
         { label: "오늘의 시세", href: "/prices", icon: TrendingUpIcon },
       ],

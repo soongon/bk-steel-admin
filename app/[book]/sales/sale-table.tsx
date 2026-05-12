@@ -29,6 +29,7 @@ import {
   type Item,
   type RebarSpec,
   type SaleRow,
+  type SiteOption,
 } from "./sale-form-dialog";
 import { cancelSale, deleteSale, settleSale } from "./actions";
 
@@ -56,9 +57,11 @@ export type SaleListRow = {
   payment_due_on: string | null;
   settled_on: string | null;
   partner_id: string;
+  site_id: string | null;
   delivery_cert_id: string | null;
   notes: string | null;
   partner: { id: string; name: string; code: string } | null;
+  site: { id: string; name: string; code: string } | null;
   sale_line: SaleLine[];
 };
 
@@ -108,12 +111,14 @@ export function SaleTable({
   partners,
   items,
   rebarSpecs,
+  sites,
   view,
 }: {
   sales: SaleListRow[];
   partners: Partner[];
   items: Item[];
   rebarSpecs: RebarSpec[];
+  sites: SiteOption[];
   view: BookView;
 }) {
   const [open, setOpen] = useState(false);
@@ -130,7 +135,8 @@ export function SaleTable({
       book: s.book,
       doc_no: s.doc_no,
       partner_id: s.partner_id,
-      site_name: s.site_name,
+      site_id: s.site_id,
+      site_name: s.site?.name ?? s.site_name,
       ordered_on: s.ordered_on,
       delivered_on: s.delivered_on,
       status: s.status,
@@ -246,8 +252,15 @@ export function SaleTable({
                     </TableCell>
                     <TableCell>
                       <div className="font-medium">{s.partner?.name ?? "—"}</div>
-                      {s.site_name ? (
-                        <div className="text-xs text-muted-foreground">{s.site_name}</div>
+                      {s.site?.name || s.site_name ? (
+                        <div className="text-xs text-muted-foreground">
+                          {s.site?.name ?? s.site_name}
+                          {s.site?.code ? (
+                            <span className="ml-1 font-mono text-[10px] text-muted-foreground/70">
+                              {s.site.code}
+                            </span>
+                          ) : null}
+                        </div>
                       ) : null}
                     </TableCell>
                     <TableCell className="text-sm">{itemSummary}</TableCell>
@@ -306,6 +319,7 @@ export function SaleTable({
         partners={partners}
         items={items}
         rebarSpecs={rebarSpecs}
+        sites={sites}
       />
     </>
   );

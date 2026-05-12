@@ -18,8 +18,9 @@ export default async function SalesPage({
     .select(
       `
       id, book, doc_no, ordered_on, delivered_on, status,
-      subtotal_krw, vat_krw, total_krw, site_name, is_documented,
+      subtotal_krw, vat_krw, total_krw, site_name, site_id, is_documented,
       tax_doc_type, payment_due_on, settled_on, partner_id, delivery_cert_id,
+      site:site(id, name, code),
       partner:partner(id, name, code),
       sale_line(id, qty, unit, unit_price_krw, item:item(id, name, code))
     `,
@@ -33,7 +34,7 @@ export default async function SalesPage({
     saleQuery = saleQuery.eq("book", view);
   }
 
-  const [salesRes, partnersRes, itemsRes, rebarSpecsRes] = await Promise.all([
+  const [salesRes, partnersRes, itemsRes, rebarSpecsRes, sitesRes] = await Promise.all([
     saleQuery,
     supabase
       .from("partner")
@@ -53,6 +54,12 @@ export default async function SalesPage({
         "spec_code, unit_weight_kg_per_m, standard_length_m, bars_per_bundle, bundle_weight_kg",
       )
       .order("display_order"),
+    supabase
+      .from("site")
+      .select("id, name")
+      .is("deleted_at", null)
+      .eq("is_active", true)
+      .order("name"),
   ]);
 
   return (
@@ -78,6 +85,7 @@ export default async function SalesPage({
         partners={partnersRes.data ?? []}
         items={itemsRes.data ?? []}
         rebarSpecs={rebarSpecsRes.data ?? []}
+        sites={sitesRes.data ?? []}
         view={view}
       />
     </div>
