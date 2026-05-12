@@ -307,9 +307,42 @@ function PartyRow({
       >
         {label}
       </th>
-      <td className={`border ${baseClass} px-1 py-0.5 text-xs ${bold ? "font-semibold" : ""}`}>
+      <td
+        colSpan={3}
+        className={`border ${baseClass} px-1 py-0.5 text-xs ${bold ? "font-semibold" : ""}`}
+      >
         {value || " "}
       </td>
+    </tr>
+  );
+}
+
+function PartyDoubleRow({
+  label1,
+  value1,
+  label2,
+  value2,
+  variant,
+}: {
+  label1: string;
+  value1: string | null;
+  label2: string;
+  value2: string | null;
+  variant: "recipient" | "supplier";
+}) {
+  const isRec = variant === "recipient";
+  const headClass = isRec
+    ? "bg-blue-50 text-blue-900 dark:bg-blue-950/20"
+    : "bg-red-50 text-red-900 dark:bg-red-950/20";
+  const baseClass = isRec ? "border-blue-700" : "border-red-700";
+  const thClass = `border ${baseClass} ${headClass} px-1 py-0.5 text-left text-[10px] font-medium`;
+  const tdClass = `border ${baseClass} px-1 py-0.5 text-xs`;
+  return (
+    <tr>
+      <th className={`${thClass} w-20`}>{label1}</th>
+      <td className={tdClass}>{value1 || " "}</td>
+      <th className={`${thClass} w-16`}>{label2}</th>
+      <td className={tdClass}>{value2 || " "}</td>
     </tr>
   );
 }
