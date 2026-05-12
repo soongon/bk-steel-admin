@@ -51,25 +51,37 @@ export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
               ) : null}
 
               {p ? (
-                <dl className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-xs">
-                  <Row label="상호" value={p.name} bold />
-                  <Row label="사업자번호" value={p.business_no} mono />
-                  <Row label="대표자" value={p.representative} />
-                  <Row label="업태/종목" value={joinSlash(p.business_type, p.business_item)} />
-                  <Row label="주소" value={p.address} colSpan />
-                  <Row label="전화" value={p.phone} />
-                  <Row label="팩스" value={p.fax} />
-                  <Row label="휴대폰" value={p.mobile} />
-                  <Row label="이메일" value={p.email} />
-                  {p.bank_default_name ? (
-                    <Row
-                      label="기본 입금"
-                      value={`${p.bank_default_name}${p.bank_default_no ? ` · ${p.bank_default_no}` : ""}`}
-                      colSpan
-                    />
+                <>
+                  <dl className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-xs">
+                    <Row label="상호" value={p.name} bold />
+                    <Row label="사업자번호" value={p.business_no} mono />
+                    <Row label="대표자" value={p.representative} />
+                    <Row label="업태/종목" value={joinSlash(p.business_type, p.business_item)} />
+                    <Row label="주소" value={p.address} colSpan />
+                    <Row label="전화" value={p.phone} />
+                    <Row label="팩스" value={p.fax} />
+                    <Row label="휴대폰" value={p.mobile} />
+                    <Row label="이메일" value={p.email} />
+                    {p.bank_default_name ? (
+                      <Row
+                        label="기본 입금"
+                        value={`${p.bank_default_name}${p.bank_default_no ? ` · ${p.bank_default_no}` : ""}`}
+                        colSpan
+                      />
+                    ) : null}
+                    {p.notes ? <Row label="비고" value={p.notes} colSpan /> : null}
+                  </dl>
+                  {p.stamp_url ? (
+                    <div className="mt-3 flex items-center gap-2 border-t pt-3">
+                      <span className="text-xs text-muted-foreground">인감:</span>
+                      <img
+                        src={p.stamp_url}
+                        alt="인감"
+                        className="size-12 rounded border bg-white object-contain"
+                      />
+                    </div>
                   ) : null}
-                  {p.notes ? <Row label="비고" value={p.notes} colSpan /> : null}
-                </dl>
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">
                   미설정 — {aliasOfSL ? "사업자(SL) 카드에서 등록" : "편집 버튼으로 등록"}

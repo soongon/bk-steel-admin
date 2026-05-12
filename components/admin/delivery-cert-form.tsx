@@ -306,9 +306,18 @@ export function DeliveryCertForm({
               </th>
               <td
                 rowSpan={4}
-                className="border-2 border-dashed border-zinc-400 bg-zinc-50 px-2 py-1 align-middle text-center text-[10px] text-zinc-400"
+                className="border border-zinc-700 bg-white px-2 py-2 align-middle text-center"
               >
-                (인감 v1.1)
+                {company.stamp_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={company.stamp_url}
+                    alt="직인"
+                    className="mx-auto h-16 w-16 object-contain"
+                  />
+                ) : (
+                  <span className="text-[10px] text-zinc-400">(인감 미등록)</span>
+                )}
               </td>
             </tr>
             <tr>

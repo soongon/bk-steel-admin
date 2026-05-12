@@ -36,27 +36,54 @@ export async function updateCompanyProfile(
   if (!business_no) return { ok: false, error: "사업자등록번호는 필수입니다." };
 
   const supabase = await createClient();
+
+  // 인감 이미지 업로드 (선택) — File 있으면 Storage 업로드 후 publicUrl 받기
+  let stampUrl: string | undefined = undefined;
+  const stampFile = formData.get("stamp_file");
+  const stampClear = formData.get("stamp_clear") === "true";
+  if (stampFile instanceof File && stampFile.size > 0) {
+    if (stampFile.size > 1024 * 1024) {
+      return { ok: false, error: "인감 이미지는 1MB 이하여야 합니다." };
+    }
+    const ext = (stampFile.name.split(".").pop() ?? "png").toLowerCase();
+    const rand = Math.random().toString(36).slice(2, 8);
+    const path = `${book}/${Date.now()}-${rand}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from("company-stamps")
+      .upload(path, stampFile, {
+        contentType: stampFile.type || "image/png",
+        upsert: false,
+      });
+    if (upErr) return { ok: false, error: friendly(upErr.message) };
+    const { data: pub } = supabase.storage.from("company-stamps").getPublicUrl(path);
+    stampUrl = pub.publicUrl;
+  } else if (stampClear) {
+    stampUrl = "";   // 빈 문자열 → null로 정리
+  }
+
+  const payload: Record<string, unknown> = {
+    book,
+    name,
+    business_no,
+    representative: str("representative"),
+    address: str("address"),
+    business_type: str("business_type"),
+    business_item: str("business_item"),
+    phone: str("phone"),
+    fax: str("fax"),
+    mobile: str("mobile"),
+    email: str("email"),
+    bank_default_name: str("bank_default_name"),
+    bank_default_no: str("bank_default_no"),
+    notes: str("notes"),
+  };
+  if (stampUrl !== undefined) {
+    payload.stamp_url = stampUrl === "" ? null : stampUrl;
+  }
+
   const { error } = await supabase
     .from("company_profile")
-    .upsert(
-      {
-        book,
-        name,
-        business_no,
-        representative: str("representative"),
-        address: str("address"),
-        business_type: str("business_type"),
-        business_item: str("business_item"),
-        phone: str("phone"),
-        fax: str("fax"),
-        mobile: str("mobile"),
-        email: str("email"),
-        bank_default_name: str("bank_default_name"),
-        bank_default_no: str("bank_default_no"),
-        notes: str("notes"),
-      },
-      { onConflict: "book" },
-    );
+    .upsert(payload, { onConflict: "book" });
   if (error) return { ok: false, error: friendly(error.message) };
 
   bumpRevalidation();

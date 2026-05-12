@@ -98,6 +98,38 @@ export function CompanyFormDialog({
 
           <Field label="비고" name="notes" defaultValue={profile?.notes} />
 
+          {/* 인감(직인) 이미지 — 거래명세표·납품확인서에 표시 */}
+          <div className="rounded-md border-dashed border-2 border-zinc-300 p-3 dark:border-zinc-700">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">
+              인감(직인) 이미지 — 1MB 이하, PNG/JPG/WebP (배경 투명 PNG 권장)
+            </p>
+            <div className="flex items-center gap-3">
+              {profile?.stamp_url ? (
+                <img
+                  src={profile.stamp_url}
+                  alt="현재 인감"
+                  className="size-16 rounded border bg-white object-contain"
+                />
+              ) : (
+                <div className="flex size-16 items-center justify-center rounded border-2 border-dashed border-zinc-300 text-[10px] text-muted-foreground dark:border-zinc-700">
+                  미등록
+                </div>
+              )}
+              <input
+                type="file"
+                name="stamp_file"
+                accept="image/png,image/jpeg,image/webp"
+                className="block w-full text-xs file:mr-2 file:rounded file:border file:bg-muted file:px-2 file:py-1 file:text-xs"
+              />
+            </div>
+            {profile?.stamp_url ? (
+              <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <input type="checkbox" name="stamp_clear" value="true" className="size-3.5" />
+                인감 제거 (저장 시 삭제)
+              </label>
+            ) : null}
+          </div>
+
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
           <DialogFooter>

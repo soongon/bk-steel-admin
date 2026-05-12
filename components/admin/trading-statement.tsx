@@ -170,7 +170,23 @@ function StatementCopy({
               label1="상호"
               value1={company.name}
               label2="대표자"
-              value2={company.representative ? `${company.representative}  (인)` : null}
+              value2={
+                company.representative ? (
+                  <span className="inline-flex items-center gap-1">
+                    {company.representative}
+                    {company.stamp_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={company.stamp_url}
+                        alt="인"
+                        className="inline-block h-6 w-6 object-contain"
+                      />
+                    ) : (
+                      <span className="text-[10px]">(인)</span>
+                    )}
+                  </span>
+                ) : null
+              }
               variant={variant}
             />
             <PartyRow label="사업장주소" value={company.address} variant={variant} />
@@ -338,9 +354,9 @@ function PartyDoubleRow({
   variant,
 }: {
   label1: string;
-  value1: string | null;
+  value1: string | null | React.ReactNode;
   label2: string;
-  value2: string | null;
+  value2: string | null | React.ReactNode;
   variant: "recipient" | "supplier";
 }) {
   const isRec = variant === "recipient";
