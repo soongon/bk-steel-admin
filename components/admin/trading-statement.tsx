@@ -22,6 +22,7 @@ export type StatementData = {
     representative: string | null;
     address: string | null;
     phone: string | null;
+    fax: string | null;
     industry: string | null;
   };
   site_name: string | null;
@@ -142,7 +143,8 @@ function StatementCopy({
               value={data.partner.industry ?? ""}
               variant={variant}
             />
-            <PartyRow label="전화번호" value={data.partner.phone ?? ""} variant={variant} />
+            <PartyRow label="전 화" value={data.partner.phone ?? ""} variant={variant} />
+            <PartyRow label="F A X" value={data.partner.fax ?? ""} variant={variant} />
           </tbody>
         </table>
 
@@ -162,11 +164,8 @@ function StatementCopy({
               value={[company.business_type, company.business_item].filter(Boolean).join(" / ")}
               variant={variant}
             />
-            <PartyRow
-              label="전화 / FAX"
-              value={[company.phone, company.fax].filter(Boolean).join(" / ")}
-              variant={variant}
-            />
+            <PartyRow label="전 화" value={company.phone} variant={variant} />
+            <PartyRow label="F A X" value={company.fax} variant={variant} />
           </tbody>
         </table>
       </div>
