@@ -6,6 +6,8 @@
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS company_profile (
+  -- id는 surrogate. audit_trigger_fn 이 (NEW).id 를 참조하므로 모든 트리거 대상 테이블에 필요
+  id                UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
   book              book_type PRIMARY KEY,
   name              TEXT NOT NULL,
   business_no       TEXT NOT NULL,                 -- 사업자등록번호
