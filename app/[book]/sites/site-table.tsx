@@ -28,7 +28,13 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   },
 };
 
-export function SiteTable({ sites }: { sites: SiteRow[] }) {
+export function SiteTable({
+  sites,
+  firstSaleBySite,
+}: {
+  sites: SiteRow[];
+  firstSaleBySite: Record<string, string>;
+}) {
   const params = useParams<{ book: string }>();
   const book = params.book ?? "all";
   const [open, setOpen] = useState(false);
@@ -73,7 +79,7 @@ export function SiteTable({ sites }: { sites: SiteRow[] }) {
               <TableHead className="w-32">지역</TableHead>
               <TableHead>주소</TableHead>
               <TableHead className="w-44">시공사 / 건축주</TableHead>
-              <TableHead className="w-32">기간</TableHead>
+              <TableHead className="w-28">첫 납품일</TableHead>
               <TableHead className="w-20 text-center">상태</TableHead>
               <TableHead className="w-20 text-right">액션</TableHead>
             </TableRow>
@@ -115,9 +121,10 @@ export function SiteTable({ sites }: { sites: SiteRow[] }) {
                       ) : null}
                       <div>{s.owner_name ?? (s.client_name ? null : "—")}</div>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {s.started_on ?? "—"}
-                      {s.ended_on ? ` ~ ${s.ended_on}` : ""}
+                    <TableCell className="text-xs text-muted-foreground tabular-nums">
+                      {firstSaleBySite[s.id]
+                        ? `${firstSaleBySite[s.id].replaceAll("-", ".")} ~`
+                        : "—"}
                     </TableCell>
                     <TableCell className="text-center">
                       <span
