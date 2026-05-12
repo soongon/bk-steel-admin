@@ -17,7 +17,12 @@
  *   docs/철근_제품마스터.md
  */
 
-import "dotenv/config";
+// .env.local (gitignored, 비밀 보관용) → .env.development (커밋, 공개) 순으로 로드
+// Next.js 앱은 자동이지만, standalone TS 스크립트는 명시 필요
+import { config as loadEnv } from "dotenv";
+loadEnv({ path: ".env.local" });
+loadEnv({ path: ".env.development" });
+
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { parse } from "csv-parse/sync";
 import { readFileSync } from "node:fs";
