@@ -7,7 +7,7 @@
 -- ============================================================
 -- 1. 재고 ledger view (purchase_line - sale_line_allocation)
 -- ============================================================
-CREATE OR REPLACE VIEW vw_inventory AS
+CREATE OR REPLACE VIEW vw_inventory WITH (security_invoker = true) AS
 SELECT
   pl.id                                            AS purchase_line_id,
   pl.book,
@@ -35,7 +35,7 @@ HAVING pl.acquired_qty - COALESCE(SUM(a.allocated_qty), 0) > 0;
 -- ============================================================
 -- 2. 책·품목별 재고 요약
 -- ============================================================
-CREATE OR REPLACE VIEW vw_inventory_by_book_item AS
+CREATE OR REPLACE VIEW vw_inventory_by_book_item WITH (security_invoker = true) AS
 SELECT
   book,
   item_id,
@@ -49,7 +49,7 @@ GROUP BY book, item_id;
 -- 3. 오늘의 시가 (manual > external > purchase_derived 우선순위)
 -- 최근 90일 내 가장 최근 값을 carry-over
 -- ============================================================
-CREATE OR REPLACE VIEW vw_today_market_price AS
+CREATE OR REPLACE VIEW vw_today_market_price WITH (security_invoker = true) AS
 WITH ranked AS (
   SELECT
     ph.*,
@@ -73,7 +73,7 @@ ORDER BY market_item_id, recorded_on DESC;
 -- ============================================================
 -- 4. 재고 시가 평가 (책별 자산가치)
 -- ============================================================
-CREATE OR REPLACE VIEW vw_inventory_valuation AS
+CREATE OR REPLACE VIEW vw_inventory_valuation WITH (security_invoker = true) AS
 SELECT
   inv.book,
   inv.item_id,
@@ -87,7 +87,7 @@ LEFT JOIN vw_today_market_price tp ON tp.market_item_id = i.market_item_id;
 -- ============================================================
 -- 5. 미수금 (sale 기반, 등급 자동 계산)
 -- ============================================================
-CREATE OR REPLACE VIEW vw_receivable AS
+CREATE OR REPLACE VIEW vw_receivable WITH (security_invoker = true) AS
 SELECT
   s.id           AS sale_id,
   s.book,
@@ -117,7 +117,7 @@ GROUP BY s.id;
 -- ============================================================
 -- 6. 외상매입금 (purchase 기반)
 -- ============================================================
-CREATE OR REPLACE VIEW vw_payable AS
+CREATE OR REPLACE VIEW vw_payable WITH (security_invoker = true) AS
 SELECT
   p.id          AS purchase_id,
   p.book,
@@ -148,7 +148,7 @@ GROUP BY p.id;
 -- ============================================================
 -- 7. 책별 월별 P&L — 내부 관리용 (B 포함, 자료성 무관)
 -- ============================================================
-CREATE OR REPLACE VIEW vw_book_monthly_pnl_internal AS
+CREATE OR REPLACE VIEW vw_book_monthly_pnl_internal WITH (security_invoker = true) AS
 SELECT
   s.book,
   DATE_TRUNC('month', s.ordered_on)::DATE   AS month,
@@ -167,7 +167,7 @@ GROUP BY s.book, DATE_TRUNC('month', s.ordered_on);
 -- ============================================================
 -- 8. 책별 월별 P&L — 신고용 (BK 전체 + SL documented, B 자동 제외)
 -- ============================================================
-CREATE OR REPLACE VIEW vw_book_monthly_pnl_filing AS
+CREATE OR REPLACE VIEW vw_book_monthly_pnl_filing WITH (security_invoker = true) AS
 SELECT
   s.book,
   DATE_TRUNC('month', s.ordered_on)::DATE   AS month,
@@ -189,7 +189,7 @@ GROUP BY s.book, DATE_TRUNC('month', s.ordered_on);
 -- ============================================================
 -- 9. 부가세 신고 후보 (BK + SL의 자료거래만)
 -- ============================================================
-CREATE OR REPLACE VIEW vw_vat_eligible_sale AS
+CREATE OR REPLACE VIEW vw_vat_eligible_sale WITH (security_invoker = true) AS
 SELECT *
 FROM sale
 WHERE deleted_at IS NULL
@@ -197,7 +197,7 @@ WHERE deleted_at IS NULL
   AND book IN ('bk','sl')
   AND vat_type IN ('standard_10','zero_rated');
 
-CREATE OR REPLACE VIEW vw_vat_eligible_purchase AS
+CREATE OR REPLACE VIEW vw_vat_eligible_purchase WITH (security_invoker = true) AS
 SELECT *
 FROM purchase
 WHERE deleted_at IS NULL
