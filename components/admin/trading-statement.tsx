@@ -128,7 +128,13 @@ function StatementCopy({
       {/* 양측 사업자 정보 */}
       <div className="mt-2 grid grid-cols-2 gap-2">
         {/* 공급받는자 */}
-        <table className={`w-full border ${baseClass}`}>
+        <table className={`w-full border table-fixed ${baseClass}`}>
+          <colgroup>
+            <col style={{ width: "16%" }} />
+            <col />
+            <col style={{ width: "16%" }} />
+            <col />
+          </colgroup>
           <tbody>
             <PartyRow label="등록번호" value={data.partner.business_no} variant={variant} />
             <PartyDoubleRow
@@ -155,7 +161,13 @@ function StatementCopy({
         </table>
 
         {/* 공급자 (우리) */}
-        <table className={`w-full border ${baseClass}`}>
+        <table className={`w-full border table-fixed ${baseClass}`}>
+          <colgroup>
+            <col style={{ width: "16%" }} />
+            <col />
+            <col style={{ width: "16%" }} />
+            <col />
+          </colgroup>
           <tbody>
             <PartyRow label="등록번호" value={company.business_no} variant={variant} />
             <PartyDoubleRow
