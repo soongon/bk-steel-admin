@@ -266,6 +266,31 @@ export default async function DashboardPage({
           </ul>
         </div>
       ) : null}
+
+      {/* 진단 패널 — 0건 원인 추적 */}
+      <details className="rounded-lg border bg-muted/30 p-3 text-xs font-mono">
+        <summary className="cursor-pointer font-sans font-medium">🔍 진단 정보 (펼치기)</summary>
+        <pre className="mt-2 whitespace-pre-wrap">
+{`baseDate: ${baseDate.toISOString()}
+monthStart: ${monthStart}
+isHistorical: ${isHistorical}
+candidates (latest dates): ${JSON.stringify(candidates)}
+
+latestSaleRes:    data=${JSON.stringify(latestSaleRes.data)} error=${latestSaleRes.error?.message ?? "—"}
+latestPurchaseRes:data=${JSON.stringify(latestPurchaseRes.data)} error=${latestPurchaseRes.error?.message ?? "—"}
+
+pnlRes:        rows=${pnlRes.data?.length ?? 0} error=${pnlRes.error?.message ?? "—"}
+receivableRes: rows=${receivableRes.data?.length ?? 0} error=${receivableRes.error?.message ?? "—"}
+payableRes:    rows=${payableRes.data?.length ?? 0} error=${payableRes.error?.message ?? "—"}
+valuationRes:  rows=${valuationRes.data?.length ?? 0} error=${valuationRes.error?.message ?? "—"}
+purchaseAggRes:rows=${purchaseAggRes.data?.length ?? 0} error=${purchaseAggRes.error?.message ?? "—"}
+
+filtered (view='${view}'):
+  pnl: ${pnl.length}  receivables: ${receivables.length}  payables: ${payables.length}  valuations: ${valuations.length}  purchaseMonth: ${purchaseMonth.length}
+
+raw pnlRes.data: ${JSON.stringify(pnlRes.data, null, 2)}`}
+        </pre>
+      </details>
     </div>
   );
 }
