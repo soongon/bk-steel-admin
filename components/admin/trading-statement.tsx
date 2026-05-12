@@ -130,23 +130,24 @@ function StatementCopy({
         {/* 공급받는자 */}
         <table className={`w-full border ${baseClass}`}>
           <tbody>
-            <PartyRow label="등 록 번 호" value={data.partner.business_no} variant={variant} />
-            <PartyRow label="상   호" value={data.partner.name} variant={variant} bold />
-            <PartyRow
-              label="대 표 자"
-              value={data.partner.representative ?? ""}
+            <PartyRow label="등록번호" value={data.partner.business_no} variant={variant} />
+            <PartyDoubleRow
+              label1="상호"
+              value1={data.partner.name}
+              label2="대표자"
+              value2={data.partner.representative}
               variant={variant}
             />
             <PartyRow label="사업장주소" value={data.partner.address ?? ""} variant={variant} />
             <PartyRow
-              label="업태 / 종목"
+              label="업태/종목"
               value={data.partner.industry ?? ""}
               variant={variant}
             />
             <PartyDoubleRow
-              label1="전 화"
+              label1="전화"
               value1={data.partner.phone}
-              label2="F A X"
+              label2="팩스"
               value2={data.partner.fax}
               variant={variant}
             />
@@ -156,23 +157,24 @@ function StatementCopy({
         {/* 공급자 (우리) */}
         <table className={`w-full border ${baseClass}`}>
           <tbody>
-            <PartyRow label="등 록 번 호" value={company.business_no} variant={variant} />
-            <PartyRow label="상   호" value={company.name} variant={variant} bold />
-            <PartyRow
-              label="대 표 자"
-              value={`${company.representative ?? ""}  (인)`}
+            <PartyRow label="등록번호" value={company.business_no} variant={variant} />
+            <PartyDoubleRow
+              label1="상호"
+              value1={company.name}
+              label2="대표자"
+              value2={company.representative ? `${company.representative}  (인)` : null}
               variant={variant}
             />
             <PartyRow label="사업장주소" value={company.address} variant={variant} />
             <PartyRow
-              label="업태 / 종목"
+              label="업태/종목"
               value={[company.business_type, company.business_item].filter(Boolean).join(" / ")}
               variant={variant}
             />
             <PartyDoubleRow
-              label1="전 화"
+              label1="전화"
               value1={company.phone}
-              label2="F A X"
+              label2="팩스"
               value2={company.fax}
               variant={variant}
             />
@@ -303,7 +305,7 @@ function PartyRow({
   return (
     <tr>
       <th
-        className={`border ${baseClass} ${headClass} px-1 py-0.5 text-left text-[10px] font-medium w-20`}
+        className={`border ${baseClass} ${headClass} px-1 py-0.5 text-center text-[10px] font-medium w-20`}
       >
         {label}
       </th>
@@ -335,7 +337,7 @@ function PartyDoubleRow({
     ? "bg-blue-50 text-blue-900 dark:bg-blue-950/20"
     : "bg-red-50 text-red-900 dark:bg-red-950/20";
   const baseClass = isRec ? "border-blue-700" : "border-red-700";
-  const thClass = `border ${baseClass} ${headClass} px-1 py-0.5 text-left text-[10px] font-medium`;
+  const thClass = `border ${baseClass} ${headClass} px-1 py-0.5 text-center text-[10px] font-medium`;
   const tdClass = `border ${baseClass} px-1 py-0.5 text-xs`;
   return (
     <tr>
