@@ -7,9 +7,12 @@
 -- ============================================================
 -- 거래처 (partner)
 -- ============================================================
+-- partner.code 자동 생성용 시퀀스 (0025 참조)
+CREATE SEQUENCE IF NOT EXISTS partner_code_seq;
+
 CREATE TABLE IF NOT EXISTS partner (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  code            TEXT UNIQUE NOT NULL,
+  code            TEXT UNIQUE NOT NULL DEFAULT 'P-' || LPAD(nextval('partner_code_seq')::text, 3, '0'),
   name            TEXT NOT NULL,                          -- 표준 거래처명 (매출/매입 정합성 기준)
   business_no     TEXT,
   representative  TEXT,

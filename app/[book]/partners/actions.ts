@@ -55,11 +55,14 @@ function bumpRevalidation() {
 
 export async function createPartner(formData: FormData): Promise<PartnerActionResult> {
   const input = readPartnerInput(formData);
-  if (!input.code) return { ok: false, error: "거래처 코드는 필수입니다." };
   if (!input.name) return { ok: false, error: "거래처명은 필수입니다." };
 
+  // 코드 비어있으면 DB 시퀀스로 자동 생성 → insert payload에서 제거
+  const payload: Partial<PartnerInput> = { ...input };
+  if (!input.code) delete payload.code;
+
   const supabase = await createClient();
-  const { error } = await supabase.from("partner").insert(input);
+  const { error } = await supabase.from("partner").insert(payload);
   if (error) return { ok: false, error: friendlyError(error.message) };
 
   bumpRevalidation();

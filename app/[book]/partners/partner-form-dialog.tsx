@@ -77,7 +77,14 @@ export function PartnerFormDialog({
           key={editing?.id ?? "new"}
         >
           <div className="grid grid-cols-2 gap-3">
-            <Field label="코드 *" name="code" defaultValue={editing?.code} placeholder="예: P-100" required uppercase />
+            <Field
+              label={editing ? "코드 *" : "코드"}
+              name="code"
+              defaultValue={editing?.code}
+              placeholder={editing ? "예: P-100" : "비워두면 자동 (P-NNN)"}
+              required={!!editing}
+              uppercase
+            />
             <Field label="거래처명 *" name="name" defaultValue={editing?.name} placeholder="(주)엠에스스틸" required />
           </div>
           <div className="grid grid-cols-2 gap-3">
