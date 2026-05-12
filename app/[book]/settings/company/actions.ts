@@ -54,7 +54,13 @@ export async function updateCompanyProfile(
         contentType: stampFile.type || "image/png",
         upsert: false,
       });
-    if (upErr) return { ok: false, error: friendly(upErr.message) };
+    if (upErr) {
+      // storage 거부는 company_profile RLS 와 메시지가 겹치므로 별도 안내
+      const msg = upErr.message.includes("row-level security")
+        ? "Storage 권한 거부 — 0034 마이그레이션 적용 여부를 확인해주세요."
+        : `인감 업로드 실패: ${upErr.message}`;
+      return { ok: false, error: msg };
+    }
     const { data: pub } = supabase.storage.from("company-stamps").getPublicUrl(path);
     stampUrl = pub.publicUrl;
   } else if (stampClear) {
