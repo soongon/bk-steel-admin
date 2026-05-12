@@ -31,6 +31,13 @@ export default async function DashboardPage({
   const view = book as BookView;
   const supabase = await createClient();
 
+  // 진단: 인증된 user + 자기 role 조회 (RLS 통과 검증용)
+  const authResult = await supabase.auth.getUser();
+  const myRolesResult = await supabase.from("user_book_role").select("user_id, book, role");
+  const myProfileResult = await supabase
+    .from("user_profile")
+    .select("user_id, display_name, is_owner");
+
   // 가장 최근 거래월 자동 감지 (시드 데이터가 미래/과거여도 자연스럽게 동작)
   // 매출/매입 중 가장 늦은 ordered_on 의 월을 기준 월로 사용
   const [latestSaleRes, latestPurchaseRes] = await Promise.all([
@@ -271,11 +278,24 @@ export default async function DashboardPage({
       <details className="rounded-lg border bg-muted/30 p-3 text-xs font-mono">
         <summary className="cursor-pointer font-sans font-medium">🔍 진단 정보 (펼치기)</summary>
         <pre className="mt-2 whitespace-pre-wrap">
-{`baseDate: ${baseDate.toISOString()}
+{`=== 인증 ===
+authUser:  id=${authResult.data.user?.id ?? "(NULL)"}  email=${authResult.data.user?.email ?? "(NULL)"}
+auth error: ${authResult.error?.message ?? "—"}
+
+=== 자기 권한 row (RLS 통과 후) ===
+user_book_role rows: ${myRolesResult.data?.length ?? 0}  error: ${myRolesResult.error?.message ?? "—"}
+${JSON.stringify(myRolesResult.data, null, 2)}
+
+user_profile rows: ${myProfileResult.data?.length ?? 0}  error: ${myProfileResult.error?.message ?? "—"}
+${JSON.stringify(myProfileResult.data, null, 2)}
+
+=== 날짜 ===
+baseDate: ${baseDate.toISOString()}
 monthStart: ${monthStart}
 isHistorical: ${isHistorical}
 candidates (latest dates): ${JSON.stringify(candidates)}
 
+=== 데이터 쿼리 결과 ===
 latestSaleRes:    data=${JSON.stringify(latestSaleRes.data)} error=${latestSaleRes.error?.message ?? "—"}
 latestPurchaseRes:data=${JSON.stringify(latestPurchaseRes.data)} error=${latestPurchaseRes.error?.message ?? "—"}
 
@@ -286,9 +306,7 @@ valuationRes:  rows=${valuationRes.data?.length ?? 0} error=${valuationRes.error
 purchaseAggRes:rows=${purchaseAggRes.data?.length ?? 0} error=${purchaseAggRes.error?.message ?? "—"}
 
 filtered (view='${view}'):
-  pnl: ${pnl.length}  receivables: ${receivables.length}  payables: ${payables.length}  valuations: ${valuations.length}  purchaseMonth: ${purchaseMonth.length}
-
-raw pnlRes.data: ${JSON.stringify(pnlRes.data, null, 2)}`}
+  pnl: ${pnl.length}  receivables: ${receivables.length}  payables: ${payables.length}  valuations: ${valuations.length}  purchaseMonth: ${purchaseMonth.length}`}
         </pre>
       </details>
     </div>
