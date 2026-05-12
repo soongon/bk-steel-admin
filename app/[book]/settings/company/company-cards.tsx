@@ -16,7 +16,10 @@ export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
     <>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {BOOKS.map((book) => {
-          const p = byBook.get(book);
+          // B 책은 SL의 무자료 흐름 — 명세서는 SL 정보로 발행. 편집은 SL 카드에서만.
+          const aliasOfSL = book === "b";
+          const effective: Book = aliasOfSL ? "sl" : book;
+          const p = byBook.get(effective);
           return (
             <div
               key={book}
@@ -29,11 +32,23 @@ export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
                     {BOOK_LABEL[book]} 책
                   </span>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => setEditing(book)}>
-                  <PencilIcon className="size-4" />
-                  편집
-                </Button>
+                {aliasOfSL ? (
+                  <span className="inline-flex h-6 items-center rounded-md border border-dashed px-2 text-xs text-muted-foreground">
+                    사업자 정보 사용
+                  </span>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => setEditing(book)}>
+                    <PencilIcon className="size-4" />
+                    편집
+                  </Button>
+                )}
               </div>
+
+              {aliasOfSL ? (
+                <p className="mb-2 rounded-md bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
+                  B계좌는 SL 사업자의 무자료 흐름입니다. 거래명세표·세금계산서는 사업자(SL) 정보를 그대로 사용 — 사업자 카드에서만 편집하세요.
+                </p>
+              ) : null}
 
               {p ? (
                 <dl className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-xs">
@@ -57,7 +72,7 @@ export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
                 </dl>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  미설정 — 편집 버튼으로 등록
+                  미설정 — {aliasOfSL ? "사업자(SL) 카드에서 등록" : "편집 버튼으로 등록"}
                 </p>
               )}
             </div>
