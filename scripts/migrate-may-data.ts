@@ -198,15 +198,75 @@ async function importPartners() {
     if (error) throw error;
   });
 
-  // ID lookup 맵 (name → id)
+  // ID lookup 맵 (name → id) — alias도 함께 로드
   const { data: inserted } = await supabase
     .from("partner")
-    .select("id, name");
+    .select("id, name, partner_alias(alias)");
   const idByName = new Map<string, string>();
-  for (const p of inserted ?? []) idByName.set(p.name, p.id);
+  for (const p of inserted ?? []) {
+    idByName.set(p.name, p.id);
+    for (const a of (p.partner_alias ?? []) as { alias: string }[]) {
+      idByName.set(a.alias, p.id);
+    }
+  }
 
-  log(`  • partner 조회: ${idByName.size}건 확인`);
+  log(`  • partner 조회: ${idByName.size}건 (별칭 포함)`);
   return idByName;
+}
+
+// ============================================================
+// getOrCreatePartner — sale/purchase CSV의 거래처가 master에 없으면
+// 1) substring(prefix/suffix) 매칭으로 alias 자동 생성, 또는
+// 2) 신규 partner 자동 생성 (메모 표기: 'CSV 마이그레이션 자동 생성')
+// ============================================================
+async function getOrCreatePartner(
+  rawName: string,
+  partnerIdByName: Map<string, string>,
+): Promise<string | null> {
+  const name = normalizeName(rawName);
+  if (!name) return null;
+
+  // 1. 이미 알려진 이름 (master 또는 이전에 추가된 alias/auto)
+  if (partnerIdByName.has(name)) return partnerIdByName.get(name)!;
+
+  // 2. substring 매칭 (5자 이상에서만 — '안강' 같은 짧은 단어 오매칭 방지)
+  if (name.length >= 5) {
+    for (const [existing, id] of partnerIdByName) {
+      if (existing.length < 5 || existing === name) continue;
+      if (existing.startsWith(name) || name.startsWith(existing)) {
+        log(`    + alias 자동: '${name}' → '${existing}'`);
+        partnerIdByName.set(name, id);
+        if (!DRY_RUN) {
+          await supabase
+            .from("partner_alias")
+            .upsert({ partner_id: id, alias: name }, { onConflict: "alias" });
+        }
+        return id;
+      }
+    }
+  }
+
+  // 3. 신규 partner 자동 생성
+  log(`    + partner 자동 생성: '${name}'`);
+  if (DRY_RUN) {
+    const fakeId = `dry-new-${name}`;
+    partnerIdByName.set(name, fakeId);
+    return fakeId;
+  }
+  const { data, error } = await supabase
+    .from("partner")
+    .insert({
+      name,
+      notes: `CSV 마이그레이션 자동 생성 (${ACTOR_LABEL}) — 정보 보강 필요`,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    warn(`partner 자동 생성 실패: '${name}' — ${error.message}`);
+    return null;
+  }
+  partnerIdByName.set(name, data.id);
+  return data.id;
 }
 
 // ============================================================
@@ -314,7 +374,9 @@ async function importBankAccounts() {
     accounts.forEach((a) =>
       log(`    - ${a.code} (${BOOK_LABEL[a.book as Book]} / ${a.kind})`),
     );
-    return new Map<string, string>();
+    const fake = new Map<string, string>();
+    accounts.forEach((a) => fake.set(a.code, `dry-bank-${a.code}`));
+    return fake;
   }
 
   await run("bank_account upsert", async () => {
@@ -492,7 +554,11 @@ async function importItems(): Promise<Map<string, string>> {
   const itemList = Array.from(itemsByCode.values());
   log(`  • 품목 ${itemList.length}종 추출 (${[...itemsByCode.keys()].slice(0, 5).join(", ")}${itemList.length > 5 ? ", ..." : ""})`);
 
-  if (DRY_RUN) return new Map();
+  if (DRY_RUN) {
+    const fake = new Map<string, string>();
+    for (const code of itemsByCode.keys()) fake.set(code, `dry-item-${code}`);
+    return fake;
+  }
 
   await run("item upsert", async () => {
     const { error } = await supabase
@@ -525,9 +591,9 @@ async function importPurchases(
   for (const r of rows) {
     const docNo = normalizeName(r["매입ID"]);
     const partnerName = normalizeName(r["매입처"]);
-    const partnerId = partnerIdByName.get(partnerName);
+    const partnerId = await getOrCreatePartner(partnerName, partnerIdByName);
     if (!partnerId) {
-      warn(`매입처 매핑 실패: '${partnerName}' (doc=${docNo}) — partner 신규 생성 권장`);
+      warn(`매입처 처리 불가: '${partnerName}' (doc=${docNo})`);
       continue;
     }
 
@@ -637,16 +703,15 @@ async function importSales(
     const partnerNameRaw = normalizeName(r["거래처"]);
     const siteName = normalizeName(r["현장"]);
 
-    // 거래처가 비어있고 현장만 있는 경우(주소형 매출) — 별도 등록 필요
-    let partnerId = partnerIdByName.get(partnerNameRaw);
-    if (!partnerId && partnerNameRaw) {
-      // alias 시도
-      partnerId = partnerIdByName.get(partnerNameRaw.replace(/\s+/g, " "));
+    // 거래처 빈칸이면 현장명을 거래처명으로 사용 (5월 워크북 패턴)
+    const lookupName = partnerNameRaw || siteName;
+    if (!lookupName) {
+      warn(`매출 거래처/현장 모두 비어있음: doc=${docNo}`);
+      continue;
     }
+    const partnerId = await getOrCreatePartner(lookupName, partnerIdByName);
     if (!partnerId) {
-      warn(
-        `매출 거래처 매핑 실패: '${partnerNameRaw}' (현장='${siteName}', doc=${docNo}) — partner 신규/alias 등록 필요`,
-      );
+      warn(`매출 거래처 처리 불가: '${lookupName}' (doc=${docNo})`);
       continue;
     }
 
