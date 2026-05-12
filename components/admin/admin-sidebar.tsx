@@ -36,6 +36,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { BookSwitcher } from "@/components/admin/book-switcher";
+import { SignOutButton } from "@/components/admin/sign-out-button";
 
 type MenuItem = {
   label: string;
@@ -137,6 +138,9 @@ export function AdminSidebar({ book }: { book: BookView }) {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SignOutButton />
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton size="sm" className="text-xs text-muted-foreground">
               bk-steel-admin v0.1
