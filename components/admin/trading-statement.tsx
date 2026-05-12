@@ -301,7 +301,7 @@ function PartyRow({
   bold,
 }: {
   label: string;
-  value: string | null;
+  value: string | null | React.ReactNode;
   variant: "recipient" | "supplier";
   bold?: boolean;
 }) {
