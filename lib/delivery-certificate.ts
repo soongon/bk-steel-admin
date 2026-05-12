@@ -14,7 +14,8 @@ export type DeliveryCertificate = {
   id: string;
   book: Book;
   partner_id: string;
-  site_name: string | null;
+  site_id: string | null;
+  site_name: string | null;   // legacy (0031 이후 site_id 정답, 표시 fallback)
   doc_no: string;
   issued_on: string;
   issued_by: string | null;
@@ -28,7 +29,7 @@ export async function fetchDeliveryCertById(
   const { data } = await supabase
     .from("delivery_certificate")
     .select(
-      "id, book, partner_id, site_name, doc_no, issued_on, issued_by, notes",
+      "id, book, partner_id, site_id, site_name, doc_no, issued_on, issued_by, notes",
     )
     .eq("id", id)
     .is("deleted_at", null)

@@ -10,6 +10,7 @@ export type StatementLine = {
   vat_krw: number;
   weight_kg?: number | null;
   note?: string;
+  ordered_on?: string;  // 누적 명세표에서 라인별 날짜 표시용 (단건은 헤더의 ordered_on 사용)
 };
 
 export type StatementData = {
@@ -219,7 +220,10 @@ function StatementCopy({
             line ? (
               <tr key={i}>
                 <td className={`border ${baseClass} px-1 py-0.5 text-center text-xs`}>
-                  {dateMonth}/{dateDay}
+                  {(() => {
+                    const d = line.ordered_on ? new Date(line.ordered_on) : null;
+                    return d ? `${d.getMonth() + 1}/${d.getDate()}` : `${dateMonth}/${dateDay}`;
+                  })()}
                 </td>
                 <td className={`border ${baseClass} px-1 py-0.5`}>{line.item_name}</td>
                 <td className={`border ${baseClass} px-1 py-0.5 text-center text-xs`}>
