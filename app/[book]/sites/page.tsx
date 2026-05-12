@@ -6,7 +6,7 @@ export default async function SitesPage() {
   const { data, error } = await supabase
     .from("site")
     .select(
-      "id, code, name, address, city, client_name, status, started_on, ended_on, notes, is_active",
+      "id, code, name, address, city, client_name, owner_name, owner_address, status, started_on, ended_on, notes, is_active",
     )
     .is("deleted_at", null)
     .order("code", { ascending: true });

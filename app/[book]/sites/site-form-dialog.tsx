@@ -21,6 +21,8 @@ export type SiteRow = {
   address: string | null;
   city: string | null;
   client_name: string | null;
+  owner_name: string | null;
+  owner_address: string | null;
   status: "active" | "closed";
   started_on: string | null;
   ended_on: string | null;
@@ -100,17 +102,37 @@ export function SiteFormDialog({
               placeholder="서울 강남구"
             />
             <Field
-              label="시공사·발주처"
+              label="시공사"
               name="client_name"
               defaultValue={editing?.client_name ?? undefined}
-              placeholder="(메모용)"
+              placeholder="(주)○○건설"
             />
           </div>
           <Field
-            label="주소"
+            label="현장 주소"
             name="address"
             defaultValue={editing?.address ?? undefined}
           />
+
+          {/* 건축주 (관급이면 사업명) — 납품확인서 필수 */}
+          <div className="rounded-md border-dashed border-2 border-zinc-300 p-3 dark:border-zinc-700">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">
+              건축주 / 발주청 (관급이면 사업명) — 납품확인서 표기 필수
+            </p>
+            <div className="grid grid-cols-1 gap-3">
+              <Field
+                label="건축주·사업명"
+                name="owner_name"
+                defaultValue={editing?.owner_name ?? undefined}
+                placeholder="○○구청 / 관급사업명 / 개인 건축주"
+              />
+              <Field
+                label="건축주 주소"
+                name="owner_address"
+                defaultValue={editing?.owner_address ?? undefined}
+              />
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Field
               label="착공일"

@@ -90,7 +90,7 @@ export default async function SiteDetailPage({
   const { data: site, error: siteErr } = await supabase
     .from("site")
     .select(
-      "id, code, name, address, city, client_name, status, started_on, ended_on, notes",
+      "id, code, name, address, city, client_name, owner_name, owner_address, status, started_on, ended_on, notes",
     )
     .eq("id", id)
     .is("deleted_at", null)
@@ -225,11 +225,9 @@ export default async function SiteDetailPage({
               </span>
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-4">
-              {site.city ? (
-                <Meta label="지역" value={site.city} />
-              ) : null}
+              {site.city ? <Meta label="지역" value={site.city} /> : null}
               {site.client_name ? (
-                <Meta label="시공사·발주처" value={site.client_name} />
+                <Meta label="시공사" value={site.client_name} />
               ) : null}
               {site.started_on ? (
                 <Meta
@@ -238,7 +236,15 @@ export default async function SiteDetailPage({
                 />
               ) : null}
               {site.address ? (
-                <Meta label="주소" value={site.address} colSpan />
+                <Meta label="현장 주소" value={site.address} colSpan />
+              ) : null}
+              <Meta
+                label="건축주·사업명"
+                value={site.owner_name ?? "(미등록 — 납품확인서 발급 전 입력 필요)"}
+                colSpan
+              />
+              {site.owner_address ? (
+                <Meta label="건축주 주소" value={site.owner_address} colSpan />
               ) : null}
               {site.notes ? <Meta label="비고" value={site.notes} colSpan /> : null}
             </dl>
@@ -414,7 +420,15 @@ function Stat({ label, value, bold }: { label: string; value: string; bold?: boo
 // site + group 데이터 → DeliveryCertForm 의 input 구조로 변환
 function buildCertData(
   g: Group,
-  site: { id: string; code: string; name: string; address: string | null; client_name: string | null },
+  site: {
+    id: string;
+    code: string;
+    name: string;
+    address: string | null;
+    client_name: string | null;
+    owner_name: string | null;
+    owner_address: string | null;
+  },
   cert: DeliveryCertificate | null,
 ): DeliveryCertData {
   // 단위별 합계 — 섞일 수 있으니 텍스트로
@@ -468,6 +482,8 @@ function buildCertData(
       name: site.name,
       address: site.address,
       client_name: site.client_name,
+      owner_name: site.owner_name,
+      owner_address: site.owner_address,
     },
     lines,
     total_qty_summary: qtySummary,

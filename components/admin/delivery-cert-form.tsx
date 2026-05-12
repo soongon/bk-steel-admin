@@ -12,7 +12,9 @@ export type DeliveryCertSite = {
   code: string;
   name: string;
   address: string | null;
-  client_name: string | null;
+  client_name: string | null;       // 시공사
+  owner_name: string | null;        // 건축주 (관급은 사업명)
+  owner_address: string | null;     // 건축주·발주청 주소
 };
 
 export type DeliveryCertLine = {
@@ -131,7 +133,7 @@ export function DeliveryCertForm({
         </table>
       </div>
 
-      {/* 현장 정보 */}
+      {/* 현장·건축주 정보 */}
       {data.site ? (
         <div className="mb-3">
           <table className="w-full border-collapse border border-zinc-700">
@@ -165,6 +167,26 @@ export function DeliveryCertForm({
                 </th>
                 <td className="border border-zinc-700 px-3 py-1" colSpan={3}>
                   {data.site.address ?? "—"}
+                </td>
+              </tr>
+              <tr>
+                <th className="border border-zinc-700 bg-zinc-100 px-2 py-1 text-center font-medium">
+                  건축주
+                </th>
+                <td className="border border-zinc-700 px-3 py-1 font-semibold" colSpan={3}>
+                  {data.site.owner_name ?? (
+                    <span className="text-zinc-400">(미등록)</span>
+                  )}
+                </td>
+              </tr>
+              <tr>
+                <th className="border border-zinc-700 bg-zinc-100 px-2 py-1 text-center font-medium">
+                  건축주주소
+                </th>
+                <td className="border border-zinc-700 px-3 py-1" colSpan={3}>
+                  {data.site.owner_address ?? (
+                    <span className="text-zinc-400">(미등록)</span>
+                  )}
                 </td>
               </tr>
             </tbody>

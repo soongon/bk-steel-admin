@@ -72,7 +72,7 @@ export function SiteTable({ sites }: { sites: SiteRow[] }) {
               <TableHead>현장명</TableHead>
               <TableHead className="w-32">지역</TableHead>
               <TableHead>주소</TableHead>
-              <TableHead className="w-36">시공사·발주처</TableHead>
+              <TableHead className="w-44">시공사 / 건축주</TableHead>
               <TableHead className="w-32">기간</TableHead>
               <TableHead className="w-20 text-center">상태</TableHead>
               <TableHead className="w-20 text-right">액션</TableHead>
@@ -107,7 +107,14 @@ export function SiteTable({ sites }: { sites: SiteRow[] }) {
                     <TableCell className="text-xs text-muted-foreground">
                       {s.address ?? "—"}
                     </TableCell>
-                    <TableCell className="text-sm">{s.client_name ?? "—"}</TableCell>
+                    <TableCell className="text-sm">
+                      {s.client_name ? (
+                        <div className="text-xs text-muted-foreground">
+                          시공 {s.client_name}
+                        </div>
+                      ) : null}
+                      <div>{s.owner_name ?? (s.client_name ? null : "—")}</div>
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {s.started_on ?? "—"}
                       {s.ended_on ? ` ~ ${s.ended_on}` : ""}

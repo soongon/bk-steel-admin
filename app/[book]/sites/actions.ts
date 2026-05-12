@@ -11,6 +11,8 @@ type SiteInput = {
   address: string | null;
   city: string | null;
   client_name: string | null;
+  owner_name: string | null;
+  owner_address: string | null;
   status: "active" | "closed";
   started_on: string | null;
   ended_on: string | null;
@@ -32,6 +34,8 @@ function readSiteInput(formData: FormData): SiteInput {
     address: str("address"),
     city: str("city"),
     client_name: str("client_name"),
+    owner_name: str("owner_name"),
+    owner_address: str("owner_address"),
     status: status === "closed" ? "closed" : "active",
     started_on: str("started_on"),
     ended_on: str("ended_on"),
