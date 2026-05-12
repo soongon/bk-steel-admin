@@ -297,22 +297,105 @@ END $$;
 
 -- ============================================================
 -- G. user_profile / user_book_role — 본인 + owner
+-- 최적화 적용:
+--   • auth.uid() → (SELECT auth.uid()) : initplan caching (PG가 1회만 평가)
+--   • SELECT 정책 1개로 통합 : multiple permissive policies 회피
+--   • 쓰기 액션은 INSERT/UPDATE/DELETE 분리 (FOR ALL이 SELECT까지 흡수하는 문제 방지)
 -- ============================================================
+
+-- ---- user_profile ----
 DROP POLICY IF EXISTS p_user_profile_self    ON user_profile;
 DROP POLICY IF EXISTS p_user_profile_admin   ON user_profile;
-CREATE POLICY p_user_profile_self ON user_profile FOR SELECT
-  USING (user_id = auth.uid());
-CREATE POLICY p_user_profile_admin ON user_profile FOR ALL
-  USING (EXISTS (SELECT 1 FROM user_book_role WHERE user_id = auth.uid() AND role = 'owner'))
-  WITH CHECK (EXISTS (SELECT 1 FROM user_book_role WHERE user_id = auth.uid() AND role = 'owner'));
+DROP POLICY IF EXISTS p_user_profile_read    ON user_profile;
+DROP POLICY IF EXISTS p_user_profile_insert  ON user_profile;
+DROP POLICY IF EXISTS p_user_profile_update  ON user_profile;
+DROP POLICY IF EXISTS p_user_profile_delete  ON user_profile;
 
-DROP POLICY IF EXISTS p_user_book_role_self  ON user_book_role;
-DROP POLICY IF EXISTS p_user_book_role_admin ON user_book_role;
-CREATE POLICY p_user_book_role_self ON user_book_role FOR SELECT
-  USING (user_id = auth.uid());
-CREATE POLICY p_user_book_role_admin ON user_book_role FOR ALL
-  USING (EXISTS (SELECT 1 FROM user_book_role r WHERE r.user_id = auth.uid() AND r.role = 'owner'))
-  WITH CHECK (EXISTS (SELECT 1 FROM user_book_role r WHERE r.user_id = auth.uid() AND r.role = 'owner'));
+CREATE POLICY p_user_profile_read ON user_profile FOR SELECT
+  USING (
+    user_id = (SELECT auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM user_book_role
+       WHERE user_id = (SELECT auth.uid()) AND role = 'owner'
+    )
+  );
+
+CREATE POLICY p_user_profile_insert ON user_profile FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM user_book_role
+       WHERE user_id = (SELECT auth.uid()) AND role = 'owner'
+    )
+  );
+
+CREATE POLICY p_user_profile_update ON user_profile FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM user_book_role
+       WHERE user_id = (SELECT auth.uid()) AND role = 'owner'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM user_book_role
+       WHERE user_id = (SELECT auth.uid()) AND role = 'owner'
+    )
+  );
+
+CREATE POLICY p_user_profile_delete ON user_profile FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM user_book_role
+       WHERE user_id = (SELECT auth.uid()) AND role = 'owner'
+    )
+  );
+
+-- ---- user_book_role ----
+DROP POLICY IF EXISTS p_user_book_role_self    ON user_book_role;
+DROP POLICY IF EXISTS p_user_book_role_admin   ON user_book_role;
+DROP POLICY IF EXISTS p_user_book_role_read    ON user_book_role;
+DROP POLICY IF EXISTS p_user_book_role_insert  ON user_book_role;
+DROP POLICY IF EXISTS p_user_book_role_update  ON user_book_role;
+DROP POLICY IF EXISTS p_user_book_role_delete  ON user_book_role;
+
+CREATE POLICY p_user_book_role_read ON user_book_role FOR SELECT
+  USING (
+    user_id = (SELECT auth.uid())
+    OR EXISTS (
+      SELECT 1 FROM user_book_role r
+       WHERE r.user_id = (SELECT auth.uid()) AND r.role = 'owner'
+    )
+  );
+
+CREATE POLICY p_user_book_role_insert ON user_book_role FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM user_book_role r
+       WHERE r.user_id = (SELECT auth.uid()) AND r.role = 'owner'
+    )
+  );
+
+CREATE POLICY p_user_book_role_update ON user_book_role FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM user_book_role r
+       WHERE r.user_id = (SELECT auth.uid()) AND r.role = 'owner'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM user_book_role r
+       WHERE r.user_id = (SELECT auth.uid()) AND r.role = 'owner'
+    )
+  );
+
+CREATE POLICY p_user_book_role_delete ON user_book_role FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM user_book_role r
+       WHERE r.user_id = (SELECT auth.uid()) AND r.role = 'owner'
+    )
+  );
 
 
 -- ============================================================
