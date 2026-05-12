@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -27,6 +29,8 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
 };
 
 export function SiteTable({ sites }: { sites: SiteRow[] }) {
+  const params = useParams<{ book: string }>();
+  const book = params.book ?? "all";
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SiteRow | null>(null);
   const [, startTransition] = useTransition();
@@ -89,8 +93,16 @@ export function SiteTable({ sites }: { sites: SiteRow[] }) {
                 const st = STATUS_LABEL[s.status] ?? STATUS_LABEL.active;
                 return (
                   <TableRow key={s.id}>
-                    <TableCell className="font-mono text-xs">{s.code}</TableCell>
-                    <TableCell className="font-medium">{s.name}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      <Link href={`/${book}/sites/${s.id}`} className="hover:underline">
+                        {s.code}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      <Link href={`/${book}/sites/${s.id}`} className="hover:underline">
+                        {s.name}
+                      </Link>
+                    </TableCell>
                     <TableCell className="text-sm">{s.city ?? "—"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {s.address ?? "—"}

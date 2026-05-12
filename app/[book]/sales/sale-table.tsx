@@ -254,12 +254,19 @@ export function SaleTable({
                       <div className="font-medium">{s.partner?.name ?? "—"}</div>
                       {s.site?.name || s.site_name ? (
                         <div className="text-xs text-muted-foreground">
-                          {s.site?.name ?? s.site_name}
-                          {s.site?.code ? (
-                            <span className="ml-1 font-mono text-[10px] text-muted-foreground/70">
-                              {s.site.code}
-                            </span>
-                          ) : null}
+                          {s.site?.id ? (
+                            <Link
+                              href={`/${view}/sites/${s.site.id}`}
+                              className="hover:underline"
+                            >
+                              {s.site.name}
+                              <span className="ml-1 font-mono text-[10px] text-muted-foreground/70">
+                                {s.site.code}
+                              </span>
+                            </Link>
+                          ) : (
+                            s.site_name
+                          )}
                         </div>
                       ) : null}
                     </TableCell>
