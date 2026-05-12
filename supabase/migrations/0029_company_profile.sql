@@ -75,3 +75,6 @@ VALUES
    '도매 및 소매업', '철강재',
    '054-111-1111', NULL, '010-1111-1111', NULL)
 ON CONFLICT (book) DO NOTHING;
+
+-- PostgREST schema cache 강제 reload (새 테이블이 즉시 API에 노출되도록)
+NOTIFY pgrst, 'reload schema';
