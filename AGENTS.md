@@ -28,7 +28,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 | 작업 종류 | 필독 파일 |
 |---|---|
-| **DB / 테이블 / 스키마 설계** | `docs/시스템_도메인_룰_v1.md` (주), `docs/시스템_DB_스키마_v0.md`, `docs/도메인_룰.md` (5월 워크북 룰) |
+| **DB / 테이블 / 스키마 설계** | **`docs/시스템_DB_스키마_v1.md`** (주), `docs/시스템_도메인_룰_v1.md`, `docs/시스템_DB_스키마_v0.md` (v0 참고), `docs/도메인_룰.md` (5월 워크북 룰) |
 | **도메인 룰(3축 분리·이관·세금계산서·재고·시세 등)** | **`docs/시스템_도메인_룰_v1.md`** ← 6월 시스템 기준 |
 | **5월 워크북 시점 룰(B계좌·미수 등급·상태 머신 등)** | `docs/도메인_룰.md` |
 | **데이터 마이그레이션 / 시드 작업** | `docs/마이그레이션_사용법.md`, `docs/reference-data/*.csv` |
