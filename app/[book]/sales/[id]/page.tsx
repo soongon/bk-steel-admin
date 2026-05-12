@@ -166,9 +166,11 @@ export default async function SaleDetailPage({
         </MetaCard>
       </section>
 
-      {/* 거래명세표 본체 — 인쇄 영역 */}
-      <section className="bg-white px-6 py-4 text-zinc-900 print:px-0 print:py-0">
-        <TradingStatement data={statementData} book={book} />
+      {/* 거래명세표 본체 — A4 폭(약 800px)으로 제한, 종이 느낌. 인쇄 시 풀-블리드 */}
+      <section className="bg-zinc-100 px-4 py-6 dark:bg-zinc-900 print:bg-white print:p-0">
+        <div className="mx-auto max-w-[800px] rounded-md bg-white p-6 text-zinc-900 shadow-md print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+          <TradingStatement data={statementData} book={book} />
+        </div>
       </section>
     </div>
   );
