@@ -53,19 +53,14 @@ export function TradingStatement({
 }) {
   const company = getCompanyProfile(book);
 
-  if (!company) {
-    return (
-      <div className="rounded-lg border-2 border-amber-500/50 bg-amber-50 p-6 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-        <h2 className="font-semibold">거래명세표 발행 불가</h2>
-        <p className="mt-2 text-sm">
-          B계좌 매출은 무자료 거래라 거래명세표 발행 대상이 아닙니다. (도메인 룰 §3)
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="statement-print flex flex-col gap-6 print:gap-3">
+      {/* B계좌·무자료 거래 시 명세서 상단에 안내 (인쇄 시 보이도록) */}
+      {!data.is_documented ? (
+        <div className="rounded-md border border-amber-500/60 bg-amber-50 px-3 py-1.5 text-center text-xs text-amber-800 print:py-1 print:text-[9pt]">
+          <strong>무자료 거래</strong> — 세금계산서 미발행 (부가세 신고 대상 아님)
+        </div>
+      ) : null}
       <StatementCopy data={data} company={company} variant="recipient" />
       <div className="relative h-0 border-t-2 border-dashed border-zinc-400 print:border-zinc-600">
         <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-2 text-[10px] text-muted-foreground print:bg-white">
