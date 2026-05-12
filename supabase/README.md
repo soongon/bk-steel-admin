@@ -12,19 +12,20 @@ supabase/
 │   ├── 0003_auth_users.sql
 │   ├── 0004_masters_shared.sql
 │   ├── 0005_masters_book.sql
-│   ├── 0006_purchase.sql
-│   ├── 0007_sale.sql
-│   ├── 0008_book_transfer.sql
-│   ├── 0009_inventory_adjustment.sql
-│   ├── 0010_consignment.sql
-│   ├── 0011_bank_transaction.sql
-│   ├── 0012_promissory_note.sql
-│   ├── 0013_receipt.sql
-│   ├── 0014_price_history.sql
-│   ├── 0015_operations.sql
-│   ├── 0016_audit.sql
-│   ├── 0017_views.sql
-│   └── 0018_rls.sql
+│   ├── 0006_price_history.sql           # book_transfer가 참조하므로 먼저
+│   ├── 0007_book_transfer.sql           # sale/purchase가 참조하므로 먼저
+│   ├── 0008_purchase.sql                # purchase + purchase_line
+│   ├── 0009_sale.sql                    # sale + sale_line + sale_line_allocation
+│   ├── 0010_inventory_adjustment.sql    # purchase_line.created_by_adjustment_id FK 지연 부여
+│   ├── 0011_consignment.sql
+│   ├── 0012_bank_transaction.sql        # receipt_id FK는 0014에서 ALTER
+│   ├── 0013_promissory_note.sql
+│   ├── 0014_receipt.sql                 # bank_transaction.receipt_id FK 부여
+│   ├── 0015_price_autofill_trigger.sql  # purchase_line INSERT 시 price_history 자동 누적
+│   ├── 0016_operations.sql              # sales_log, business_card, recurring_task, improvement_idea
+│   ├── 0017_audit.sql                   # (다음 batch)
+│   ├── 0018_views.sql                   # (다음 batch)
+│   └── 0019_rls.sql                     # (다음 batch)
 └── seed/               # 시드 데이터 (마이그레이션 후 실행)
     ├── 0001_rebar_spec.sql       # KS D 3504 철근 규격
     ├── 0002_rebar_grade.sql      # SD300~SD700 강종
