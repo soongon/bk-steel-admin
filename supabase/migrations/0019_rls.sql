@@ -311,44 +311,20 @@ DROP POLICY IF EXISTS p_user_profile_insert  ON user_profile;
 DROP POLICY IF EXISTS p_user_profile_update  ON user_profile;
 DROP POLICY IF EXISTS p_user_profile_delete  ON user_profile;
 
+-- SELECT는 자기 row만. (owner가 타 사용자 user_profile 조회 필요시 별도 admin RPC로)
 CREATE POLICY p_user_profile_read ON user_profile FOR SELECT
-  USING (
-    user_id = (SELECT auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM user_book_role
-       WHERE user_id = (SELECT auth.uid()) AND role = 'owner'
-    )
-  );
+  USING (user_id = (SELECT auth.uid()));
 
+-- 쓰기는 owner만 — helper 함수로 (user_book_role 직접 EXISTS 시 recursion)
 CREATE POLICY p_user_profile_insert ON user_profile FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM user_book_role
-       WHERE user_id = (SELECT auth.uid()) AND role = 'owner'
-    )
-  );
+  WITH CHECK (current_user_is_owner_or_manager_any_book());
 
 CREATE POLICY p_user_profile_update ON user_profile FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM user_book_role
-       WHERE user_id = (SELECT auth.uid()) AND role = 'owner'
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM user_book_role
-       WHERE user_id = (SELECT auth.uid()) AND role = 'owner'
-    )
-  );
+  USING (current_user_is_owner_or_manager_any_book())
+  WITH CHECK (current_user_is_owner_or_manager_any_book());
 
 CREATE POLICY p_user_profile_delete ON user_profile FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM user_book_role
-       WHERE user_id = (SELECT auth.uid()) AND role = 'owner'
-    )
-  );
+  USING (current_user_is_owner_or_manager_any_book());
 
 -- ---- user_book_role ----
 DROP POLICY IF EXISTS p_user_book_role_self    ON user_book_role;
@@ -358,44 +334,20 @@ DROP POLICY IF EXISTS p_user_book_role_insert  ON user_book_role;
 DROP POLICY IF EXISTS p_user_book_role_update  ON user_book_role;
 DROP POLICY IF EXISTS p_user_book_role_delete  ON user_book_role;
 
+-- user_book_role SELECT는 자기 row만 (다른 정책에서 이 테이블 참조 시 EXISTS subquery → recursion 방지)
 CREATE POLICY p_user_book_role_read ON user_book_role FOR SELECT
-  USING (
-    user_id = (SELECT auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM user_book_role r
-       WHERE r.user_id = (SELECT auth.uid()) AND r.role = 'owner'
-    )
-  );
+  USING (user_id = (SELECT auth.uid()));
 
+-- 쓰기는 owner만 — helper 함수 사용 (self-only RLS 적용된 user_book_role을 읽어 자기 owner 여부 확인)
 CREATE POLICY p_user_book_role_insert ON user_book_role FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM user_book_role r
-       WHERE r.user_id = (SELECT auth.uid()) AND r.role = 'owner'
-    )
-  );
+  WITH CHECK (current_user_is_owner_or_manager_any_book());
 
 CREATE POLICY p_user_book_role_update ON user_book_role FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM user_book_role r
-       WHERE r.user_id = (SELECT auth.uid()) AND r.role = 'owner'
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM user_book_role r
-       WHERE r.user_id = (SELECT auth.uid()) AND r.role = 'owner'
-    )
-  );
+  USING (current_user_is_owner_or_manager_any_book())
+  WITH CHECK (current_user_is_owner_or_manager_any_book());
 
 CREATE POLICY p_user_book_role_delete ON user_book_role FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM user_book_role r
-       WHERE r.user_id = (SELECT auth.uid()) AND r.role = 'owner'
-    )
-  );
+  USING (current_user_is_owner_or_manager_any_book());
 
 
 -- ============================================================
