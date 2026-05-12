@@ -33,6 +33,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 | **5월 워크북 시점 룰(B계좌·미수 등급·상태 머신 등)** | `docs/도메인_룰.md` |
 | **데이터 마이그레이션 / 시드 작업** | `docs/마이그레이션_사용법.md`, `docs/reference-data/*.csv` |
 | **양식·컬럼 구조 이해** | `docs/워크북_변경이력.md`, `docs/원본_도구/workbook/create_spreadsheets.py` |
+| **철근 규격·단위중량·번들 환산** | `docs/철근_제품마스터.md` (KS D 3504, rebar_specs/rebar_grades 시드) |
 | **5월 한 달 운영 맥락** | `docs/세션_로그/*.md` |
 | **사업/동업 컨텍스트(원본 안내)** | `docs/컨텍스트_README.md` (실제 사업 컨텍스트는 Claude.ai Project Knowledge) |
 | **원본 repo 사용 가이드 원문** | `docs/원본_CLAUDE.md`, `docs/원본_README.md` |
