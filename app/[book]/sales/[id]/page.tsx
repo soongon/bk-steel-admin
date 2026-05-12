@@ -8,7 +8,7 @@ import { BookBadge } from "@/components/admin/book-badge";
 import { PrintButton } from "@/components/admin/print-button";
 import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
 import { fetchCompanyProfile } from "@/lib/company-profile";
-import { fetchDeliveryCertById } from "@/lib/delivery-certificate";
+import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { DeliveryCertButton } from "./delivery-cert-button";
 
 const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
@@ -44,9 +44,10 @@ export default async function SaleDetailPage({
     .select(
       `
       id, book, doc_no, ordered_on, delivered_on, status,
-      subtotal_krw, vat_krw, total_krw, vat_rate, site_name, is_documented,
+      subtotal_krw, vat_krw, total_krw, vat_rate, site_name, site_id, partner_id, is_documented,
       tax_doc_type, tax_doc_no, payment_due_on, settled_on, notes, delivery_cert_id,
       partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email),
+      site:site(id, code, name),
       receive_bank_account_id, receive_bank:bank_account!sale_receive_bank_account_id_fkey(code, bank_name),
       sale_line(
         id, qty, unit, unit_price_krw, weight_kg, theoretical_weight_kg, line_subtotal_krw, notes,
@@ -62,15 +63,18 @@ export default async function SaleDetailPage({
 
   const book = sale.book as Book;
   const partner = sale.partner as any;
+  const site = (sale as any).site as { id: string; code: string; name: string } | null;
   const lines = (sale.sale_line ?? []) as any[];
 
   // 공급자(우리) 회사 정보 fetch
   const company = await fetchCompanyProfile(supabase, book);
 
-  // 납품확인서 (이미 발급됐다면)
-  const cert = sale.delivery_cert_id
-    ? await fetchDeliveryCertById(supabase, sale.delivery_cert_id)
-    : null;
+  // 납품확인서 양식 데이터 — site_id 가 있을 때만 누적 빌드 (동일 (book, partner, site) 의 모든 매출)
+  const certFormData =
+    sale.site_id && sale.partner_id
+      ? await buildDeliveryCertData(supabase, book, sale.partner_id, sale.site_id)
+      : null;
+  const cert = certFormData?.cert ?? null;
 
   // StatementData 구성
   const statementData: StatementData = {
@@ -141,10 +145,12 @@ export default async function SaleDetailPage({
         </div>
         <div className="flex items-center gap-2">
           <DeliveryCertButton
-            saleId={sale.id}
+            book={book}
+            partnerId={sale.partner_id}
+            siteId={sale.site_id}
             cert={cert}
-            partnerName={partner?.name ?? "—"}
-            siteName={sale.site_name}
+            formData={certFormData}
+            company={company}
           />
           <PrintButton />
         </div>
@@ -159,7 +165,18 @@ export default async function SaleDetailPage({
           ) : null}
         </MetaCard>
         <MetaCard label="현장 / 자료">
-          <div className="text-sm">{sale.site_name ?? "—"}</div>
+          <div className="text-sm">
+            {site?.id ? (
+              <Link href={`/${bookParam}/sites/${site.id}`} className="hover:underline">
+                {site.name}
+                <span className="ml-1 font-mono text-[10px] text-muted-foreground">
+                  {site.code}
+                </span>
+              </Link>
+            ) : (
+              (sale.site_name ?? "—")
+            )}
+          </div>
           <div className="text-xs text-muted-foreground">
             {TAX_DOC_KO[sale.tax_doc_type] ?? sale.tax_doc_type}
             {sale.tax_doc_no ? ` · ${sale.tax_doc_no}` : ""}

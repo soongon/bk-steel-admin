@@ -13,27 +13,48 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { type Book } from "@/lib/book";
+import { type CompanyProfile } from "@/lib/company-profile";
 import { type DeliveryCertificate } from "@/lib/delivery-certificate";
-import { issueDeliveryCertificate } from "./cert-actions";
+import {
+  DeliveryCertForm,
+  type DeliveryCertData,
+} from "@/components/admin/delivery-cert-form";
+import { issueDeliveryCertBySite } from "@/app/[book]/sites/[id]/cert-actions";
 
 export function DeliveryCertButton({
-  saleId,
+  book,
+  partnerId,
+  siteId,
   cert,
-  partnerName,
-  siteName,
+  formData,
+  company,
 }: {
-  saleId: string;
+  book: Book;
+  partnerId: string | null;
+  siteId: string | null;
   cert: DeliveryCertificate | null;
-  partnerName: string;
-  siteName: string | null;
+  formData: DeliveryCertData | null;
+  company: CompanyProfile | null;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
+  // 현장 미지정 매출 — 발급 불가
+  if (!siteId || !partnerId) {
+    return (
+      <Button variant="outline" size="sm" disabled title="현장 지정 후 발급 가능">
+        <FileSignatureIcon className="size-4" />
+        납품확인서 (현장 미지정)
+      </Button>
+    );
+  }
+
   function handleIssue() {
+    if (!siteId || !partnerId) return;
     startTransition(async () => {
-      const r = await issueDeliveryCertificate(saleId);
+      const r = await issueDeliveryCertBySite(book, partnerId, siteId);
       if (!r.ok) {
         toast.error(r.error);
         return;
@@ -43,7 +64,6 @@ export function DeliveryCertButton({
           ? `기존 확인서 ${r.doc_no} 에 연결되었습니다`
           : `납품확인서 ${r.doc_no} 발급 완료`,
       );
-      setOpen(false);
       router.refresh();
     });
   }
@@ -69,50 +89,32 @@ export function DeliveryCertButton({
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
+        <DialogContent className="!max-w-[920px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="print:hidden">
             <DialogTitle className="flex items-center gap-2">
               <FileSignatureIcon className="size-5" />
-              납품확인서 {cert ? `· ${cert.doc_no}` : "발급"}
+              납품확인서 {cert ? `· ${cert.doc_no}` : "미리보기"}
             </DialogTitle>
             <DialogDescription>
-              {partnerName}
-              {siteName ? <span className="ml-1 font-medium">/ {siteName}</span> : null}
-              {cert ? (
-                <span className="ml-2 text-xs">
-                  · {cert.issued_on} 발급됨
-                </span>
-              ) : (
-                <span className="ml-2 text-xs">
-                  · 거래처+현장 단위로 1회 발급 — 이 거래처·현장의 모든 납품 매출이 1장에 묶입니다
-                </span>
-              )}
+              {cert
+                ? `${cert.issued_on} 발급됨 — 인쇄·재인쇄 가능`
+                : "발급 확정 전 미리보기 — 동일 거래처·현장의 모든 매출이 1장에 누적됩니다"}
             </DialogDescription>
           </DialogHeader>
 
-          {/* 양식 placeholder — 실제 양식은 다음 단계 */}
-          <div className="rounded-md border-2 border-dashed border-zinc-300 bg-zinc-50 p-12 text-center dark:border-zinc-700 dark:bg-zinc-900/50">
-            <p className="text-base font-semibold text-foreground">
-              납품확인서 양식 (구현 예정)
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              거래처별 납품 내역 집계 + 사업자 인감 첨부 양식은 다음 단계에서 구현합니다.
-            </p>
-            {cert ? (
-              <dl className="mt-6 inline-grid grid-cols-2 gap-x-4 gap-y-1 text-left text-xs">
-                <dt className="text-muted-foreground">문서번호</dt>
-                <dd className="font-mono">{cert.doc_no}</dd>
-                <dt className="text-muted-foreground">발급일</dt>
-                <dd>{cert.issued_on}</dd>
-                <dt className="text-muted-foreground">거래처</dt>
-                <dd>{partnerName}</dd>
-                <dt className="text-muted-foreground">현장</dt>
-                <dd>{siteName ?? <span className="text-muted-foreground">— (미지정)</span>}</dd>
-              </dl>
-            ) : null}
+          <div className="bg-zinc-100 p-3 print:bg-white print:p-0 dark:bg-zinc-900">
+            <div className="mx-auto max-w-[800px] rounded bg-white p-6 text-zinc-900 shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+              {formData ? (
+                <DeliveryCertForm data={formData} company={company} />
+              ) : (
+                <p className="py-12 text-center text-sm text-muted-foreground">
+                  양식 데이터를 불러올 수 없습니다.
+                </p>
+              )}
+            </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="print:hidden">
             <Button variant="outline" onClick={() => setOpen(false)}>
               닫기
             </Button>
@@ -122,7 +124,7 @@ export function DeliveryCertButton({
                 인쇄
               </Button>
             ) : (
-              <Button onClick={handleIssue} disabled={pending}>
+              <Button onClick={handleIssue} disabled={pending || !formData}>
                 {pending ? "발급 중..." : "발급 확정"}
               </Button>
             )}
