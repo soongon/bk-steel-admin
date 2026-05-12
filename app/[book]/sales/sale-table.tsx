@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import {
   CheckCircleIcon,
   PencilIcon,
@@ -209,9 +210,14 @@ export function SaleTable({
                 return (
                   <TableRow key={s.id}>
                     <TableCell className="font-mono text-xs">
-                      <div>{s.doc_no}</div>
+                      <Link
+                        href={`/${view}/sales/${s.id}`}
+                        className="hover:underline"
+                      >
+                        {s.doc_no}
+                      </Link>
                       {!s.is_documented ? (
-                        <span className="text-[10px] text-amber-600">무자료</span>
+                        <div className="text-[10px] text-amber-600">무자료</div>
                       ) : null}
                     </TableCell>
                     <TableCell>

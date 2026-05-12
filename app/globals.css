@@ -127,3 +127,48 @@
     @apply font-sans;
     }
 }
+
+/* ============================================================
+   인쇄 전용 스타일 — 거래명세표 등 출력용 페이지에서 사용
+   사이드바·헤더·액션 버튼 숨기고 A4 세로 페이지에 맞춤
+   ============================================================ */
+@media print {
+  /* 사이드바 + sticky 헤더 제거 */
+  [data-slot="sidebar-wrapper"],
+  [data-slot="sidebar-container"],
+  [data-sidebar="sidebar"] {
+    display: none !important;
+  }
+  header.sticky {
+    display: none !important;
+  }
+  /* main 영역 최대화 */
+  [data-slot="sidebar-inset"] {
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* A4 세로 페이지, 여백 1cm */
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+  /* 인쇄 시 한 페이지 내 분할 방지 */
+  .statement-copy {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  /* 본문 폰트는 약간 작게 */
+  .statement-print {
+    font-size: 9.5pt;
+    line-height: 1.3;
+  }
+}
