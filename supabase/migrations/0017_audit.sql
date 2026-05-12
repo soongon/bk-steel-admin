@@ -84,7 +84,7 @@ BEGIN
     (table_name, row_id, book, action, before, after, changed_columns, actor, actor_label, sensitive)
   VALUES
     (TG_TABLE_NAME, v_row_id, v_book, TG_OP, v_before, v_after, v_changed,
-     v_actor, v_actor_label, v_book = 'b');
+     v_actor, v_actor_label, COALESCE(v_book = 'b', FALSE));  -- book 없는 테이블(sale_line_allocation 등)에서 NULL → FALSE
 
   RETURN COALESCE(NEW, OLD);
 END;
