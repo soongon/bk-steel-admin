@@ -44,7 +44,7 @@ export default async function SaleDetailPage({
       id, book, doc_no, ordered_on, delivered_on, status,
       subtotal_krw, vat_krw, total_krw, vat_rate, site_name, is_documented,
       tax_doc_type, tax_doc_no, payment_due_on, settled_on, notes,
-      partner:partner(id, code, name, business_no, representative, address, phone, industry, email),
+      partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email),
       receive_bank_account_id, receive_bank:bank_account!sale_receive_bank_account_id_fkey(code, bank_name),
       sale_line(
         id, qty, unit, unit_price_krw, weight_kg, theoretical_weight_kg, line_subtotal_krw, notes,
@@ -76,6 +76,7 @@ export default async function SaleDetailPage({
       representative: partner?.representative ?? null,
       address: partner?.address ?? null,
       phone: partner?.phone ?? null,
+      fax: partner?.fax ?? null,
       industry: partner?.industry ?? null,
     },
     site_name: sale.site_name,
