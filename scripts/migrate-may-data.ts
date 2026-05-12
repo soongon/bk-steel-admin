@@ -471,11 +471,17 @@ async function importBankTransactions(
   }
 
   await run("bank_transaction insert", async () => {
-    // 멱등성: CSV에서 import된 매출/매입 연결 거래 모두 삭제 후 재삽입
+    // 멱등성: CSV import 카테고리로 정의된 모든 row 삭제 후 재삽입
+    // (sale_id/purchase_id가 null인 orphan도 잡힘 — 이전 실행에서 sale auto-create 실패한 케이스)
     await supabase
       .from("bank_transaction")
       .delete()
-      .or("sale_id.not.is.null,purchase_id.not.is.null");
+      .in("category", [
+        "매출입금",
+        "매출입금(B통장)",
+        "매입출금",
+        "매입출금(B통장)",
+      ]);
     const { error } = await supabase.from("bank_transaction").insert(txns);
     if (error) throw error;
   });
@@ -841,10 +847,12 @@ async function importAllocations() {
 
   // 책별·품목별로 매출 라인을 시간순으로 돌면서 매입 라인 잔여분에서 차감
   // FIFO: purchase_line.created_at ASC
-  // (sale.ordered_on 기준 정렬은 nested ordering이 까다로워서 sale_line.created_at으로 단순화)
+  // 'reserved'(주문 단계, 미납품) 매출은 allocation 제외
   const { data: saleLines, error: slErr } = await supabase
     .from("sale_line")
-    .select("id, book, item_id, qty, weight_kg, unit, unit_price_krw, line_subtotal_krw")
+    .select(
+      "id, book, item_id, qty, weight_kg, unit, unit_price_krw, line_subtotal_krw, status",
+    )
     .order("created_at", { ascending: true });
   if (slErr) {
     warn(`sale_line 조회 실패: ${slErr.message}`);
@@ -854,19 +862,32 @@ async function importAllocations() {
     log(`  • sale_line 없음 — allocation skip`);
     return;
   }
+  log(`  • sale_line ${saleLines.length}건 — allocation 처리 시작`);
 
   let allocated = 0;
+  let skipReserved = 0;
+  let skipNoMatch = 0;
   for (const sl of saleLines as any[]) {
+    if (sl.status === "reserved" || sl.status === "cancelled") {
+      skipReserved++;
+      continue;
+    }
     // 잔여 매입 라인 조회 (같은 책 + 같은 품목)
-    const { data: pLines } = await supabase
+    const { data: pLines, error: plErr } = await supabase
       .from("purchase_line")
-      .select("id, acquired_qty, unit_price_krw, acquired_unit, theoretical_weight_kg, actual_weight_kg")
+      .select(
+        "id, acquired_qty, unit_price_krw, acquired_unit, theoretical_weight_kg, actual_weight_kg",
+      )
       .eq("book", sl.book)
       .eq("item_id", sl.item_id)
       .order("created_at", { ascending: true });
 
+    if (plErr) {
+      warn(`purchase_line 조회 실패 (sale_line=${sl.id}): ${plErr.message}`);
+      continue;
+    }
     if (!pLines || pLines.length === 0) {
-      warn(`매출 라인 ${sl.id}에 매칭할 매입 라인 없음 (책=${sl.book})`);
+      skipNoMatch++;
       continue;
     }
 
@@ -912,24 +933,28 @@ async function importAllocations() {
       if (allocWeight <= 0 && allocQty <= 0) continue;
 
       const cost = Math.round(Number(pl.unit_price_krw) * (allocQty || allocWeight));
-      await supabase.from("sale_line_allocation").insert({
+      const { error: allocErr } = await supabase.from("sale_line_allocation").insert({
         sale_line_id: sl.id,
         purchase_line_id: pl.id,
         allocated_qty: allocQty || 0,
         allocated_weight_kg: allocWeight || allocQty || 0.001, // 최소 양수
         cost_krw: cost,
       });
+      if (allocErr) {
+        warn(
+          `allocation insert 실패 (sl=${sl.id.slice(0, 8)}, pl=${pl.id.slice(0, 8)}): ${allocErr.message}`,
+        );
+        break; // 이 sale_line은 그만 처리
+      }
       allocated++;
       remainingQty -= allocQty;
       remainingWeight -= allocWeight;
     }
-
-    if (remainingWeight > 0.001 || remainingQty > 0.001) {
-      warn(`매출 라인 ${sl.id}: 잔여 미매칭 weight=${remainingWeight.toFixed(2)} qty=${remainingQty}`);
-    }
   }
 
-  log(`  • allocation ${allocated}건 생성`);
+  log(
+    `  • allocation ${allocated}건 생성 (reserved skip ${skipReserved}, 매칭 매입 없음 ${skipNoMatch})`,
+  );
 }
 
 // ============================================================
