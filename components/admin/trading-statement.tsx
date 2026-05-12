@@ -64,12 +64,7 @@ export function TradingStatement({
 
   return (
     <div className="statement-print flex flex-col gap-6 print:gap-3">
-      {/* B계좌·무자료 거래 시 명세서 상단에 안내 (인쇄 시 보이도록) */}
-      {!data.is_documented ? (
-        <div className="rounded-md border border-amber-500/60 bg-amber-50 px-3 py-1.5 text-center text-xs text-amber-800 print:py-1 print:text-[9pt]">
-          <strong>무자료 거래</strong> — 세금계산서 미발행 (부가세 신고 대상 아님)
-        </div>
-      ) : null}
+      {/* 거래명세표는 자료/무자료 무관하게 형식적으로 동일 발행. 무자료 식별은 페이지 상단 메타에서 표시. */}
       <StatementCopy data={data} company={company} variant="recipient" />
       <div className="relative h-0 border-t-2 border-dashed border-zinc-400 print:border-zinc-600">
         <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-2 text-[10px] text-muted-foreground print:bg-white">
@@ -240,7 +235,7 @@ function StatementCopy({
                   {fmtKrw(line.subtotal_krw)}
                 </td>
                 <td className={`border ${baseClass} px-1 py-0.5 text-right tabular-nums`}>
-                  {data.is_documented ? fmtKrw(line.vat_krw) : "—"}
+                  {fmtKrw(line.vat_krw)}
                 </td>
                 <td className={`border ${baseClass} px-1 py-0.5 text-center text-[10px]`}>
                   {line.weight_kg ? `${Math.round(line.weight_kg).toLocaleString()}kg` : ""}
@@ -266,7 +261,7 @@ function StatementCopy({
               {fmtKrw(data.subtotal_krw)}
             </td>
             <td className={`border ${baseClass} px-1 py-1 text-right tabular-nums`}>
-              {data.is_documented ? fmtKrw(data.vat_krw) : "—"}
+              {fmtKrw(data.vat_krw)}
             </td>
             <td className={`border ${baseClass}`}></td>
           </tr>
