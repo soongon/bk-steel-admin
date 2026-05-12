@@ -30,17 +30,26 @@ export type CompanyProfile = {
   notes: string | null;
 };
 
-/** 단일 책의 회사 정보 fetch */
+/**
+ * B 책은 SL 사업자의 무자료 흐름이라 명세서·세금계산서 등 외부 문서는 SL 정보로 발행.
+ * 운영자는 SL row 한 곳만 관리하면 BK/SL/B 모두 일관 — 별도 동기화 불필요.
+ */
+function effectiveBook(book: Book): Book {
+  return book === "b" ? "sl" : book;
+}
+
+/** 단일 책의 회사 정보 fetch (B는 자동으로 SL 사용) */
 export async function fetchCompanyProfile(
   supabase: SupabaseClient,
   book: Book,
 ): Promise<CompanyProfile | null> {
+  const target = effectiveBook(book);
   const { data } = await supabase
     .from("company_profile")
     .select(
       "book, name, business_no, representative, address, business_type, business_item, phone, fax, mobile, email, bank_default_name, bank_default_no, stamp_url, notes",
     )
-    .eq("book", book)
+    .eq("book", target)
     .maybeSingle();
   return data as CompanyProfile | null;
 }
