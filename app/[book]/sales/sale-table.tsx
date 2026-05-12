@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { type Book, type BookView } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   SaleFormDialog,
   type Partner,
@@ -53,6 +54,7 @@ export type SaleListRow = {
   payment_due_on: string | null;
   settled_on: string | null;
   partner_id: string;
+  notes: string | null;
   partner: { id: string; name: string; code: string } | null;
   sale_line: SaleLine[];
 };
@@ -74,6 +76,27 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${s.className}`}>
       {s.label}
     </span>
+  );
+}
+
+const NOTE_PREVIEW_LEN = 5;
+
+function NoteCell({ text }: { text: string | null }) {
+  if (!text) return <span className="text-muted-foreground">—</span>;
+  const isLong = text.length > NOTE_PREVIEW_LEN;
+  const preview = isLong ? text.slice(0, NOTE_PREVIEW_LEN) + "…" : text;
+  if (!isLong) return <span className="text-xs text-muted-foreground">{preview}</span>;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span className="cursor-help text-xs text-muted-foreground underline decoration-dotted underline-offset-2" />
+        }
+      >
+        {preview}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-md whitespace-pre-wrap">{text}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -111,6 +134,7 @@ export function SaleTable({
       is_documented: s.is_documented,
       tax_doc_type: s.tax_doc_type,
       payment_due_on: s.payment_due_on,
+      notes: s.notes,
     });
     setOpen(true);
   }
@@ -164,13 +188,14 @@ export function SaleTable({
               <TableHead>품목</TableHead>
               <TableHead className="w-28 text-right">합계</TableHead>
               <TableHead className="w-24 text-center">상태</TableHead>
+              <TableHead className="w-20">메모</TableHead>
               <TableHead className="w-32 text-right">액션</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sales.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
                   등록된 매출이 없습니다.{" "}
                   <button onClick={openCreate} className="underline">신규 추가</button>
                 </TableCell>
@@ -210,6 +235,9 @@ export function SaleTable({
                     </TableCell>
                     <TableCell className="text-center">
                       <StatusBadge status={s.status} />
+                    </TableCell>
+                    <TableCell>
+                      <NoteCell text={s.notes} />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-0.5">

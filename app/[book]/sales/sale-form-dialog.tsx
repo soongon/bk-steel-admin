@@ -46,6 +46,7 @@ export type SaleRow = {
   is_documented: boolean;
   tax_doc_type: string;
   payment_due_on: string | null;
+  notes: string | null;
 };
 
 const TAX_DOC_OPTIONS = [
@@ -177,6 +178,7 @@ export function SaleFormDialog({
   const [paymentDueOn, setPaymentDueOn] = useState("");
   const [status, setStatus] = useState<string>(editing?.status ?? "reserved");
   const [siteName, setSiteName] = useState(editing?.site_name ?? "");
+  const [notes, setNotes] = useState(editing?.notes ?? "");
 
   useEffect(() => {
     if (open) {
@@ -190,6 +192,7 @@ export function SaleFormDialog({
         setStatus(editing.status);
         setIsDocumented(editing.is_documented);
         setTaxDocType(editing.tax_doc_type);
+        setNotes(editing.notes ?? "");
       } else {
         // 신규
         setBook(view !== "all" ? (view as Book) : "sl");
@@ -203,6 +206,7 @@ export function SaleFormDialog({
         setDeliveredOn("");
         setPaymentDueOn("");
         setStatus("reserved");
+        setNotes("");
       }
     }
   }, [open, editing, view, today]);
@@ -231,6 +235,7 @@ export function SaleFormDialog({
     fd.set("is_documented", String(isDocumented));
     fd.set("tax_doc_type", taxDocType);
     fd.set("site_name", siteName);
+    fd.set("notes", notes);
 
     if (!editing) {
       fd.set("partner_id", matchedPartner!.id);
@@ -472,6 +477,16 @@ export function SaleFormDialog({
               />
             </Field>
           </div>
+
+          <Field label="메모">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="선결재 / 일본산 도매 / ... 자유 메모"
+              rows={2}
+              className="resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+          </Field>
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
