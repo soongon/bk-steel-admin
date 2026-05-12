@@ -127,6 +127,22 @@ function isDocumentedFromColumn(value: string | undefined): boolean {
   return normalizeName(value) === "O";
 }
 
+/**
+ * CSV의 '결제완료'/'수금완료' 같은 "O" 마커를 실제 날짜로 변환.
+ * 마커가 'O'면 fallbackDate를 반환, 아니면 null.
+ */
+function dateIfMarked(
+  marker: string | undefined,
+  ...fallbackDates: (string | undefined)[]
+): string | null {
+  if (normalizeName(marker) !== "O") return null;
+  for (const d of fallbackDates) {
+    const trimmed = d?.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
 function logSection(title: string) {
   console.log("\n" + "=".repeat(60));
   console.log(title);
@@ -640,7 +656,8 @@ async function importPurchases(
       vat_krw: vat,
       total_krw: total,
       payment_due_on: r["결제예정일"] || null,
-      paid_on: r["결제완료"] && r["결제완료"] !== "" ? r["입고일자"] : null,
+      // 결제완료는 "O" 마커 → 결제예정일/입고일자를 실제 paid_on 으로 사용
+      paid_on: dateIfMarked(r["결제완료"], r["결제예정일"], r["입고일자"]),
       pay_bank_account_id: bankIdByCode.get(bankCode) ?? null,
       status: r["상태"]?.includes("결제완료") ? "depleted" : "in_stock",
       notes: normalizeName(r["메모"]) || null,
@@ -757,7 +774,8 @@ async function importSales(
       vat_krw: vat,
       total_krw: total,
       payment_due_on: r["수금예정일"] || null,
-      settled_on: r["수금완료"] || null,
+      // 수금완료는 "O" 마커 → 수금예정일/납품일자를 실제 settled_on 으로 사용
+      settled_on: dateIfMarked(r["수금완료"], r["수금예정일"], r["납품일자"]),
       receive_bank_account_id: bankIdByCode.get(bankCode) ?? null,
       status: r["상태"] === "수금완료" ? "settled" : r["상태"] === "주문" ? "reserved" : "confirmed",
       notes: normalizeName(r["메모"]) || null,
