@@ -11,6 +11,7 @@ import { BookBadge } from "@/components/admin/book-badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -54,20 +55,22 @@ export function BookSwitcher() {
         <ChevronsUpDownIcon className="ml-auto size-4 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel>책 전환</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {BOOK_VIEWS.map((b) => (
-          <DropdownMenuItem
-            key={b}
-            onClick={() => switchTo(b)}
-            className="flex items-center gap-2"
-          >
-            <BookBadge book={b} />
-            <span className="ml-auto text-xs text-muted-foreground">
-              {b === current ? "현재" : "/" + b}
-            </span>
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>책 전환</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {BOOK_VIEWS.map((b) => (
+            <DropdownMenuItem
+              key={b}
+              onClick={() => switchTo(b)}
+              className="flex items-center gap-2"
+            >
+              <BookBadge book={b} />
+              <span className="ml-auto text-xs text-muted-foreground">
+                {b === current ? "현재" : "/" + b}
+              </span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
