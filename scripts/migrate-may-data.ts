@@ -471,6 +471,11 @@ async function importBankTransactions(
   }
 
   await run("bank_transaction insert", async () => {
+    // 멱등성: CSV에서 import된 매출/매입 연결 거래 모두 삭제 후 재삽입
+    await supabase
+      .from("bank_transaction")
+      .delete()
+      .or("sale_id.not.is.null,purchase_id.not.is.null");
     const { error } = await supabase.from("bank_transaction").insert(txns);
     if (error) throw error;
   });
@@ -678,6 +683,9 @@ async function importPurchases(
     if (phErr) throw phErr;
     idByDocNo.set(docNo, ph!.id);
 
+    // 멱등성: 이 purchase의 기존 lines 삭제 후 재삽입
+    await supabase.from("purchase_line").delete().eq("purchase_id", ph!.id);
+
     // Line
     const acquiredQty = unit === "kg" ? weight : qty;
     const line = {
@@ -796,6 +804,9 @@ async function importSales(
     if (shErr) throw shErr;
     idByDocNo.set(docNo, sh!.id);
 
+    // 멱등성: 이 sale의 기존 lines 삭제 후 재삽입 (allocation도 cascade로 삭제됨)
+    await supabase.from("sale_line").delete().eq("sale_id", sh!.id);
+
     const line = {
       sale_id: sh!.id,
       book,
@@ -830,14 +841,19 @@ async function importAllocations() {
 
   // 책별·품목별로 매출 라인을 시간순으로 돌면서 매입 라인 잔여분에서 차감
   // FIFO: purchase_line.created_at ASC
-  const { data: saleLines } = await supabase
+  // (sale.ordered_on 기준 정렬은 nested ordering이 까다로워서 sale_line.created_at으로 단순화)
+  const { data: saleLines, error: slErr } = await supabase
     .from("sale_line")
-    .select(
-      "id, book, item_id, qty, weight_kg, unit, unit_price_krw, line_subtotal_krw, sale:sale!inner(ordered_on)",
-    )
-    .order("sale(ordered_on)", { ascending: true });
-
-  if (!saleLines) return;
+    .select("id, book, item_id, qty, weight_kg, unit, unit_price_krw, line_subtotal_krw")
+    .order("created_at", { ascending: true });
+  if (slErr) {
+    warn(`sale_line 조회 실패: ${slErr.message}`);
+    return;
+  }
+  if (!saleLines || saleLines.length === 0) {
+    log(`  • sale_line 없음 — allocation skip`);
+    return;
+  }
 
   let allocated = 0;
   for (const sl of saleLines as any[]) {
@@ -939,6 +955,9 @@ async function importRecurringTasks() {
   }
 
   await run("recurring_task insert", async () => {
+    // 멱등성: CSV에서 import한 title은 기존 row 삭제 후 재삽입
+    const titles = tasks.map((t) => t.title);
+    await supabase.from("recurring_task").delete().in("title", titles);
     const { error } = await supabase.from("recurring_task").insert(tasks);
     if (error) throw error;
   });
