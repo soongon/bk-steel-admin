@@ -130,9 +130,9 @@ function StatementCopy({
         {/* 공급받는자 */}
         <table className={`w-full border table-fixed ${baseClass}`}>
           <colgroup>
-            <col style={{ width: "16%" }} />
+            <col style={{ width: "20%" }} />
             <col />
-            <col style={{ width: "16%" }} />
+            <col style={{ width: "20%" }} />
             <col />
           </colgroup>
           <tbody>
@@ -163,9 +163,9 @@ function StatementCopy({
         {/* 공급자 (우리) */}
         <table className={`w-full border table-fixed ${baseClass}`}>
           <colgroup>
-            <col style={{ width: "16%" }} />
+            <col style={{ width: "20%" }} />
             <col />
-            <col style={{ width: "16%" }} />
+            <col style={{ width: "20%" }} />
             <col />
           </colgroup>
           <tbody>
@@ -323,7 +323,7 @@ function PartyRow({
       </th>
       <td
         colSpan={3}
-        className={`border ${baseClass} px-1 py-0.5 text-xs ${bold ? "font-semibold" : ""}`}
+        className={`border ${baseClass} px-1 pl-3 py-0.5 text-xs ${bold ? "font-semibold" : ""}`}
       >
         {value || " "}
       </td>
@@ -350,7 +350,7 @@ function PartyDoubleRow({
     : "bg-red-50 text-red-900 dark:bg-red-950/20";
   const baseClass = isRec ? "border-blue-700" : "border-red-700";
   const thClass = `border ${baseClass} ${headClass} px-1 py-0.5 text-center text-[10px] font-medium`;
-  const tdClass = `border ${baseClass} px-1 py-0.5 text-xs`;
+  const tdClass = `border ${baseClass} px-1 pl-3 py-0.5 text-xs`;
   return (
     <tr>
       <th className={`${thClass} w-20`}>{label1}</th>
