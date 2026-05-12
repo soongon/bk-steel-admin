@@ -5,8 +5,7 @@ import { KpiCard } from "@/components/admin/kpi-card";
 
 const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
 
-function monthStartIso(): string {
-  const d = new Date();
+function monthStartFromDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
@@ -31,7 +30,36 @@ export default async function DashboardPage({
   const { book } = await params;
   const view = book as BookView;
   const supabase = await createClient();
-  const monthStart = monthStartIso();
+
+  // 가장 최근 거래월 자동 감지 (시드 데이터가 미래/과거여도 자연스럽게 동작)
+  // 매출/매입 중 가장 늦은 ordered_on 의 월을 기준 월로 사용
+  const [latestSaleRes, latestPurchaseRes] = await Promise.all([
+    supabase
+      .from("sale")
+      .select("ordered_on")
+      .is("deleted_at", null)
+      .order("ordered_on", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("purchase")
+      .select("ordered_on")
+      .is("deleted_at", null)
+      .order("ordered_on", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const candidates = [
+    latestSaleRes.data?.ordered_on,
+    latestPurchaseRes.data?.ordered_on,
+  ].filter(Boolean) as string[];
+  const baseDate =
+    candidates.length > 0
+      ? new Date(candidates.sort().pop() as string)
+      : new Date();
+  const monthStart = monthStartFromDate(baseDate);
+  const isHistorical = baseDate < new Date(monthStartFromDate(new Date()));
 
   // 5개 view·테이블 병렬 fetch
   const [pnlRes, receivableRes, payableRes, valuationRes, purchaseAggRes] =
@@ -110,6 +138,16 @@ export default async function DashboardPage({
           <h1 className="text-2xl font-semibold tracking-tight">대시보드</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {BOOK_VIEW_LABEL[view]} 보기 · {monthStart.slice(0, 7)} 기준
+            {isHistorical ? (
+              <span className="ml-2 inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                과거 데이터
+              </span>
+            ) : null}
+            {candidates.length === 0 ? (
+              <span className="ml-2 inline-flex items-center rounded-md bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-400">
+                거래 없음
+              </span>
+            ) : null}
           </p>
         </div>
         <BookBadge book={view} size="md" />
