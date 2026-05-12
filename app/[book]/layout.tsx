@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { isValidBook, type Book } from "@/lib/book";
+import { isValidBookView, type BookView } from "@/lib/book";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
@@ -13,8 +13,8 @@ export default async function BookLayout({
   params: Promise<{ book: string }>;
 }) {
   const { book } = await params;
-  if (!isValidBook(book)) notFound();
-  const currentBook: Book = book;
+  if (!isValidBookView(book)) notFound();
+  const currentBook: BookView = book;
 
   return (
     <SidebarProvider>
@@ -24,7 +24,7 @@ export default async function BookLayout({
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="h-5" />
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>현재 책:</span>
+            <span>현재 보기:</span>
             <BookBadge book={currentBook} />
           </div>
         </header>

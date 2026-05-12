@@ -1,4 +1,4 @@
-import { type Book } from "@/lib/book";
+import { type BookView } from "@/lib/book";
 import { PageStub } from "@/components/admin/page-stub";
 
 export default async function PayablesPage({
@@ -11,7 +11,7 @@ export default async function PayablesPage({
     <PageStub
       title="외상매입금"
       description="vw_payable — 만기 임박 매입 결제 알림"
-      book={book as Book}
+      book={book as BookView}
     />
   );
 }

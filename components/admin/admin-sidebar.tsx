@@ -22,7 +22,7 @@ import {
   WalletIcon,
 } from "lucide-react";
 
-import { type Book } from "@/lib/book";
+import { type BookView } from "@/lib/book";
 import {
   Sidebar,
   SidebarContent,
@@ -94,7 +94,7 @@ function buildMenuGroups(): MenuGroup[] {
   ];
 }
 
-export function AdminSidebar({ book }: { book: Book }) {
+export function AdminSidebar({ book }: { book: BookView }) {
   const pathname = usePathname();
   const groups = buildMenuGroups();
 

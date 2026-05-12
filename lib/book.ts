@@ -17,6 +17,38 @@ export const BOOK_LABEL: Record<Book, string> = {
 };
 
 /**
+ * URL slug (책 선택). 'all'은 "권한 있는 모든 책 합집합" 뷰.
+ * 데이터 입력 액션은 'all' 모드에서 책 선택을 강제해야 함.
+ */
+export const BOOK_VIEWS = ["all", "bk", "sl", "b"] as const;
+export type BookView = (typeof BOOK_VIEWS)[number];
+
+export const BOOK_VIEW_LABEL: Record<BookView, string> = {
+  all: "전체",
+  bk: "법인",
+  sl: "사업자",
+  b: "B계좌",
+};
+
+export const BOOK_VIEW_BADGE_CLASS: Record<BookView, string> = {
+  all: "border-zinc-500/40 bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300",
+  bk: "border-blue-500/50 bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
+  sl: "border-amber-500/50 bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+  b: "border-red-500/60 bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300",
+};
+
+export function isValidBookView(value: unknown): value is BookView {
+  return typeof value === "string" && (BOOK_VIEWS as readonly string[]).includes(value);
+}
+
+/**
+ * 'all'을 제외한 실제 책인지. 데이터 입력 액션 검증용.
+ */
+export function isConcreteBook(view: BookView): view is Book {
+  return view !== "all";
+}
+
+/**
  * 책별 시각 강조 (Tailwind 색상 키). UI 요소에서 색상 매핑 시 사용.
  *
  * - bk (법인) = blue: 정상거래 100%, 안정성 강조

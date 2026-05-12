@@ -1,5 +1,5 @@
 import { ConstructionIcon } from "lucide-react";
-import { type Book } from "@/lib/book";
+import { type BookView } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 
 /**
@@ -13,7 +13,7 @@ export function PageStub({
 }: {
   title: string;
   description?: string;
-  book?: Book;
+  book?: BookView;
   isShared?: boolean;
 }) {
   return (

@@ -2,7 +2,11 @@
 
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { ChevronsUpDownIcon } from "lucide-react";
-import { BOOKS, BOOK_LABEL, type Book, isValidBook } from "@/lib/book";
+import {
+  BOOK_VIEWS,
+  type BookView,
+  isValidBookView,
+} from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 import {
   DropdownMenu,
@@ -15,21 +19,19 @@ import {
 import { SidebarMenuButton } from "@/components/ui/sidebar";
 
 /**
- * 책 selector — sidebar 상단에 위치.
- *
- * 현재 URL의 책 prefix(/bk·/sl·/b)만 교체하여 같은 메뉴를 유지한다.
- * 예: /bk/sales → 사용자가 사업자 선택 → /sl/sales
+ * 책 selector — sidebar 상단.
+ * URL prefix(/all·/bk·/sl·/b)만 교체하여 같은 메뉴 유지.
  */
 export function BookSwitcher() {
   const params = useParams<{ book?: string }>();
   const pathname = usePathname();
   const router = useRouter();
 
-  const current: Book = isValidBook(params.book) ? params.book : "bk";
+  const current: BookView = isValidBookView(params.book) ? params.book : "all";
 
-  function switchTo(target: Book) {
+  function switchTo(target: BookView) {
     if (target === current) return;
-    const next = pathname.replace(/^\/(bk|sl|b)(\/|$)/, `/${target}$2`);
+    const next = pathname.replace(/^\/(all|bk|sl|b)(\/|$)/, `/${target}$2`);
     router.push(next);
   }
 
@@ -44,7 +46,7 @@ export function BookSwitcher() {
         }
       >
         <div className="flex flex-col items-start gap-0.5 text-left">
-          <span className="text-xs text-muted-foreground">현재 책</span>
+          <span className="text-xs text-muted-foreground">현재 보기</span>
           <div className="flex items-center gap-2">
             <BookBadge book={current} size="md" />
           </div>
@@ -54,7 +56,7 @@ export function BookSwitcher() {
       <DropdownMenuContent align="start" className="w-56">
         <DropdownMenuLabel>책 전환</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {BOOKS.map((b) => (
+        {BOOK_VIEWS.map((b) => (
           <DropdownMenuItem
             key={b}
             onClick={() => switchTo(b)}
