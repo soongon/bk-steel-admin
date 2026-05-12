@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS partner (
   representative  TEXT,
   phone           TEXT,
   fax             TEXT,
+  email           TEXT,
   address         TEXT,
   industry        TEXT,
   notes           TEXT,

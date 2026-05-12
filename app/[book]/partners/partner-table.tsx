@@ -56,7 +56,7 @@ export function PartnerTable({ partners }: { partners: PartnerRow[] }) {
               <TableHead className="w-24">코드</TableHead>
               <TableHead>거래처명</TableHead>
               <TableHead className="w-28">대표자</TableHead>
-              <TableHead className="w-36">연락처</TableHead>
+              <TableHead className="w-48">연락처</TableHead>
               <TableHead className="w-32">업종</TableHead>
               <TableHead className="w-20 text-center">활성</TableHead>
               <TableHead className="w-24 text-right">액션</TableHead>
@@ -75,7 +75,18 @@ export function PartnerTable({ partners }: { partners: PartnerRow[] }) {
                   <TableCell className="font-mono text-xs">{p.code}</TableCell>
                   <TableCell className="font-medium">{p.name}</TableCell>
                   <TableCell>{p.representative ?? "—"}</TableCell>
-                  <TableCell>{p.phone ?? "—"}</TableCell>
+                  <TableCell>
+                    {p.phone || p.email ? (
+                      <div className="flex flex-col leading-tight">
+                        {p.phone ? <span>{p.phone}</span> : null}
+                        {p.email ? (
+                          <span className="text-xs text-muted-foreground">{p.email}</span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
                   <TableCell>{p.industry ?? "—"}</TableCell>
                   <TableCell className="text-center">
                     {p.is_active ? (

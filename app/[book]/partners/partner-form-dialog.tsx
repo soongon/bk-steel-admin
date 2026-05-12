@@ -21,6 +21,7 @@ export type PartnerRow = {
   business_no: string | null;
   representative: string | null;
   phone: string | null;
+  email: string | null;
   address: string | null;
   industry: string | null;
   notes: string | null;
@@ -85,8 +86,9 @@ export function PartnerFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="연락처" name="phone" defaultValue={editing?.phone ?? undefined} placeholder="010-0000-0000" />
-            <Field label="업종" name="industry" defaultValue={editing?.industry ?? undefined} placeholder="철근 대리점" />
+            <Field label="이메일" name="email" type="email" defaultValue={editing?.email ?? undefined} placeholder="contact@partner.com" />
           </div>
+          <Field label="업종" name="industry" defaultValue={editing?.industry ?? undefined} placeholder="철근 대리점" />
           <Field label="주소" name="address" defaultValue={editing?.address ?? undefined} />
           <Field label="메모" name="notes" defaultValue={editing?.notes ?? undefined} />
 
@@ -123,6 +125,7 @@ function Field({
   placeholder,
   required,
   uppercase,
+  type,
 }: {
   label: string;
   name: string;
@@ -130,12 +133,14 @@ function Field({
   placeholder?: string;
   required?: boolean;
   uppercase?: boolean;
+  type?: string;
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
       <span className="text-muted-foreground">{label}</span>
       <Input
         name={name}
+        type={type}
         defaultValue={defaultValue ?? ""}
         placeholder={placeholder}
         required={required}
