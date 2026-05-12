@@ -7,6 +7,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { BookBadge } from "@/components/admin/book-badge";
 import { PrintButton } from "@/components/admin/print-button";
 import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
+import { fetchCompanyProfile } from "@/lib/company-profile";
 
 const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
 
@@ -60,6 +61,9 @@ export default async function SaleDetailPage({
   const book = sale.book as Book;
   const partner = sale.partner as any;
   const lines = (sale.sale_line ?? []) as any[];
+
+  // 공급자(우리) 회사 정보 fetch
+  const company = await fetchCompanyProfile(supabase, book);
 
   // StatementData 구성
   const statementData: StatementData = {
@@ -169,7 +173,7 @@ export default async function SaleDetailPage({
       {/* 거래명세표 본체 — A4 폭(약 800px)으로 제한, 종이 느낌. 인쇄 시 풀-블리드 */}
       <section className="bg-zinc-100 px-4 py-6 dark:bg-zinc-900 print:bg-white print:p-0">
         <div className="mx-auto max-w-[800px] rounded-md bg-white p-6 text-zinc-900 shadow-md print:max-w-none print:rounded-none print:p-0 print:shadow-none">
-          <TradingStatement data={statementData} book={book} />
+          <TradingStatement data={statementData} company={company} />
         </div>
       </section>
     </div>

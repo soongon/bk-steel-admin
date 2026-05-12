@@ -7,6 +7,7 @@ import {
   Building2Icon,
   CalendarClockIcon,
   ClipboardListIcon,
+  FactoryIcon,
   FileDownIcon,
   LandmarkIcon,
   LayoutDashboardIcon,
@@ -90,6 +91,12 @@ function buildMenuGroups(): MenuGroup[] {
       items: [
         { label: "결산·신고 export", href: "/export", icon: FileDownIcon },
         { label: "감사 로그", href: "/audit", icon: ShieldCheckIcon },
+      ],
+    },
+    {
+      label: "설정",
+      items: [
+        { label: "회사 정보", href: "/settings/company", icon: FactoryIcon },
       ],
     },
   ];

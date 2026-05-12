@@ -1,5 +1,4 @@
-import { type Book } from "@/lib/book";
-import { type CompanyProfile, getCompanyProfile } from "@/lib/company-profile";
+import { type CompanyProfile } from "@/lib/company-profile";
 
 export type StatementLine = {
   item_name: string;
@@ -46,12 +45,21 @@ const MIN_ROWS = 8; // 빈 행으로 표 높이 유지
  */
 export function TradingStatement({
   data,
-  book,
+  company,
 }: {
   data: StatementData;
-  book: Book;
+  company: CompanyProfile | null;
 }) {
-  const company = getCompanyProfile(book);
+  if (!company) {
+    return (
+      <div className="rounded-md border-2 border-amber-500/60 bg-amber-50 p-6 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+        <h2 className="font-semibold">회사 정보 미설정</h2>
+        <p className="mt-2 text-sm">
+          이 책의 공급자 정보가 등록되지 않았습니다. <strong>설정 → 회사 정보</strong>에서 먼저 등록해주세요.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="statement-print flex flex-col gap-6 print:gap-3">
@@ -145,18 +153,18 @@ function StatementCopy({
             <PartyRow label="상   호" value={company.name} variant={variant} bold />
             <PartyRow
               label="대 표 자"
-              value={`${company.representative}  (인)`}
+              value={`${company.representative ?? ""}  (인)`}
               variant={variant}
             />
             <PartyRow label="사업장주소" value={company.address} variant={variant} />
             <PartyRow
               label="업태 / 종목"
-              value={`${company.business_type} / ${company.business_item}`}
+              value={[company.business_type, company.business_item].filter(Boolean).join(" / ")}
               variant={variant}
             />
             <PartyRow
               label="전화 / FAX"
-              value={`${company.phone}${company.fax ? ` / ${company.fax}` : ""}`}
+              value={[company.phone, company.fax].filter(Boolean).join(" / ")}
               variant={variant}
             />
           </tbody>
