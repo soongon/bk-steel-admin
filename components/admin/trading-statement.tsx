@@ -143,16 +143,11 @@ function StatementCopy({
               value={data.partner.industry ?? ""}
               variant={variant}
             />
-            <PartyRow
-              label="전화 / FAX"
-              value={
-                <span className="flex justify-between gap-2">
-                  <span>{data.partner.phone || ""}</span>
-                  <span className="text-zinc-600 dark:text-zinc-400">
-                    FAX {data.partner.fax || "—"}
-                  </span>
-                </span>
-              }
+            <PartyDoubleRow
+              label1="전 화"
+              value1={data.partner.phone}
+              label2="F A X"
+              value2={data.partner.fax}
               variant={variant}
             />
           </tbody>
@@ -174,16 +169,11 @@ function StatementCopy({
               value={[company.business_type, company.business_item].filter(Boolean).join(" / ")}
               variant={variant}
             />
-            <PartyRow
-              label="전화 / FAX"
-              value={
-                <span className="flex justify-between gap-2">
-                  <span>{company.phone || ""}</span>
-                  <span className="text-zinc-600 dark:text-zinc-400">
-                    FAX {company.fax || "—"}
-                  </span>
-                </span>
-              }
+            <PartyDoubleRow
+              label1="전 화"
+              value1={company.phone}
+              label2="F A X"
+              value2={company.fax}
               variant={variant}
             />
           </tbody>
