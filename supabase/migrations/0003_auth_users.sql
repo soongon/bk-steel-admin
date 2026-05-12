@@ -53,7 +53,10 @@ BEGIN
     WHEN 'owner'      THEN v_role = 'owner'
   END;
 END;
-$$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+$$ LANGUAGE plpgsql STABLE SECURITY INVOKER
+   SET search_path = public, pg_temp;
+-- SECURITY INVOKER: user_book_role의 RLS가 자기 row만 보게 허용하므로 SECURITY DEFINER 불필요
+-- search_path: 외부 schema에서 동일 이름 함수/테이블이 인터셉트하는 것을 방지
 
 -- ============================================================
 -- 헬퍼: 현재 사용자가 owner/manager 역할을 어떤 책에든 보유하는지
@@ -68,7 +71,8 @@ BEGIN
        AND role IN ('owner','manager')
   );
 END;
-$$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+$$ LANGUAGE plpgsql STABLE SECURITY INVOKER
+   SET search_path = public, pg_temp;
 
 -- ============================================================
 -- updated_at 자동 갱신 트리거 함수 (공통 사용)
@@ -79,7 +83,7 @@ BEGIN
   NEW.updated_at := NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = '';
 
 -- user_profile 에 적용
 DROP TRIGGER IF EXISTS trg_user_profile_updated_at ON user_profile;

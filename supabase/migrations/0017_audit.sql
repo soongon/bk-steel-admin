@@ -88,7 +88,12 @@ BEGIN
 
   RETURN COALESCE(NEW, OLD);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+   SET search_path = public, pg_temp;
+
+-- 트리거 함수는 PostgREST RPC로 노출될 필요 없음 → 전역 EXECUTE 회수
+REVOKE EXECUTE ON FUNCTION audit_trigger_fn() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION audit_trigger_fn() FROM anon, authenticated;
 
 -- ============================================================
 -- 트리거 부착 (모든 거래성 + 핵심 마스터)

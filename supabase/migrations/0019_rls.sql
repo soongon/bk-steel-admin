@@ -261,11 +261,11 @@ CREATE POLICY p_consignment_all ON consignment_in FOR ALL
 -- 공통 헬퍼 사용
 CREATE OR REPLACE FUNCTION p_master_select_check() RETURNS BOOLEAN AS $$
   SELECT auth.uid() IS NOT NULL;
-$$ LANGUAGE SQL STABLE;
+$$ LANGUAGE SQL STABLE SET search_path = '';
 
 CREATE OR REPLACE FUNCTION p_master_write_check() RETURNS BOOLEAN AS $$
   SELECT current_user_is_owner_or_manager_any_book();
-$$ LANGUAGE SQL STABLE;
+$$ LANGUAGE SQL STABLE SET search_path = public, pg_temp;
 
 -- partner / partner_alias / partner_credit_limit / item / market_item
 -- warehouse / warehouse_zone / rebar_spec / rebar_grade

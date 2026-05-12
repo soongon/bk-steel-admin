@@ -112,7 +112,7 @@ CREATE OR REPLACE FUNCTION rebar_weight_kg(
 ) RETURNS NUMERIC AS $$
   SELECT unit_weight_kg_per_m * COALESCE(p_length_m, standard_length_m) * p_bars
     FROM rebar_spec WHERE spec_code = p_spec;
-$$ LANGUAGE SQL IMMUTABLE;
+$$ LANGUAGE SQL IMMUTABLE SET search_path = public, pg_temp;
 
 CREATE OR REPLACE FUNCTION rebar_bars_for_tons(
   p_spec TEXT,
@@ -121,7 +121,7 @@ CREATE OR REPLACE FUNCTION rebar_bars_for_tons(
 ) RETURNS INT AS $$
   SELECT CEIL((p_tons * 1000) / (unit_weight_kg_per_m * COALESCE(p_length_m, standard_length_m)))::INT
     FROM rebar_spec WHERE spec_code = p_spec;
-$$ LANGUAGE SQL IMMUTABLE;
+$$ LANGUAGE SQL IMMUTABLE SET search_path = public, pg_temp;
 
 CREATE OR REPLACE FUNCTION rebar_weight_by_bundles(
   p_spec TEXT,
@@ -129,7 +129,7 @@ CREATE OR REPLACE FUNCTION rebar_weight_by_bundles(
 ) RETURNS NUMERIC AS $$
   SELECT bundle_weight_kg * p_bundles
     FROM rebar_spec WHERE spec_code = p_spec;
-$$ LANGUAGE SQL IMMUTABLE;
+$$ LANGUAGE SQL IMMUTABLE SET search_path = public, pg_temp;
 
 -- ============================================================
 -- 품목 마스터 (item)

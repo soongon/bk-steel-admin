@@ -49,7 +49,13 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+   SET search_path = public, pg_temp;
+
+-- 트리거 함수는 PostgREST RPC로 노출될 필요 없음 → 전역 EXECUTE 회수
+-- 트리거 invocation은 EXECUTE 권한 체크 우회하므로 트리거 동작에 영향 없음
+REVOKE EXECUTE ON FUNCTION price_history_autofill_from_purchase() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION price_history_autofill_from_purchase() FROM anon, authenticated;
 
 DROP TRIGGER IF EXISTS trg_price_autofill_from_purchase ON purchase_line;
 CREATE TRIGGER trg_price_autofill_from_purchase
