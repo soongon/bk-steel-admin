@@ -113,6 +113,7 @@ export function SaleTable({
   rebarSpecs,
   sites,
   view,
+  attachmentsByEntity,
 }: {
   sales: SaleListRow[];
   partners: Partner[];
@@ -120,6 +121,7 @@ export function SaleTable({
   rebarSpecs: RebarSpec[];
   sites: SiteOption[];
   view: BookView;
+  attachmentsByEntity?: Record<string, import("@/lib/attachment").Attachment[]>;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SaleRow | null>(null);
@@ -327,6 +329,7 @@ export function SaleTable({
         items={items}
         rebarSpecs={rebarSpecs}
         sites={sites}
+        attachments={editing ? attachmentsByEntity?.[editing.id] ?? [] : []}
       />
     </>
   );

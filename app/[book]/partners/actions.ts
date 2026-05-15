@@ -50,6 +50,7 @@ function bumpRevalidation() {
   // /[book]/partners 는 모든 책(view) 에서 같은 데이터 표시 → 책별 리프레시
   for (const book of ["all", "bk", "sl", "b"]) {
     revalidatePath(`/${book}/partners`);
+    revalidatePath(`/${book}/business-cards`);   // 명함 페이지의 거래처 매핑 표시 갱신
   }
 }
 
@@ -57,13 +58,29 @@ export async function createPartner(formData: FormData): Promise<PartnerActionRe
   const input = readPartnerInput(formData);
   if (!input.name) return { ok: false, error: "거래처명은 필수입니다." };
 
+  // 명함에서 이관된 경우 — 신규 partner 생성 후 business_card.partner_id 자동 매핑
+  const fromCard = formData.get("from_card");
+  const fromCardId = typeof fromCard === "string" && fromCard ? fromCard : null;
+
   // 코드 비어있으면 DB 시퀀스로 자동 생성 → insert payload에서 제거
   const payload: Partial<PartnerInput> = { ...input };
   if (!input.code) delete payload.code;
 
   const supabase = await createClient();
-  const { error } = await supabase.from("partner").insert(payload);
+  const { data, error } = await supabase
+    .from("partner")
+    .insert(payload)
+    .select("id")
+    .single();
   if (error) return { ok: false, error: friendlyError(error.message) };
+
+  if (fromCardId && data) {
+    // 역방향 매핑은 best-effort — 실패해도 partner는 이미 생성됨
+    await supabase
+      .from("business_card")
+      .update({ partner_id: data.id })
+      .eq("id", fromCardId);
+  }
 
   bumpRevalidation();
   return { ok: true };

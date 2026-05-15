@@ -14,6 +14,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
+import { AttachmentUploader } from "@/components/admin/attachments/attachment-uploader";
+import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
+import { type Attachment } from "@/lib/attachment";
 import { createPurchase, updatePurchaseHeader } from "./actions";
 
 export type Partner = { id: string; code: string; name: string };
@@ -84,6 +87,7 @@ export function PurchaseFormDialog({
   partners,
   items,
   rebarSpecs,
+  attachments: initialAttachments = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -92,7 +96,13 @@ export function PurchaseFormDialog({
   partners: Partner[];
   items: Item[];
   rebarSpecs: RebarSpec[];
+  attachments?: Attachment[];
 }) {
+  const [attachments, setAttachments] = useState<Attachment[]>(initialAttachments);
+
+  useEffect(() => {
+    setAttachments(initialAttachments);
+  }, [initialAttachments]);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const today = new Date().toISOString().slice(0, 10);
@@ -520,6 +530,35 @@ export function PurchaseFormDialog({
               className="resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           </Field>
+
+          {/* 첨부 — 편집 모드만. 신규는 저장 후 다시 열어 첨부 */}
+          {editing ? (
+            <div className="rounded-md border-dashed border-2 border-zinc-300 p-3 dark:border-zinc-700">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                사진 첨부 (영수증·세금계산서·증빙 등)
+              </p>
+              <div className="flex flex-col gap-3">
+                <AttachmentGallery
+                  attachments={attachments}
+                  variant="square"
+                  editable
+                  onDeleted={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
+                  emptyLabel="첨부 없음 — 아래에서 추가"
+                />
+                <AttachmentUploader
+                  entityType="purchase"
+                  entityId={editing.id}
+                  multiple
+                  label="사진 추가"
+                  onUploaded={(att) => setAttachments((prev) => [...prev, att])}
+                />
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-md border border-dashed bg-muted/20 p-3 text-center text-xs text-muted-foreground">
+              사진은 매입 저장 후 첨부할 수 있습니다.
+            </p>
+          )}
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 

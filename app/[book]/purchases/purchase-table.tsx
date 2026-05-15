@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import {
   BanknoteIcon,
   PackageCheckIcon,
@@ -126,12 +127,14 @@ export function PurchaseTable({
   items,
   rebarSpecs,
   view,
+  attachmentsByEntity,
 }: {
   purchases: PurchaseListRow[];
   partners: Partner[];
   items: Item[];
   rebarSpecs: RebarSpec[];
   view: BookView;
+  attachmentsByEntity?: Record<string, import("@/lib/attachment").Attachment[]>;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PurchaseRow | null>(null);
@@ -234,12 +237,17 @@ export function PurchaseTable({
                 return (
                   <TableRow key={p.id}>
                     <TableCell className="font-mono text-xs">
-                      <div>{p.doc_no}</div>
+                      <Link
+                        href={`/${view}/purchases/${p.id}`}
+                        className="hover:underline"
+                      >
+                        {p.doc_no}
+                      </Link>
                       {!p.is_documented ? (
-                        <span className="text-[10px] text-amber-600">무자료</span>
+                        <div className="text-[10px] text-amber-600">무자료</div>
                       ) : null}
                       {p.tax_doc_no ? (
-                        <span className="text-[10px] text-muted-foreground">{p.tax_doc_no}</span>
+                        <div className="text-[10px] text-muted-foreground">{p.tax_doc_no}</div>
                       ) : null}
                     </TableCell>
                     <TableCell>
@@ -313,6 +321,7 @@ export function PurchaseTable({
         partners={partners}
         items={items}
         rebarSpecs={rebarSpecs}
+        attachments={editing ? attachmentsByEntity?.[editing.id] ?? [] : []}
       />
     </>
   );

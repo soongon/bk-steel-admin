@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { type BookView, BOOK_VIEW_LABEL } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
+import { type Attachment } from "@/lib/attachment";
 import { SaleTable, type SaleListRow } from "./sale-table";
 
 export default async function SalesPage({
@@ -62,6 +63,26 @@ export default async function SalesPage({
       .order("name"),
   ]);
 
+  const sales = (salesRes.data as unknown as SaleListRow[]) ?? [];
+  const saleIds = sales.map((s) => s.id);
+  const attachmentsRes = saleIds.length
+    ? await supabase
+        .from("attachment")
+        .select(
+          "id, entity_type, entity_id, kind, storage, path, url, thumbnail_url, mime, bytes, width, height, caption, sort_order, created_at",
+        )
+        .eq("entity_type", "sale")
+        .in("entity_id", saleIds)
+        .is("deleted_at", null)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true })
+    : { data: [] as Attachment[] };
+
+  const attachmentsByEntity: Record<string, Attachment[]> = {};
+  for (const a of (attachmentsRes.data ?? []) as Attachment[]) {
+    (attachmentsByEntity[a.entity_id] ??= []).push(a);
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       <header className="flex items-start justify-between gap-4">
@@ -81,12 +102,13 @@ export default async function SalesPage({
       ) : null}
 
       <SaleTable
-        sales={(salesRes.data as unknown as SaleListRow[]) ?? []}
+        sales={sales}
         partners={partnersRes.data ?? []}
         items={itemsRes.data ?? []}
         rebarSpecs={rebarSpecsRes.data ?? []}
         sites={sitesRes.data ?? []}
         view={view}
+        attachmentsByEntity={attachmentsByEntity}
       />
     </div>
   );

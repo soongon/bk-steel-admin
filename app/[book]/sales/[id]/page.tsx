@@ -9,6 +9,8 @@ import { PrintButton } from "@/components/admin/print-button";
 import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
 import { fetchCompanyProfile } from "@/lib/company-profile";
 import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
+import { type Attachment } from "@/lib/attachment";
+import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { DeliveryCertButton } from "./delivery-cert-button";
 
 const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
@@ -30,6 +32,64 @@ const TAX_DOC_KO: Record<string, string> = {
   simple_receipt: "간이영수증",
   none: "무자료",
 };
+
+/** 납품일 D-day 뱃지 — 미래(예정)/오늘/지남 시각 구분. status가 이미 완료면 null. */
+function deliveryDayBadge(deliveredOn: string, status: string) {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+  const dDay = Math.round(
+    (new Date(deliveredOn).getTime() - new Date(today).getTime()) / 86_400_000,
+  );
+  if (dDay > 0) {
+    return {
+      label: `D-${dDay}`,
+      className:
+        "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+    };
+  }
+  if (dDay === 0) {
+    return {
+      label: "오늘",
+      className: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
+    };
+  }
+  // 과거 — status가 delivered/settled면 이미 status 뱃지에서 표현되므로 생략
+  if (status === "delivered" || status === "settled") return null;
+  return {
+    label: `D+${Math.abs(dDay)} 지남`,
+    className: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300",
+  };
+}
+
+/**
+ * settled_on / payment_due_on 으로 수금 상태 derive (KST 기준).
+ * status='settled'(수금완료) / 'overdue'(연체) 인 경우엔 status 뱃지가 이미 같은 의미를
+ * 보여주므로 중복 방지 위해 null 반환.
+ */
+function paymentBadge(status: string, settledOn: string | null, dueOn: string | null) {
+  if (status === "settled" || status === "overdue") return null;
+  if (settledOn) {
+    return {
+      label: "수금완료",
+      className:
+        "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
+    };
+  }
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+  if (dueOn && dueOn < today) {
+    return {
+      label: "수금연체",
+      className: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300",
+    };
+  }
+  if (dueOn) {
+    return {
+      label: "수금예정",
+      className:
+        "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+    };
+  }
+  return null;
+}
 
 export default async function SaleDetailPage({
   params,
@@ -68,6 +128,19 @@ export default async function SaleDetailPage({
 
   // 공급자(우리) 회사 정보 fetch
   const company = await fetchCompanyProfile(supabase, book);
+
+  // 첨부 사진 fetch
+  const { data: attsData } = await supabase
+    .from("attachment")
+    .select(
+      "id, entity_type, entity_id, kind, storage, path, url, thumbnail_url, mime, bytes, width, height, caption, sort_order, created_at",
+    )
+    .eq("entity_type", "sale")
+    .eq("entity_id", id)
+    .is("deleted_at", null)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+  const attachments = (attsData ?? []) as Attachment[];
 
   // 납품확인서 양식 데이터 — site_id 가 있을 때만 누적 빌드 (동일 (book, partner, site) 의 모든 매출)
   const certFormData =
@@ -142,6 +215,20 @@ export default async function SaleDetailPage({
           <span className="inline-flex h-5 items-center rounded-full bg-muted px-2 text-xs">
             {STATUS_KO[sale.status] ?? sale.status}
           </span>
+          {(() => {
+            const pay = paymentBadge(sale.status, sale.settled_on, sale.payment_due_on);
+            if (!pay) return null;
+            return (
+              <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${pay.className}`}>
+                {pay.label}
+              </span>
+            );
+          })()}
+          {!sale.is_documented ? (
+            <span className="inline-flex h-5 items-center rounded-full bg-amber-100 px-2 text-xs text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+              무자료
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <DeliveryCertButton
@@ -183,13 +270,38 @@ export default async function SaleDetailPage({
           </div>
         </MetaCard>
         <MetaCard label="일정">
-          <div className="text-xs">
-            주문 {sale.ordered_on}
-            {sale.delivered_on ? ` / 납품 ${sale.delivered_on}` : ""}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {sale.payment_due_on ? `수금예정 ${sale.payment_due_on}` : ""}
-            {sale.settled_on ? ` · 수금완료 ${sale.settled_on}` : ""}
+          <div className="space-y-1 text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="w-8 text-muted-foreground">주문</span>
+              <span className="font-mono">{sale.ordered_on}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-8 text-muted-foreground">납품</span>
+              {sale.delivered_on ? (
+                <>
+                  <span className="font-mono">{sale.delivered_on}</span>
+                  {(() => {
+                    const d = deliveryDayBadge(sale.delivered_on, sale.status);
+                    if (!d) return null;
+                    return (
+                      <span
+                        className={`inline-flex h-4 items-center rounded px-1.5 text-[10px] font-medium ${d.className}`}
+                      >
+                        {d.label}
+                      </span>
+                    );
+                  })()}
+                </>
+              ) : (
+                <span className="text-muted-foreground">미정</span>
+              )}
+            </div>
+            {sale.payment_due_on || sale.settled_on ? (
+              <div className="text-muted-foreground">
+                {sale.payment_due_on ? `수금예정 ${sale.payment_due_on}` : ""}
+                {sale.settled_on ? ` · 완료 ${sale.settled_on}` : ""}
+              </div>
+            ) : null}
           </div>
         </MetaCard>
         <MetaCard label="금액">
@@ -202,6 +314,16 @@ export default async function SaleDetailPage({
           </div>
         </MetaCard>
       </section>
+
+      {/* 첨부 사진 — 인쇄 시 숨김. 클릭 시 라이트박스 (←/→ 키보드 네비) */}
+      {attachments.length > 0 ? (
+        <section className="px-6 pb-4 print:hidden">
+          <h2 className="mb-2 text-sm font-medium text-muted-foreground">
+            첨부 사진 ({attachments.length}장)
+          </h2>
+          <AttachmentGallery attachments={attachments} variant="square" />
+        </section>
+      ) : null}
 
       {/* 거래명세표 본체 — A4 폭(약 800px)으로 제한, 종이 느낌. 인쇄 시 풀-블리드 */}
       <section className="bg-zinc-100 px-4 py-6 dark:bg-zinc-900 print:bg-white print:p-0">

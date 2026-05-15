@@ -28,14 +28,26 @@ export type PartnerRow = {
   is_active: boolean;
 };
 
+/** 명함에서 거래처로 이관 시 prefill 시드 데이터 */
+export type PartnerPrefill = {
+  name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  from_card_id: string;
+};
+
 export function PartnerFormDialog({
   open,
   onOpenChange,
   editing,
+  prefill,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing: PartnerRow | null;
+  prefill?: PartnerPrefill | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -60,13 +72,20 @@ export function PartnerFormDialog({
     });
   }
 
+  const initial = editing ?? prefill ?? null;
+  const isPrefill = !editing && !!prefill;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editing ? "거래처 수정" : "신규 거래처 등록"}</DialogTitle>
+          <DialogTitle>
+            {editing ? "거래처 수정" : isPrefill ? "신규 거래처 등록 (명함 기반)" : "신규 거래처 등록"}
+          </DialogTitle>
           <DialogDescription>
-            공유 마스터 — 매출·매입에서 거래처명 정합성의 기준이 됩니다.
+            {isPrefill
+              ? "명함 정보로 채워진 폼입니다. 검토 후 저장하면 명함에 자동 매핑됩니다."
+              : "공유 마스터 — 매출·매입에서 거래처명 정합성의 기준이 됩니다."}
           </DialogDescription>
         </DialogHeader>
 
@@ -74,8 +93,12 @@ export function PartnerFormDialog({
           action={handleSubmit}
           className="flex flex-col gap-3"
           // key로 dialog 새로 열릴 때마다 form state 리셋
-          key={editing?.id ?? "new"}
+          key={editing?.id ?? prefill?.from_card_id ?? "new"}
         >
+          {prefill?.from_card_id ? (
+            <input type="hidden" name="from_card" value={prefill.from_card_id} />
+          ) : null}
+
           <div className="grid grid-cols-2 gap-3">
             <Field
               label={editing ? "코드 *" : "코드"}
@@ -85,19 +108,19 @@ export function PartnerFormDialog({
               required={!!editing}
               uppercase
             />
-            <Field label="거래처명 *" name="name" defaultValue={editing?.name} placeholder="(주)엠에스스틸" required />
+            <Field label="거래처명 *" name="name" defaultValue={initial?.name ?? undefined} placeholder="(주)엠에스스틸" required />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="대표자" name="representative" defaultValue={editing?.representative ?? undefined} />
             <Field label="사업자번호" name="business_no" defaultValue={editing?.business_no ?? undefined} placeholder="000-00-00000" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="연락처" name="phone" defaultValue={editing?.phone ?? undefined} placeholder="010-0000-0000" />
-            <Field label="이메일" name="email" type="email" defaultValue={editing?.email ?? undefined} placeholder="contact@partner.com" />
+            <Field label="연락처" name="phone" defaultValue={initial?.phone ?? undefined} placeholder="010-0000-0000" />
+            <Field label="이메일" name="email" type="email" defaultValue={initial?.email ?? undefined} placeholder="contact@partner.com" />
           </div>
           <Field label="업종" name="industry" defaultValue={editing?.industry ?? undefined} placeholder="철근 대리점" />
-          <Field label="주소" name="address" defaultValue={editing?.address ?? undefined} />
-          <Field label="메모" name="notes" defaultValue={editing?.notes ?? undefined} />
+          <Field label="주소" name="address" defaultValue={initial?.address ?? undefined} />
+          <Field label="메모" name="notes" defaultValue={initial?.notes ?? undefined} />
 
           <label className="flex items-center gap-2 text-sm">
             <input

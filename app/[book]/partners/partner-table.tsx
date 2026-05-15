@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -12,13 +13,35 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { PartnerFormDialog, type PartnerRow } from "./partner-form-dialog";
+import { PartnerFormDialog, type PartnerRow, type PartnerPrefill } from "./partner-form-dialog";
 import { deletePartner } from "./actions";
 
-export function PartnerTable({ partners }: { partners: PartnerRow[] }) {
-  const [open, setOpen] = useState(false);
+export function PartnerTable({
+  partners,
+  prefill,
+}: {
+  partners: PartnerRow[];
+  prefill?: PartnerPrefill | null;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [open, setOpen] = useState(!!prefill);
   const [editing, setEditing] = useState<PartnerRow | null>(null);
   const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (prefill?.from_card_id) {
+      setEditing(null);
+      setOpen(true);
+    }
+  }, [prefill?.from_card_id]);
+
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next && prefill) {
+      router.replace(pathname);
+    }
+  }
 
   function openCreate() {
     setEditing(null);
@@ -109,7 +132,12 @@ export function PartnerTable({ partners }: { partners: PartnerRow[] }) {
         </Table>
       </div>
 
-      <PartnerFormDialog open={open} onOpenChange={setOpen} editing={editing} />
+      <PartnerFormDialog
+        open={open}
+        onOpenChange={handleOpenChange}
+        editing={editing}
+        prefill={editing ? null : prefill}
+      />
     </>
   );
 }

@@ -7,6 +7,7 @@ import {
   Building2Icon,
   CalendarClockIcon,
   ClipboardListIcon,
+  ContactIcon,
   FactoryIcon,
   FileDownIcon,
   LandmarkIcon,
@@ -75,6 +76,7 @@ function buildMenuGroups(): MenuGroup[] {
       label: "영업",
       items: [
         { label: "영업내역", href: "/sales-log", icon: PhoneCallIcon },
+        { label: "명함", href: "/business-cards", icon: ContactIcon },
         { label: "정기업무", href: "/recurring-tasks", icon: ClipboardListIcon },
         { label: "개선 아이디어", href: "/improvement-ideas", icon: LightbulbIcon },
       ],

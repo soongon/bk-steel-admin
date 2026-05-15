@@ -1,8 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
 import { PartnerTable } from "./partner-table";
+import { type PartnerPrefill } from "./partner-form-dialog";
 
-export default async function PartnersPage() {
+export default async function PartnersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from_card?: string }>;
+}) {
+  const { from_card } = await searchParams;
   const supabase = await createClient();
+
   const { data, error } = await supabase
     .from("partner")
     .select(
@@ -10,6 +17,28 @@ export default async function PartnersPage() {
     )
     .is("deleted_at", null)
     .order("code", { ascending: true });
+
+  // 명함에서 prefill 이관
+  let prefill: PartnerPrefill | null = null;
+  if (from_card) {
+    const { data: card } = await supabase
+      .from("business_card")
+      .select("id, name, title, company, phone, email, address")
+      .eq("id", from_card)
+      .is("deleted_at", null)
+      .single();
+    if (card) {
+      const titlePart = card.title ? ` (${card.title})` : "";
+      prefill = {
+        from_card_id: card.id,
+        name: card.company,        // 회사명을 거래처명으로
+        phone: card.phone,
+        email: card.email,
+        address: card.address,
+        notes: `담당자: ${card.name}${titlePart}`,
+      };
+    }
+  }
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
@@ -30,7 +59,7 @@ export default async function PartnersPage() {
           데이터 로딩 실패: {error.message}
         </div>
       ) : (
-        <PartnerTable partners={data ?? []} />
+        <PartnerTable partners={data ?? []} prefill={prefill} />
       )}
     </div>
   );
