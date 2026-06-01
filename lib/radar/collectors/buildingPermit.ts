@@ -91,8 +91,8 @@ function isNewOrExtension(archGbCdNm: unknown): boolean {
 export function normalizePermitItem(item: Record<string, any>, sigunguCd: string): CollectedProject | null {
   if (!isNewOrExtension(item.archGbCdNm)) return null;
 
-  const sourceKey = item.mgmPmsrgstPk ?? null; // 허가관리대장 PK (숫자)
-  if (sourceKey == null) return null;
+  const pk = item.mgmPmsrgstPk ?? null; // 허가관리대장 PK
+  if (pk == null) return null;
 
   const region = SIGUNGU_TO_REGION[sigunguCd];
   if (!region) return null;
@@ -101,7 +101,9 @@ export function normalizePermitItem(item: Record<string, any>, sigunguCd: string
 
   return {
     source: "building_permit",
-    source_key: String(sourceKey),
+    // ⚠️ mgmPmsrgstPk는 전역 고유가 아니다(시군구 간 충돌 확인) → sigunguCd로 네임스페이스해
+    //    cross-region upsert 덮어쓰기를 방지. (permit의 sigunguCd는 고정이라 안정적 키.)
+    source_key: `${sigunguCd}-${pk}`,
     region,
     sigungu_code: sigunguCd,
     project_type: "private",
