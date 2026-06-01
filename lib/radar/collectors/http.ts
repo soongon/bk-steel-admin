@@ -38,3 +38,27 @@ export async function fetchJson(url: string, timeoutMs = 12000): Promise<any> {
     clearTimeout(timer);
   }
 }
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * fetchJson + 실패 시 재시도. data.go.kr의 간헐적 행(行)·타임아웃·5xx를 흡수.
+ * 선형 백오프(delayMs, 2*delayMs…). 끝까지 실패하면 마지막 에러를 던짐(호출부에서 per-단위 catch).
+ */
+export async function fetchJsonRetry(
+  url: string,
+  opts: { retries?: number; timeoutMs?: number; delayMs?: number } = {},
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any> {
+  const { retries = 2, timeoutMs = 12000, delayMs = 600 } = opts;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fetchJson(url, timeoutMs);
+    } catch (e) {
+      lastErr = e;
+      if (attempt < retries) await sleep(delayMs * (attempt + 1));
+    }
+  }
+  throw lastErr;
+}

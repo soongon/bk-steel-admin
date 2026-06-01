@@ -15,7 +15,7 @@
  */
 
 import type { CollectedProject, RadarRegion } from "../types";
-import { buildUrl, fetchJson } from "./http";
+import { buildUrl, fetchJsonRetry } from "./http";
 import type { Collector, CollectContext } from "./types";
 
 const BID_BASE = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk";
@@ -110,7 +110,7 @@ async function fetchWindow(base: string, key: string, bgn: string, end: string):
       inqryEndDt: end,
       type: "json",
     });
-    const json = await fetchJson(url);
+    const json = await fetchJsonRetry(url);
     if (json?.["nkoneps.com.response.ResponseError"]) {
       const h = json["nkoneps.com.response.ResponseError"].header;
       throw new Error(`나라장터 에러 ${h?.resultCode} ${h?.resultMsg}`);

@@ -18,7 +18,7 @@
 
 import type { CollectedProject, RadarStage, StructureType } from "../types";
 import { REGIONS, SIGUNGU_TO_REGION } from "../config";
-import { buildUrl, fetchJson } from "./http";
+import { buildUrl, fetchJsonRetry } from "./http";
 import type { Collector, CollectContext } from "./types";
 
 const BASE = "https://apis.data.go.kr/1613000/ArchPmsHubService/getApBasisOulnInfo";
@@ -169,7 +169,7 @@ export const buildingPermitCollector: Collector = {
                 pageNo: page,
                 _type: "json",
               });
-              const json = await fetchJson(url);
+              const json = await fetchJsonRetry(url);
               const body = json?.response?.body;
               const rawItems = body?.items?.item ?? [];
               const items = Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [];
