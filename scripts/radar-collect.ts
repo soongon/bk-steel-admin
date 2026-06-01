@@ -24,7 +24,7 @@ loadEnv({ path: ".env.development" });
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { runCollectors, scoreProjects, upsertProjects } from "../lib/radar/collectors";
-import type { RadarRegion } from "../lib/radar/types";
+import type { RadarRegion, RadarSource } from "../lib/radar/types";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 const SINCE_DAYS = Number(process.env.RADAR_SINCE_DAYS ?? 30);
@@ -40,6 +40,9 @@ async function main() {
     naraWindowDays: envNum("RADAR_NARA_DAYS"),
     regions: process.env.RADAR_REGIONS
       ? (process.env.RADAR_REGIONS.split(",").map((s) => s.trim()).filter(Boolean) as RadarRegion[])
+      : undefined,
+    sources: process.env.RADAR_SOURCES
+      ? (process.env.RADAR_SOURCES.split(",").map((s) => s.trim()).filter(Boolean) as RadarSource[])
       : undefined,
   };
   console.log(`[radar] 수집 시작${DRY_RUN ? " (dry-run)" : ""}`, ctx);

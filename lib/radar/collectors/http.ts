@@ -21,10 +21,20 @@ export function buildUrl(
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 외부 OpenAPI 응답은 본질적으로 untyped
-export async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} ${res.statusText} (${url.split("?")[0]})`);
+export async function fetchJson(url: string, timeoutMs = 12000): Promise<any> {
+  // 타임아웃 필수: data.go.kr이 연결만 잡고 응답을 안 주면(행) 순차 수집 전체가 멈춤.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${res.statusText} (${url.split("?")[0]})`);
+    }
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }

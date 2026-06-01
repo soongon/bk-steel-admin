@@ -21,6 +21,7 @@ export const COLLECTORS: Collector[] = [buildingPermitCollector, naraBidCollecto
 export async function runCollectors(ctx: CollectContext): Promise<CollectedProject[]> {
   const all: CollectedProject[] = [];
   for (const c of COLLECTORS) {
+    if (ctx.sources && !ctx.sources.includes(c.source)) continue;
     const items = await c.collect(ctx);
     console.log(`[radar] ${c.label}: ${items.length}건`);
     all.push(...items);
