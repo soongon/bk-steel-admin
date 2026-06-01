@@ -16,6 +16,7 @@ import {
   LightbulbIcon,
   PackageIcon,
   PhoneCallIcon,
+  RadarIcon,
   ReceiptIcon,
   ShieldCheckIcon,
   ShoppingBagIcon,
@@ -45,6 +46,8 @@ type MenuItem = {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** true면 book prefix를 붙이지 않고 절대 경로로 링크(예: /radar — book 밖 독립 라우트). */
+  absolute?: boolean;
 };
 
 type MenuGroup = {
@@ -79,6 +82,13 @@ function buildMenuGroups(): MenuGroup[] {
         { label: "명함", href: "/business-cards", icon: ContactIcon },
         { label: "정기업무", href: "/recurring-tasks", icon: ClipboardListIcon },
         { label: "개선 아이디어", href: "/improvement-ideas", icon: LightbulbIcon },
+      ],
+    },
+    {
+      label: "인텔리전스",
+      items: [
+        // book 밖 독립 라우트 — 외부 공공데이터(법인 영역). absolute로 prefix 생략.
+        { label: "발주 레이더", href: "/radar", icon: RadarIcon, absolute: true },
       ],
     },
     {
@@ -126,7 +136,7 @@ export function AdminSidebar({ book }: { book: BookView }) {
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((item) => {
-                  const fullHref = `/${book}${item.href}`;
+                  const fullHref = item.absolute ? item.href : `/${book}${item.href}`;
                   const isActive = pathname === fullHref || pathname.startsWith(fullHref + "/");
                   const Icon = item.icon;
                   return (

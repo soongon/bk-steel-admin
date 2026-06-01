@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "migrate:may-data": "tsx scripts/migrate-may-data.ts",
-    "migrate:may-data:dry": "tsx scripts/migrate-may-data.ts --dry-run"
+    "migrate:may-data:dry": "tsx scripts/migrate-may-data.ts --dry-run",
+    "radar:collect": "tsx scripts/radar-collect.ts",
+    "radar:collect:dry": "tsx scripts/radar-collect.ts --dry-run",
+    "radar:check": "tsx scripts/radar-scoring-check.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
