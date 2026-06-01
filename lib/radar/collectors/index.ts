@@ -61,11 +61,18 @@ export async function upsertProjects(
   rows: UpsertableProject[],
 ): Promise<{ upserted: number }> {
   if (rows.length === 0) return { upserted: 0 };
+  // (source, source_key) 중복 제거 — 건축인허가 API는 무정렬 페이징이라 같은 레코드가
+  // 여러 페이지에 중복 등장할 수 있다. 한 배치에 중복 키가 있으면 Postgres가
+  // "ON CONFLICT DO UPDATE cannot affect row a second time" 에러를 내므로 사전 dedupe.
+  const byKey = new Map<string, UpsertableProject>();
+  for (const r of rows) byKey.set(`${r.source}::${r.source_key}`, r);
+  const deduped = [...byKey.values()];
+
   const { error, count } = await supabase
     .from("construction_project")
-    .upsert(rows, { onConflict: "source,source_key", count: "exact" });
+    .upsert(deduped, { onConflict: "source,source_key", count: "exact" });
   if (error) throw new Error(`upsert 실패: ${error.message}`);
-  return { upserted: count ?? rows.length };
+  return { upserted: count ?? deduped.length };
 }
 
 /** 전체 파이프라인: 수집 → 점수 → upsert. */
