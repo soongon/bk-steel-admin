@@ -38,28 +38,25 @@ function compareProjects(a: RadarProjectRow, b: RadarProjectRow): number {
 }
 
 function computeKpis(rows: RadarProjectRow[]) {
+  // 건축HUB는 발행 지연이 커 "이번주 실착공" 같은 지표가 무의미 → 실시간(관급 낙찰)·실용 지표로.
   const now = new Date();
-  const sevenDaysAgo = new Date(now);
-  sevenDaysAgo.setDate(now.getDate() - 7);
+  const ago = new Date(now);
+  ago.setDate(now.getDate() - 7);
+  const d7 = ago.toISOString().slice(0, 10); // 7일 전 (ISO date 문자열 비교)
 
-  // 이번 주 월요일 0시
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-  startOfWeek.setHours(0, 0, 0, 0);
-
-  let newCount = 0;
-  let aCount = 0;
-  let startsThisWeek = 0;
-  let totalTon = 0;
+  let recentAwards = 0; // 관급 낙찰 최근 7일 — 준실시간 "지금 전화" 리드
+  let aCount = 0; // A등급 기회
+  let ongoingStarts = 0; // 민간 진행 착공 현장
+  let totalTon = 0; // 민간 추정 철근 합계
   for (const p of rows) {
-    if (new Date(p.created_at) >= sevenDaysAgo) newCount += 1;
-    if (p.relevance_grade === "A") aCount += 1;
-    if (p.stage === "construction_start" && p.stage_date && new Date(p.stage_date) >= startOfWeek) {
-      startsThisWeek += 1;
+    if (p.source === "nara_bid" && p.stage === "awarded" && p.stage_date && p.stage_date >= d7) {
+      recentAwards += 1;
     }
+    if (p.relevance_grade === "A") aCount += 1;
+    if (p.source === "building_permit" && p.stage === "construction_start") ongoingStarts += 1;
     totalTon += p.est_rebar_ton ?? 0;
   }
-  return { newCount, aCount, startsThisWeek, totalTon };
+  return { recentAwards, aCount, ongoingStarts, totalTon };
 }
 
 /** 토글 칩 하나. */
@@ -183,13 +180,13 @@ export function RadarDashboard({ projects }: { projects: RadarProjectRow[] }) {
 
       {/* KPI 4개 */}
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard title="신규 발주 (7일)" value={`${kpis.newCount}건`} hint="최근 수집 기준" />
+        <KpiCard title="관급 낙찰 (7일)" value={`${kpis.recentAwards}건`} hint="지금 전화 · 낙찰사" />
         <KpiCard title="A등급 기회" value={`${kpis.aCount}건`} hint="관련성 상위" />
-        <KpiCard title="이번주 착공" value={`${kpis.startsThisWeek}건`} hint="지금 전화 대상" />
+        <KpiCard title="진행 착공 현장" value={`${kpis.ongoingStarts}건`} hint="민간 · 진행 중" />
         <KpiCard
           title="추정 철근 합계"
           value={`약 ${Math.round(kpis.totalTon).toLocaleString("ko-KR")}톤`}
-          hint="연면적×계수 추정"
+          hint="민간 연면적×계수"
         />
       </section>
 
