@@ -1,25 +1,29 @@
 /**
- * 관급 나라장터 어댑터 — 조달청 입찰공고(공사) + 낙찰정보.
+ * 관급 나라장터 어댑터 — 입찰공고(공사) + 낙찰(공사). 실호출 확정(2026-06).
  *
- * 핵심: 발주처(시청)는 '돈 주는 곳'이지 철강 사는 곳이 아니다. 입찰공고만 보면 의미 없고,
- *       낙찰정보로 "누가 따갔나"를 붙여야 진짜 구매자(=낙찰사)가 나온다.
- *       → 공고번호(bidNtceNo)로 입찰↔낙찰 조인. 연락 주체 = 낙찰사.
- * 오퍼레이션: 공사 전용(getBidPblancListInfoCnstwk 계열). 물품/용역 오퍼레이션 쓰면 응답 안 옴.
+ * 핵심: 발주처(시청)는 돈 주는 곳이지 철강 사는 곳이 아니다. **낙찰사**가 실제 구매자.
+ *       낙찰 API가 낙찰사명·대표·전화·주소까지 줘서 "지금 낙찰사에 전화"가 바로 된다.
+ *       건축HUB(수주 지연)와 달리 **날짜 필터가 있어 준실시간**.
  *
- * ⚠️ 필드/오퍼레이션 정확명은 활용명세서로 재확인 — TODO(명세).
- *    키 없으면 [] 반환. 키: process.env.DATA_GO_KR_NARA_KEY
+ * 엔드포인트(네임스페이스 다름 주의):
+ *   입찰공고: /1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk
+ *   낙찰:     /1230000/as/ScsbidInfoService/getScsbidListSttusCnstwk
+ * 공통 파라미터: inqryDiv=1(공고/개찰일 기준) · inqryBgnDt/inqryEndDt(YYYYMMDDHHMM, 범위 ~1개월) · type=json
+ * 응답: response.body.items[] (배열) · body.totalCount. 지역 요청필터 없음 → 전국 받아 현장지역으로 거른다.
+ * 키: process.env.DATA_GO_KR_NARA_KEY ?? DATA_GO_KR_BUILDING_KEY (동일 data.go.kr 계정).
  * 참조(핸드오프): §3-B, §2 연락주체
  */
 
-import type { CollectedProject, RadarRegion, RadarStage } from "../types";
+import type { CollectedProject, RadarRegion } from "../types";
 import { buildUrl, fetchJson } from "./http";
 import type { Collector, CollectContext } from "./types";
 
-// TODO(명세): 엔드포인트·오퍼레이션 확정.
-const BID_BASE = "https://apis.data.go.kr/1230000/BidPublicInfoService/getBidPblancListInfoCnstwk";
-const AWARD_BASE = "https://apis.data.go.kr/1230000/ScsbidInfoService/getScsbidListInfoCnstwk";
+const BID_BASE = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk";
+const AWARD_BASE = "https://apis.data.go.kr/1230000/as/ScsbidInfoService/getScsbidListSttusCnstwk";
+const PAGE = 100;
+const MAX_PAGES_PER_WINDOW = 200; // 안전 상한 (전국 공사 ~12k/월 → ~128p)
 
-/** 텍스트(주소/기관/공고명)에서 권역 판정. 권역 밖이면 null(제외). */
+/** 텍스트(현장지역/수요기관/공고명)에서 권역 판정. 권역 밖이면 null. */
 export function matchRegion(text: string | null | undefined): RadarRegion | null {
   if (!text) return null;
   const s = String(text);
@@ -29,7 +33,7 @@ export function matchRegion(text: string | null | undefined): RadarRegion | null
   return null;
 }
 
-/** 'YYYY-MM-DD ...' / 'YYYYMMDD' 등에서 날짜만 ISO로. */
+/** "2026-05-02 13:16:05" / "2026-05-14" → "2026-05-02". */
 function toIsoDate(v: string | null | undefined): string | null {
   if (!v) return null;
   const m = String(v).match(/(\d{4})[-.]?(\d{2})[-.]?(\d{2})/);
@@ -42,51 +46,127 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** 입찰공고 + (있으면) 낙찰 → CollectedProject. 공고번호/권역 없으면 null. */
-export function normalizeBid(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 외부 응답
-  bid: Record<string, any>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 외부 응답
-  award: Record<string, any> | null,
-): CollectedProject | null {
-  // TODO(명세): 공고번호 필드 확인 (bidNtceNo).
-  const sourceKey = bid.bidNtceNo ?? null;
-  if (!sourceKey) return null;
+/** 공고번호+차수 = 입찰공고 ↔ 낙찰 조인키. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function bidKey(item: Record<string, any>): string | null {
+  if (!item.bidNtceNo) return null;
+  return `${item.bidNtceNo}-${item.bidNtceOrd ?? "000"}`;
+}
 
-  // 지역: 참가가능지역 → 수요기관 → 발주기관 → 공고명 순으로 텍스트 매칭.
-  // TODO(명세): 참가가능지역 코드(시도)가 있으면 그걸 1차로.
-  const region =
-    matchRegion(bid.rgnLmtBidLocplcArea) ??
-    matchRegion(bid.dminsttNm) ??
-    matchRegion(bid.ntceInsttNm) ??
-    matchRegion(bid.bidNtceNm);
+const p2 = (n: number) => String(n).padStart(2, "0");
+function ymdhm(d: Date): string {
+  return `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}${p2(d.getHours())}${p2(d.getMinutes())}`;
+}
+
+/** 오늘부터 days일을 ≤chunk일 윈도우들로 분할 (API 범위 제한 회피). */
+function dateWindows(days: number, chunk = 28): Array<[string, string]> {
+  const wins: Array<[string, string]> = [];
+  let end = new Date();
+  end.setHours(23, 59, 0, 0);
+  let remaining = days;
+  while (remaining > 0) {
+    const span = Math.min(chunk, remaining);
+    const bgn = new Date(end);
+    bgn.setDate(bgn.getDate() - span);
+    bgn.setHours(0, 0, 0, 0);
+    wins.push([ymdhm(bgn), ymdhm(end)]);
+    end = new Date(bgn);
+    end.setMinutes(end.getMinutes() - 1);
+    remaining -= span;
+  }
+  return wins;
+}
+
+/** 한 날짜 윈도우의 전 페이지 수집. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchWindow(base: string, key: string, bgn: string, end: string): Promise<any[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: any[] = [];
+  for (let page = 1; page <= MAX_PAGES_PER_WINDOW; page++) {
+    const url = buildUrl(base, {
+      serviceKey: key,
+      pageNo: page,
+      numOfRows: PAGE,
+      inqryDiv: 1,
+      inqryBgnDt: bgn,
+      inqryEndDt: end,
+      type: "json",
+    });
+    const json = await fetchJson(url);
+    if (json?.["nkoneps.com.response.ResponseError"]) {
+      const h = json["nkoneps.com.response.ResponseError"].header;
+      throw new Error(`나라장터 에러 ${h?.resultCode} ${h?.resultMsg}`);
+    }
+    const body = json?.response?.body;
+    let items = body?.items?.item ?? body?.items ?? [];
+    items = Array.isArray(items) ? items : items ? [items] : [];
+    if (items.length === 0) break;
+    out.push(...items);
+    const total = Number(body?.totalCount ?? 0);
+    if (page * PAGE >= total) break;
+  }
+  return out;
+}
+
+/** 낙찰 item → awarded CollectedProject. 권역 밖이면 null. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function normalizeAward(item: Record<string, any>): CollectedProject | null {
+  const key = bidKey(item);
+  if (!key) return null;
+  // 낙찰엔 현장지역 필드가 없어 수요기관/공고명으로 판정 (낙찰사 주소는 시공사 소재지라 제외).
+  const region = matchRegion(item.dminsttNm) ?? matchRegion(item.bidNtceNm);
   if (!region) return null;
 
-  // TODO(명세): 낙찰사명 필드 확인 (scsbidCorpNm / opengCorpInfo 계열).
-  const awardedCompany = award?.scsbidCorpNm ?? award?.bidwinnrNm ?? null;
-  const stage: RadarStage = awardedCompany ? "awarded" : "bid_notice";
-  const stageDate = awardedCompany
-    ? toIsoDate(award?.opengDt ?? award?.rlOpengDt)
-    : toIsoDate(bid.bidNtceDt);
-
+  const winner = item.bidwinnrNm?.trim() || null;
+  const tel = item.bidwinnrTelNo?.trim() || null;
   return {
     source: "nara_bid",
-    source_key: String(sourceKey),
+    source_key: key,
     region,
     sigungu_code: null,
     project_type: "public",
-    title: bid.bidNtceNm?.trim() ?? "(공고명 미상)",
-    address: bid.rgnLmtBidLocplcArea?.trim() ?? null,
-    usage: null, // 관급 공사 공고엔 용도 없음 → 점수는 규모·거리 보강 후
+    title: item.bidNtceNm?.trim() || "(공고명 미상)",
+    address: item.dminsttNm?.trim() || null,
+    usage: null,
     structure: null,
     floor_area: null,
-    stage,
-    stage_date: stageDate,
-    ordering_org: (bid.dminsttNm ?? bid.ntceInsttNm)?.trim() ?? null, // 발주처(표시용·연락대상 아님)
-    contact_party: awardedCompany ?? "낙찰 전 — 연락 대상 미정", // 낙찰 후에만 실제 연락처(낙찰사)
-    awarded_company: awardedCompany,
-    est_amount: num(bid.presmptPrce) ?? num(bid.bssamt),
-    raw: { bid, award },
+    stage: "awarded",
+    stage_date: toIsoDate(item.fnlSucsfDate ?? item.rlOpengDt),
+    ordering_org: item.dminsttNm?.trim() || null, // 발주처(표시용·연락대상 아님)
+    contact_party: winner ? (tel ? `${winner} · ${tel}` : winner) : "낙찰사", // 낙찰사 + 전화
+    awarded_company: winner,
+    est_amount: num(item.sucsfbidAmt),
+    raw: item,
+  };
+}
+
+/** 입찰공고 item → bid_notice CollectedProject. 권역 밖이면 null. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function normalizeBid(item: Record<string, any>): CollectedProject | null {
+  const key = bidKey(item);
+  if (!key) return null;
+  const region =
+    matchRegion(item.cnstrtsiteRgnNm) ?? matchRegion(item.dminsttNm) ?? matchRegion(item.bidNtceNm);
+  if (!region) return null;
+
+  return {
+    source: "nara_bid",
+    source_key: key,
+    region,
+    sigungu_code: null,
+    project_type: "public",
+    title: item.bidNtceNm?.trim() || "(공고명 미상)",
+    address: item.cnstrtsiteRgnNm?.trim() || item.dminsttNm?.trim() || null,
+    usage: null,
+    structure: null,
+    floor_area: null,
+    stage: "bid_notice",
+    stage_date: toIsoDate(item.bidNtceDt),
+    ordering_org: item.dminsttNm?.trim() || item.ntceInsttNm?.trim() || null,
+    contact_party: "낙찰 전 — 연락 대상 미정", // 낙찰 후 낙찰사로 채워짐
+    awarded_company: null,
+    est_amount: num(item.presmptPrce) ?? num(item.bdgtAmt),
+    raw: item,
   };
 }
 
@@ -94,37 +174,34 @@ export const naraBidCollector: Collector = {
   source: "nara_bid",
   label: "관급 나라장터(입찰+낙찰)",
   async collect(ctx: CollectContext): Promise<CollectedProject[]> {
-    const key = process.env.DATA_GO_KR_NARA_KEY;
+    const key = process.env.DATA_GO_KR_NARA_KEY || process.env.DATA_GO_KR_BUILDING_KEY;
     if (!key) {
-      console.warn("[radar] DATA_GO_KR_NARA_KEY 없음 — 관급 수집 건너뜀");
+      console.warn("[radar] 나라장터 키 없음 — 관급 수집 건너뜀");
       return [];
     }
 
-    const out: CollectedProject[] = [];
-    const numOfRows = ctx.maxRowsPerRegion ?? 100;
+    const windows = dateWindows(ctx.naraWindowDays ?? 30);
+    // 공고번호 → 레코드. 낙찰(awarded) 우선, 없으면 입찰공고(bid_notice).
+    const awarded = new Map<string, CollectedProject>();
+    const notices = new Map<string, CollectedProject>();
 
-    try {
-      // TODO(명세): inqryDiv·검색기간(inqryBgnDt/inqryEndDt)·지역 파라미터·페이징 추가.
-      const bidUrl = buildUrl(BID_BASE, { serviceKey: key, numOfRows, pageNo: 1, type: "json" });
-      const bidJson = await fetchJson(bidUrl);
-      const rawBids = bidJson?.response?.body?.items ?? [];
-      const bids = Array.isArray(rawBids) ? rawBids : [rawBids];
-
-      // 낙찰정보 조인: 공고번호 → 낙찰사.
-      // TODO(명세): AWARD_BASE 호출(개찰결과/최종낙찰자)해서 awardByNo 채우기.
-      //   const awardJson = await fetchJson(buildUrl(AWARD_BASE, { serviceKey: key, ... }));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 외부 응답
-      const awardByNo = new Map<string, any>();
-      void AWARD_BASE; // (키 도착 후 사용)
-
-      for (const bid of bids) {
-        const award = awardByNo.get(String(bid.bidNtceNo)) ?? null;
-        const p = normalizeBid(bid, award);
-        if (p && (!ctx.regions || ctx.regions.includes(p.region))) out.push(p);
+    for (const [bgn, end] of windows) {
+      try {
+        for (const a of await fetchWindow(AWARD_BASE, key, bgn, end)) {
+          const p = normalizeAward(a);
+          if (p) awarded.set(p.source_key, p);
+        }
+        for (const b of await fetchWindow(BID_BASE, key, bgn, end)) {
+          const p = normalizeBid(b);
+          if (p && !awarded.has(p.source_key)) notices.set(p.source_key, p);
+        }
+      } catch (e) {
+        console.error(`[radar] 관급 수집 실패 (${bgn}~${end}):`, (e as Error).message);
       }
-    } catch (e) {
-      console.error("[radar] 관급 수집 실패:", (e as Error).message);
     }
+
+    let out = [...awarded.values(), ...notices.values()];
+    if (ctx.regions) out = out.filter((p) => ctx.regions!.includes(p.region));
     return out;
   },
 };

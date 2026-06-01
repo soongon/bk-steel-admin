@@ -24,6 +24,8 @@ export interface CollectContext {
   maxBjdongPerSigungu?: number;
   /** 특정 권역만 수집(부분 sync·테스트). 미지정=전체. */
   regions?: RadarRegion[];
+  /** 관급(나라장터): 최근 N일 입찰공고/낙찰 수집(≤28일씩 청크). 기본 30. */
+  naraWindowDays?: number;
 }
 
 export interface Collector {
