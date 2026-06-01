@@ -101,6 +101,10 @@ export const USAGE_LABEL: Record<string, string> = {
   apartment: "공동주택",
   education: "교육",
   etc: "기타",
+  // 관급(나라장터) 공종 카테고리
+  building: "건축",
+  civil_struct: "구조토목",
+  civil_low: "토목",
 };
 
 // ── 관련성 등급 — 핸드오프 §6 (A=코랄, B=앰버, C=그레이) ───────

@@ -7,7 +7,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CollectedProject, UpsertableProject } from "../types";
-import { computeRelevance, estimateRebarTon } from "../scoring";
+import { computeRelevance, computeNaraRelevance, estimateRebarTon } from "../scoring";
 import { buildingPermitCollector } from "./buildingPermit";
 import { naraBidCollector } from "./naraBid";
 import type { Collector, CollectContext } from "./types";
@@ -34,17 +34,21 @@ export async function runCollectors(ctx: CollectContext): Promise<CollectedProje
  */
 export function scoreProjects(items: CollectedProject[]): UpsertableProject[] {
   return items.map((p) => {
-    const rel = computeRelevance({
-      usage: p.usage,
-      structure: p.structure,
-      floorArea: p.floor_area,
-      distanceKm: null,
-    });
+    const rel =
+      p.source === "nara_bid"
+        ? computeNaraRelevance({ category: p.usage, estAmount: p.est_amount })
+        : computeRelevance({
+            usage: p.usage,
+            structure: p.structure,
+            floorArea: p.floor_area,
+            distanceKm: null,
+          });
     return {
       ...p,
       relevance_score: rel.score,
       relevance_grade: rel.grade,
-      est_rebar_ton: estimateRebarTon(p.floor_area, p.usage, p.structure),
+      est_rebar_ton:
+        p.source === "nara_bid" ? null : estimateRebarTon(p.floor_area, p.usage, p.structure),
       lat: null,
       lng: null,
       distance_km: null,

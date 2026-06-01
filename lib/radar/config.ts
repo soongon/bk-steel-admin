@@ -142,3 +142,20 @@ export const REBAR_KG_PER_SQM: Record<string, number> = {
 
 /** 철골(steel) 강관·형강 kg/㎡ 계수. */
 export const STEEL_KG_PER_SQM = 45;
+
+// ── 관급(나라장터) 철근관련성 — 공종 카테고리 + 낙찰금액 ──────────
+/** 공종 카테고리 점수(0~1). 건축=철근 多 / 구조토목=中 / 일반토목=弱. (제외는 수집 단계에서 컷) */
+export const NARA_CATEGORY_SCORE: Record<string, number> = {
+  building: 1.0,
+  civil_struct: 0.6,
+  civil_low: 0.2,
+};
+/** 관급 가중치(합 100). 거리는 좌표 없어 제외. */
+export const NARA_WEIGHTS = { category: 60, amount: 40 } as const;
+/** 낙찰금액/추정가격(원) → 규모 점수. [임계≥, 점수] 내림차순. TODO(보정). */
+export const NARA_AMOUNT_TIERS: Array<[number, number]> = [
+  [10_000_000_000, 1.0], // 100억+
+  [2_000_000_000, 0.8], //   20억+
+  [500_000_000, 0.5], //      5억+
+  [0, 0.2],
+];

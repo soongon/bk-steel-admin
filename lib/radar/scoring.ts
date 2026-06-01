@@ -17,6 +17,9 @@ import {
   DISTANCE,
   REBAR_KG_PER_SQM,
   STEEL_KG_PER_SQM,
+  NARA_CATEGORY_SCORE,
+  NARA_WEIGHTS,
+  NARA_AMOUNT_TIERS,
 } from "./config";
 import type { RelevanceGrade, StructureType } from "./types";
 
@@ -113,4 +116,33 @@ export function estimateRebarTon(
       : (usage ? REBAR_KG_PER_SQM[usage] : undefined) ?? REBAR_KG_PER_SQM.etc;
   const ton = (floorArea * kgPerSqm) / 1000;
   return Math.round(ton * 10) / 10;
+}
+
+/** 관급 낙찰금액/추정가(원) → 규모 점수(0~1). 미상=0.3. */
+export function scoreNaraAmount(amount: number | null): number {
+  if (amount == null) return 0.3;
+  for (const [threshold, score] of NARA_AMOUNT_TIERS) if (amount >= threshold) return score;
+  return 0.2;
+}
+
+/**
+ * 관급 철근관련성 — 공종 카테고리(건축/구조토목/일반토목) + 낙찰금액 규모.
+ * 거리·연면적·구조 입력이 없어 별도 계산. (제외 공종은 수집 단계에서 이미 컷.)
+ */
+export function computeNaraRelevance(input: {
+  category: string | null;
+  estAmount: number | null;
+}): RelevanceResult {
+  const cat = (input.category ? NARA_CATEGORY_SCORE[input.category] : undefined) ?? 0.3;
+  const amt = scoreNaraAmount(input.estAmount);
+  const parts = {
+    usage: cat * NARA_WEIGHTS.category,
+    structure: 0,
+    floorArea: amt * NARA_WEIGHTS.amount,
+    distance: 0,
+  };
+  const score = Math.max(0, Math.min(100, parts.usage + parts.floorArea));
+  const grade: RelevanceGrade =
+    score >= GRADE_THRESHOLDS.A ? "A" : score >= GRADE_THRESHOLDS.B ? "B" : "C";
+  return { score: Math.round(score * 10) / 10, grade, breakdown: parts };
 }

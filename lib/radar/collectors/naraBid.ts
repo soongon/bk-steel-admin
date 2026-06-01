@@ -33,6 +33,24 @@ export function matchRegion(text: string | null | undefined): RadarRegion | null
   return null;
 }
 
+// 철근관련성 공종 분류 (사용자 확정: 건축+구조토목만 영업대상).
+// 제외: 비철근 공종 + 철거·해체(신규 철근 0) + 비공사(설계/감리/용역 등).
+const NARA_EXCLUDE = ["전기", "통신", "조경", "식재", "수목", "청소", "소독", "방역", "방제", "제초", "임도", "사방", "준설", "퇴적", "오니", "방수", "도장", "포장", "아스팔트", "표지", "신호등", "CCTV", "cctv", "제설", "벌목", "간판", "현수막", "철거", "해체", "멸실", "석면", "폐기물", "설계", "감리", "측량", "용역", "임대", "매각", "점검", "진단", "설비", "냉난방", "승강기", "기계설비"];
+// 신규 건축 의도(보수·리모델링·철거와 구분). 건물 유형과 함께 있어야 building.
+const NARA_NEWBUILD = ["신축", "증축", "개축", "재축", "건립", "신설", "증설"];
+const NARA_BUILDING_TYPE = ["청사", "회관", "센터", "학교", "체육관", "강당", "도서관", "병원", "보건", "어린이집", "복지관", "사옥", "관사", "기숙사", "주택", "아파트", "공장", "창고", "주차장", "박물관", "미술관", "문화", "청소년", "경로당", "마을회관"];
+const NARA_STRUCT = ["교량", "교각", "고가", "육교", "옹벽", "구조물", "암거", "지하차도", "터널", "배수장", "정수장", "취수장", "펌프장", "저수지", "보강토", "호안", "방음벽"];
+
+/** 공고명/주공종 → 철근관련성. exclude=수집 컷. building=신축 건물(철근 多). */
+export function naraSteelCategory(text: string): "building" | "civil_struct" | "civil_low" | "exclude" {
+  if (NARA_EXCLUDE.some((k) => text.includes(k))) return "exclude";
+  const newBuild = NARA_NEWBUILD.some((k) => text.includes(k));
+  const buildingType = NARA_BUILDING_TYPE.some((k) => text.includes(k));
+  if (buildingType && newBuild) return "building"; // 신축/증축 건물
+  if (NARA_STRUCT.some((k) => text.includes(k))) return "civil_struct"; // 교량·옹벽 등 구조물
+  return "civil_low"; // 보수·리모델링·도로·상하수 등 = 약(C)
+}
+
 /** "2026-05-02 13:16:05" / "2026-05-14" → "2026-05-02". */
 function toIsoDate(v: string | null | undefined): string | null {
   if (!v) return null;
@@ -116,6 +134,8 @@ export function normalizeAward(item: Record<string, any>): CollectedProject | nu
   // 낙찰엔 현장지역 필드가 없어 수요기관/공고명으로 판정 (낙찰사 주소는 시공사 소재지라 제외).
   const region = matchRegion(item.dminsttNm) ?? matchRegion(item.bidNtceNm);
   if (!region) return null;
+  const category = naraSteelCategory(item.bidNtceNm ?? "");
+  if (category === "exclude") return null; // 철근 무관 공종 컷
 
   const winner = item.bidwinnrNm?.trim() || null;
   const tel = item.bidwinnrTelNo?.trim() || null;
@@ -127,7 +147,7 @@ export function normalizeAward(item: Record<string, any>): CollectedProject | nu
     project_type: "public",
     title: item.bidNtceNm?.trim() || "(공고명 미상)",
     address: item.dminsttNm?.trim() || null,
-    usage: null,
+    usage: category,
     structure: null,
     floor_area: null,
     stage: "awarded",
@@ -148,6 +168,8 @@ export function normalizeBid(item: Record<string, any>): CollectedProject | null
   const region =
     matchRegion(item.cnstrtsiteRgnNm) ?? matchRegion(item.dminsttNm) ?? matchRegion(item.bidNtceNm);
   if (!region) return null;
+  const category = naraSteelCategory(`${item.bidNtceNm ?? ""} ${item.mainCnsttyNm ?? ""}`);
+  if (category === "exclude") return null; // 철근 무관 공종 컷
 
   return {
     source: "nara_bid",
@@ -157,7 +179,7 @@ export function normalizeBid(item: Record<string, any>): CollectedProject | null
     project_type: "public",
     title: item.bidNtceNm?.trim() || "(공고명 미상)",
     address: item.cnstrtsiteRgnNm?.trim() || item.dminsttNm?.trim() || null,
-    usage: null,
+    usage: category,
     structure: null,
     floor_area: null,
     stage: "bid_notice",
