@@ -62,19 +62,22 @@ const TAX_DOC_OPTIONS = [
   { value: "none", label: "무자료" },
 ] as const;
 
-const STATUS_OPTIONS = [
-  { value: "reserved", label: "주문 (미납품)" },
-  { value: "confirmed", label: "확정" },
-  { value: "delivered", label: "납품완료" },
-  { value: "settled", label: "수금완료" },
-] as const;
-
-// 편집 시 상태 드롭다운 제한 — 서버 전이 규칙과 동일(주문→확정→납품완료→수금완료).
+const STATUS_LABEL: Record<string, string> = {
+  reserved: "주문 (미납품)",
+  confirmed: "확정",
+  delivered: "납품완료",
+  settled: "수금완료",
+  overdue: "연체",
+  cancelled: "취소",
+};
+// 신규 매출에서 고를 수 있는 상태. 수금완료는 '수금' 버튼(통장 입금)으로만 처리.
+const NEW_STATUSES = ["reserved", "confirmed", "delivered"];
+// 편집 시 전이 — 서버 규칙과 동일. delivered→settled 는 폼이 아닌 수금 다이얼로그.
 const STATUS_NEXT: Record<string, string[]> = {
   reserved: ["confirmed", "delivered"],
   confirmed: ["delivered"],
-  delivered: ["settled"],
-  overdue: ["settled"],
+  delivered: [],
+  overdue: [],
   settled: [],
   cancelled: [],
 };
@@ -206,13 +209,14 @@ export function SaleFormDialog({
   const matchedSite = sites.find((s) => s.name === siteName);
   const [notes, setNotes] = useState(editing?.notes ?? "");
 
-  // 편집 시 상태 옵션을 유효 전이로 제한(현재 + 다음 단계). 신규는 전체.
+  // 상태 옵션 — 신규는 주문/확정/납품완료, 편집은 현재+다음 단계만(수금완료는 수금 다이얼로그).
   const statusOptions = useMemo(() => {
-    if (!editing) return STATUS_OPTIONS;
-    const allowed = new Set<string>([editing.status, ...(STATUS_NEXT[editing.status] ?? [])]);
-    const opts = STATUS_OPTIONS.filter((o) => allowed.has(o.value));
-    return opts.length ? opts : STATUS_OPTIONS;
+    const values = editing
+      ? Array.from(new Set<string>([editing.status, ...(STATUS_NEXT[editing.status] ?? [])]))
+      : NEW_STATUSES;
+    return values.map((v) => ({ value: v, label: STATUS_LABEL[v] ?? v }));
   }, [editing]);
+  const statusLocked = editing != null && statusOptions.length <= 1;
 
   useEffect(() => {
     if (open) {
@@ -495,7 +499,8 @@ export function SaleFormDialog({
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                disabled={statusLocked}
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60"
               >
                 {statusOptions.map((s) => (
                   <option key={s.value} value={s.value}>
@@ -503,6 +508,9 @@ export function SaleFormDialog({
                   </option>
                 ))}
               </select>
+              {editing?.status === "delivered" ? (
+                <p className="text-[10px] text-muted-foreground">수금완료는 목록의 ‘수금’ 버튼으로</p>
+              ) : null}
             </Field>
           </div>
 

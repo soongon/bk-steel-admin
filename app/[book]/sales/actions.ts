@@ -18,6 +18,8 @@ function bumpRevalidation() {
   for (const b of ["all", "bk", "sl", "b"]) {
     revalidatePath(`/${b}/sales`);
     revalidatePath(`/${b}/dashboard`);
+    revalidatePath(`/${b}/receivables`);
+    revalidatePath(`/${b}/bank`);
   }
 }
 
@@ -252,6 +254,9 @@ export async function updateSaleHeader(
     const tErr = transitionError(cur.status, newStatus);
     if (tErr) return { ok: false, error: tErr };
   }
+  if (newStatus === "settled") {
+    return { ok: false, error: "수금완료는 매출 목록의 '수금' 버튼(통장 선택)으로 처리하세요." };
+  }
 
   const siteName = str("site_name") || null;
   const siteIdInput = str("site_id") || null;
@@ -279,9 +284,7 @@ export async function updateSaleHeader(
     total_krw: total,
     notes: str("notes") || null,
   };
-  if (newStatus === "settled") {
-    updates.settled_on = str("delivered_on") || str("ordered_on") || new Date().toISOString().slice(0, 10);
-  } else if (newStatus === "cancelled") {
+  if (newStatus === "cancelled") {
     updates.settled_on = null;
   }
 
@@ -318,17 +321,22 @@ export async function markSaleDelivered(id: string): Promise<SaleActionResult> {
   return { ok: true };
 }
 
-export async function settleSale(id: string): Promise<SaleActionResult> {
+/**
+ * 수금완료 — 통장 입금(bank_transaction)을 함께 기록(RPC, 원자적).
+ * 통장.book = 매출.book 정합·납품완료 전제는 RPC가 강제.
+ */
+export async function settleSale(
+  id: string,
+  bankAccountId: string,
+  settledOn?: string,
+): Promise<SaleActionResult> {
+  if (!bankAccountId) return { ok: false, error: "수금 통장을 선택해주세요." };
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: cur } = await supabase.from("sale").select("status").eq("id", id).single();
-  if (cur && cur.status !== "delivered" && cur.status !== "overdue") {
-    return { ok: false, error: "납품완료 상태에서만 수금완료할 수 있습니다." };
-  }
-  const { error } = await supabase
-    .from("sale")
-    .update({ status: "settled", settled_on: today })
-    .eq("id", id);
+  const { error } = await supabase.rpc("settle_sale_with_payment", {
+    p_sale_id: id,
+    p_bank_account_id: bankAccountId,
+    p_settled_on: settledOn || new Date().toISOString().slice(0, 10),
+  });
   if (error) return { ok: false, error: friendly(error.message) };
   bumpRevalidation();
   return { ok: true };

@@ -35,7 +35,7 @@ export default async function SalesPage({
     saleQuery = saleQuery.eq("book", view);
   }
 
-  const [salesRes, partnersRes, itemsRes, rebarSpecsRes, sitesRes] = await Promise.all([
+  const [salesRes, partnersRes, itemsRes, rebarSpecsRes, sitesRes, bankAccountsRes] = await Promise.all([
     saleQuery,
     supabase
       .from("partner")
@@ -61,6 +61,13 @@ export default async function SalesPage({
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),
+    supabase
+      .from("bank_account")
+      .select("id, code, bank_name, book, kind")
+      .is("deleted_at", null)
+      .eq("is_active", true)
+      .order("book")
+      .order("is_primary", { ascending: false }),
   ]);
 
   const sales = (salesRes.data as unknown as SaleListRow[]) ?? [];
@@ -107,6 +114,7 @@ export default async function SalesPage({
         items={itemsRes.data ?? []}
         rebarSpecs={rebarSpecsRes.data ?? []}
         sites={sitesRes.data ?? []}
+        bankAccounts={bankAccountsRes.data ?? []}
         view={view}
         attachmentsByEntity={attachmentsByEntity}
       />
