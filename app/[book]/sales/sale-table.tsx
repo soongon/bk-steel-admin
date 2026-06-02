@@ -8,6 +8,7 @@ import {
   PencilIcon,
   PlusIcon,
   Trash2Icon,
+  TruckIcon,
   XCircleIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,7 +32,7 @@ import {
   type SaleRow,
   type SiteOption,
 } from "./sale-form-dialog";
-import { cancelSale, deleteSale, settleSale } from "./actions";
+import { cancelSale, deleteSale, markSaleDelivered, settleSale } from "./actions";
 
 type SaleLine = {
   id: string;
@@ -148,6 +149,14 @@ export function SaleTable({
       notes: s.notes,
     });
     setOpen(true);
+  }
+  function handleDeliver(s: SaleListRow) {
+    if (!window.confirm(`[${s.doc_no}] 납품완료로 처리하시겠습니까?`)) return;
+    startTransition(async () => {
+      const r = await markSaleDelivered(s.id);
+      if (r.ok) toast.success("납품완료 처리됨");
+      else toast.error(r.error);
+    });
   }
   function handleSettle(s: SaleListRow) {
     if (s.status === "settled") return;
@@ -284,7 +293,17 @@ export function SaleTable({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-0.5">
-                        {s.status !== "settled" && s.status !== "cancelled" ? (
+                        {s.status === "reserved" || s.status === "confirmed" ? (
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            onClick={() => handleDeliver(s)}
+                            aria-label="납품완료"
+                          >
+                            <TruckIcon className="text-indigo-600" />
+                          </Button>
+                        ) : null}
+                        {s.status === "delivered" || s.status === "overdue" ? (
                           <Button
                             size="icon-xs"
                             variant="ghost"
@@ -297,7 +316,7 @@ export function SaleTable({
                         <Button size="icon-xs" variant="ghost" onClick={() => openEdit(s)} aria-label="수정">
                           <PencilIcon />
                         </Button>
-                        {s.status !== "cancelled" ? (
+                        {s.status !== "cancelled" && s.status !== "settled" ? (
                           <Button
                             size="icon-xs"
                             variant="ghost"

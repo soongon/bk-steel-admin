@@ -21,6 +21,48 @@ function bumpRevalidation() {
   }
 }
 
+/** 매출 상태 전이 규칙 — 주문→확정→납품완료→수금완료(+연체·취소). 같은 상태는 무변경 허용. */
+const SALE_TRANSITIONS: Record<string, string[]> = {
+  reserved: ["confirmed", "delivered", "cancelled"],
+  confirmed: ["delivered", "cancelled"],
+  delivered: ["settled", "cancelled"],
+  overdue: ["settled", "cancelled"],
+  settled: [],
+  cancelled: [],
+};
+const STATUS_LABEL: Record<string, string> = {
+  reserved: "주문",
+  confirmed: "확정",
+  delivered: "납품완료",
+  settled: "수금완료",
+  overdue: "연체",
+  cancelled: "취소",
+};
+
+/** 전이가 불가능하면 사용자용 메시지, 가능하면 null. */
+function transitionError(from: string, to: string): string | null {
+  if (from === to) return null;
+  if ((SALE_TRANSITIONS[from] ?? []).includes(to)) return null;
+  return `'${STATUS_LABEL[from] ?? from}' → '${STATUS_LABEL[to] ?? to}' 상태 전이는 허용되지 않습니다.`;
+}
+
+/**
+ * 자료성·세금계산서 종류 → 부가세 유형·세액.
+ * 계산서=면세(exempt), 무자료/무자료성=불과세(non_taxable) — 둘 다 부가세 신고대상 뷰에서 자동 제외.
+ * 그 외 자료거래(세금계산서·현금영수증 등)는 과세 10%.
+ */
+function computeVat(isDocumented: boolean, taxDocType: string, subtotal: number) {
+  const vatType =
+    !isDocumented || taxDocType === "none"
+      ? "non_taxable"
+      : taxDocType === "invoice"
+        ? "exempt"
+        : "standard_10";
+  const vatRate = vatType === "standard_10" ? 10 : 0;
+  const vat = vatRate > 0 ? Math.round((subtotal * vatRate) / 100) : 0;
+  return { vatType, vatRate, vat, total: subtotal + vat };
+}
+
 /**
  * 책+일자 기반 doc_no 자동 생성 (YYYYMMDD-NNN).
  * race condition은 UNIQUE 제약으로 catch.
@@ -52,6 +94,7 @@ type CreateInput = {
   is_documented: boolean;
   tax_doc_type: "tax_invoice_electronic" | "tax_invoice_paper" | "invoice" | "cash_receipt" | "simple_receipt" | "none";
   payment_due_on?: string | null;
+  notes?: string | null;
 };
 
 function readCreateInput(fd: FormData): CreateInput | { error: string } {
@@ -103,6 +146,7 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
     is_documented,
     tax_doc_type,
     payment_due_on: str("payment_due_on") || null,
+    notes: str("notes") || null,
   };
 }
 
@@ -147,12 +191,7 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
   const resolvedSiteId = await resolveSiteId(supabase, parsed.site_id ?? null, parsed.site_name ?? null);
   const subtotal = Math.round(parsed.unit_price_krw * parsed.qty);
   const documented = parsed.is_documented;
-  const vatType = documented && parsed.tax_doc_type !== "invoice" && parsed.tax_doc_type !== "none"
-    ? "standard_10"
-    : "zero_rated";
-  const vatRate = vatType === "standard_10" ? 10 : 0;
-  const vat = vatRate > 0 ? Math.round(subtotal * 0.1) : 0;
-  const total = subtotal + vat;
+  const { vatType, vatRate, vat, total } = computeVat(documented, parsed.tax_doc_type, subtotal);
 
   // 매출 헤더
   const { data: sale, error: saleErr } = await supabase
@@ -176,6 +215,7 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
       payment_due_on: parsed.payment_due_on,
       settled_on: parsed.status === "settled" ? (parsed.delivered_on ?? parsed.ordered_on) : null,
       status: parsed.status,
+      notes: parsed.notes,
     })
     .select("id")
     .single();
@@ -211,22 +251,48 @@ export async function updateSaleHeader(
     return typeof v === "string" ? v.trim() : "";
   };
 
+  // 현재 상태·공급가 — 전이 검증 + 부가세 재계산 기준
+  const { data: cur } = await supabase
+    .from("sale")
+    .select("status, subtotal_krw")
+    .eq("id", id)
+    .single();
+
+  const newStatus = str("status");
+  if (cur) {
+    const tErr = transitionError(cur.status, newStatus);
+    if (tErr) return { ok: false, error: tErr };
+  }
+
   const siteName = str("site_name") || null;
   const siteIdInput = str("site_id") || null;
   const resolvedSiteId = await resolveSiteId(supabase, siteIdInput, siteName);
+
+  const isDocumented = str("is_documented") === "true";
+  const taxDocType = str("tax_doc_type");
+  const { vatType, vatRate, vat, total } = computeVat(
+    isDocumented,
+    taxDocType,
+    Number(cur?.subtotal_krw ?? 0),
+  );
 
   const updates: Record<string, unknown> = {
     site_id: resolvedSiteId,
     site_name: siteName,
     delivered_on: str("delivered_on") || null,
     payment_due_on: str("payment_due_on") || null,
-    status: str("status"),
-    tax_doc_type: str("tax_doc_type"),
-    is_documented: str("is_documented") === "true",
+    status: newStatus,
+    tax_doc_type: taxDocType,
+    is_documented: isDocumented,
+    vat_type: vatType,
+    vat_rate: vatRate,
+    vat_krw: vat,
+    total_krw: total,
+    notes: str("notes") || null,
   };
-  if (updates.status === "settled") {
+  if (newStatus === "settled") {
     updates.settled_on = str("delivered_on") || str("ordered_on") || new Date().toISOString().slice(0, 10);
-  } else if (updates.status === "cancelled") {
+  } else if (newStatus === "cancelled") {
     updates.settled_on = null;
   }
 
@@ -236,9 +302,40 @@ export async function updateSaleHeader(
   return { ok: true };
 }
 
+/** 납품완료 처리 — 주문/확정 → 납품완료(헤더+라인). delivered_on 미기록 시 오늘로. */
+export async function markSaleDelivered(id: string): Promise<SaleActionResult> {
+  const supabase = await createClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: cur } = await supabase
+    .from("sale")
+    .select("status, delivered_on")
+    .eq("id", id)
+    .single();
+  if (cur) {
+    const tErr = transitionError(cur.status, "delivered");
+    if (tErr) return { ok: false, error: tErr };
+  }
+  const { error } = await supabase
+    .from("sale")
+    .update({ status: "delivered", delivered_on: cur?.delivered_on ?? today })
+    .eq("id", id);
+  if (error) return { ok: false, error: friendly(error.message) };
+  await supabase
+    .from("sale_line")
+    .update({ status: "delivered" })
+    .eq("sale_id", id)
+    .neq("status", "cancelled");
+  bumpRevalidation();
+  return { ok: true };
+}
+
 export async function settleSale(id: string): Promise<SaleActionResult> {
   const supabase = await createClient();
   const today = new Date().toISOString().slice(0, 10);
+  const { data: cur } = await supabase.from("sale").select("status").eq("id", id).single();
+  if (cur && cur.status !== "delivered" && cur.status !== "overdue") {
+    return { ok: false, error: "납품완료 상태에서만 수금완료할 수 있습니다." };
+  }
   const { error } = await supabase
     .from("sale")
     .update({ status: "settled", settled_on: today })
@@ -250,6 +347,11 @@ export async function settleSale(id: string): Promise<SaleActionResult> {
 
 export async function cancelSale(id: string): Promise<SaleActionResult> {
   const supabase = await createClient();
+  const { data: cur } = await supabase.from("sale").select("status").eq("id", id).single();
+  if (cur?.status === "cancelled") return { ok: true };
+  if (cur?.status === "settled") {
+    return { ok: false, error: "수금완료된 매출은 취소할 수 없습니다(환불 처리 필요)." };
+  }
   const { error } = await supabase
     .from("sale")
     .update({ status: "cancelled", settled_on: null })

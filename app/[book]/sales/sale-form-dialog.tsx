@@ -69,6 +69,16 @@ const STATUS_OPTIONS = [
   { value: "settled", label: "수금완료" },
 ] as const;
 
+// 편집 시 상태 드롭다운 제한 — 서버 전이 규칙과 동일(주문→확정→납품완료→수금완료).
+const STATUS_NEXT: Record<string, string[]> = {
+  reserved: ["confirmed", "delivered"],
+  confirmed: ["delivered"],
+  delivered: ["settled"],
+  overdue: ["settled"],
+  settled: [],
+  cancelled: [],
+};
+
 const UNIT_OPTIONS = [
   { value: "ea", label: "가닥/EA" },
   { value: "kg", label: "kg" },
@@ -195,6 +205,14 @@ export function SaleFormDialog({
   const [siteName, setSiteName] = useState(editing?.site_name ?? "");
   const matchedSite = sites.find((s) => s.name === siteName);
   const [notes, setNotes] = useState(editing?.notes ?? "");
+
+  // 편집 시 상태 옵션을 유효 전이로 제한(현재 + 다음 단계). 신규는 전체.
+  const statusOptions = useMemo(() => {
+    if (!editing) return STATUS_OPTIONS;
+    const allowed = new Set<string>([editing.status, ...(STATUS_NEXT[editing.status] ?? [])]);
+    const opts = STATUS_OPTIONS.filter((o) => allowed.has(o.value));
+    return opts.length ? opts : STATUS_OPTIONS;
+  }, [editing]);
 
   useEffect(() => {
     if (open) {
@@ -479,7 +497,7 @@ export function SaleFormDialog({
                 onChange={(e) => setStatus(e.target.value)}
                 className="h-8 rounded-md border border-input bg-background px-2 text-sm"
               >
-                {STATUS_OPTIONS.map((s) => (
+                {statusOptions.map((s) => (
                   <option key={s.value} value={s.value}>
                     {s.label}
                   </option>
