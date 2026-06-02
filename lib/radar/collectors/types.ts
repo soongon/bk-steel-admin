@@ -30,6 +30,10 @@ export interface CollectContext {
   sources?: RadarSource[];
   /** 민간: 최근 준공(매입 대상) 유지 기간(일). 기본 180. */
   buybackWindowDays?: number;
+  /** 시청 고시: 최근 N일 게시물만. 기본 120. */
+  noticeWindowDays?: number;
+  /** 시청 고시: 게시판 최대 페이지(throttle). 기본 30. */
+  noticeMaxPages?: number;
 }
 
 export interface Collector {

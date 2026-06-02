@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { HardHatIcon, PhoneCallIcon } from "lucide-react";
+import { HardHatIcon, LandmarkIcon, PhoneCallIcon } from "lucide-react";
 import { KpiCard } from "@/components/admin/kpi-card";
 import {
   RADAR_REGIONS,
   RADAR_REGION_LABEL,
+  RELEVANCE_GRADE_META,
+  USAGE_LABEL,
   type RadarProjectRow,
   type RadarRegion,
 } from "@/lib/radar/types";
@@ -14,7 +16,7 @@ import { BuildingBoard } from "./building-board";
 import { ProjectCard } from "./project-card";
 
 type RegionTab = "all" | RadarRegion;
-type SourceTab = "building" | "nara";
+type SourceTab = "building" | "nara" | "notice";
 
 const GRADE_RANK: Record<string, number> = { A: 0, B: 1, C: 2 };
 
@@ -59,6 +61,66 @@ function NaraView({ projects }: { projects: RadarProjectRow[] }) {
           {sorted.map((p) => (
             <ProjectCard key={p.id} p={p} />
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 시청 고시(선점) 뷰 — 게시일 강조 리스트. 화면은 추후 정교화. */
+function NoticeView({ projects }: { projects: RadarProjectRow[] }) {
+  const sorted = useMemo(
+    () => [...projects].sort((a, b) => String(b.stage_date ?? "").localeCompare(String(a.stage_date ?? ""))),
+    [projects],
+  );
+  const industrial = projects.filter((p) => p.usage === "industrial_complex").length;
+  const aCount = projects.filter((p) => p.relevance_grade === "A").length;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <KpiCard title="산업·물류단지 🏭" value={`${industrial}건`} hint="대형 철근 선행" />
+        <KpiCard title="A등급 선점" value={`${aCount}건`} hint="산단·정비·대형건축" />
+        <KpiCard title="고시 전체" value={`${projects.length}건`} hint="최근 게시" />
+      </section>
+      {sorted.length === 0 ? (
+        <p className="rounded-xl border border-dashed bg-muted/30 p-8 text-center text-sm text-muted-foreground">
+          이 권역의 고시(선점) 리드가 없습니다.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {sorted.map((p) => {
+            const grade = p.relevance_grade ? RELEVANCE_GRADE_META[p.relevance_grade] : null;
+            const cat = p.usage ? (USAGE_LABEL[p.usage] ?? p.usage) : "";
+            return (
+              <div
+                key={p.id}
+                className="flex items-center gap-2.5 rounded-lg border bg-card p-2.5 text-sm ring-1 ring-foreground/5"
+              >
+                <span className="w-16 shrink-0 tabular-nums text-xs text-muted-foreground">
+                  {p.stage_date ? p.stage_date.slice(2).replaceAll("-", ".") : ""}
+                </span>
+                {grade ? (
+                  <span className={cn("shrink-0 rounded border px-1 text-[10px] font-semibold", grade.className)}>
+                    {grade.label}
+                  </span>
+                ) : null}
+                <span className="shrink-0 rounded bg-indigo-100 px-1.5 text-[11px] text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+                  {cat}
+                </span>
+                <span className="min-w-0 flex-1 truncate">
+                  {p.source_url ? (
+                    <a href={p.source_url} target="_blank" rel="noreferrer" className="hover:underline" title={p.title}>
+                      {p.title}
+                    </a>
+                  ) : (
+                    p.title
+                  )}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">{RADAR_REGION_LABEL[p.region]}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -111,6 +173,7 @@ export function RadarDashboard({ projects }: { projects: RadarProjectRow[] }) {
   );
   const building = useMemo(() => inRegion.filter((p) => p.source === "building_permit"), [inRegion]);
   const nara = useMemo(() => inRegion.filter((p) => p.source === "nara_bid"), [inRegion]);
+  const notice = useMemo(() => inRegion.filter((p) => p.source === "notice"), [inRegion]);
 
   const regionCounts = useMemo(() => {
     const m: Record<string, number> = { all: projects.length };
@@ -172,9 +235,23 @@ export function RadarDashboard({ projects }: { projects: RadarProjectRow[] }) {
           sub="낙찰 → 지금 전화"
           count={nara.length}
         />
+        <SourceTab
+          active={source === "notice"}
+          onClick={() => setSource("notice")}
+          icon={LandmarkIcon}
+          label="시청 고시(선점)"
+          sub="산단·정비 → 대형 선점"
+          count={notice.length}
+        />
       </div>
 
-      {source === "building" ? <BuildingBoard projects={building} /> : <NaraView projects={nara} />}
+      {source === "building" ? (
+        <BuildingBoard projects={building} />
+      ) : source === "nara" ? (
+        <NaraView projects={nara} />
+      ) : (
+        <NoticeView projects={notice} />
+      )}
     </div>
   );
 }

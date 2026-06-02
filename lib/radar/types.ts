@@ -9,12 +9,13 @@
  */
 
 // ── 소스(어댑터) ──────────────────────────────────────────────
-export const RADAR_SOURCES = ["building_permit", "nara_bid"] as const;
+export const RADAR_SOURCES = ["building_permit", "nara_bid", "notice"] as const;
 export type RadarSource = (typeof RADAR_SOURCES)[number];
 
 export const RADAR_SOURCE_LABEL: Record<RadarSource, string> = {
   building_permit: "민간 건축",
   nara_bid: "관급 나라장터",
+  notice: "시청 고시(선점)",
 };
 
 // ── 권역 ──────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ export const RADAR_STAGES = [
   "completed", //           민간: 사용승인(준공) — 기회 끝(숨김)
   "bid_notice", //          관급: 입찰공고 (낙찰 전) — 대기
   "awarded", //             관급: 낙찰 확정 — 낙찰사에 전화(파랑)
+  "notice", //              시청 고시: 대형 개발 선점 (산단·정비·대형건축) — 가장 이른 신호
 ] as const;
 export type RadarStage = (typeof RADAR_STAGES)[number];
 
@@ -79,6 +81,11 @@ export const RADAR_STAGE_META: Record<RadarStage, StageMeta> = {
     label: "낙찰확정",
     urgency: "now",
     className: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
+  },
+  notice: {
+    label: "고시·선점",
+    urgency: "watch",
+    className: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300",
   },
 };
 
@@ -177,6 +184,12 @@ export const USAGE_LABEL: Record<string, string> = {
   building: "건축",
   civil_struct: "구조토목",
   civil_low: "토목",
+  // 시청 고시(선점) 카테고리
+  industrial_complex: "산업단지",
+  redevelopment: "정비·개발",
+  large_building: "대형건축",
+  road: "도로",
+  infra: "인프라",
 };
 
 // ── 관련성 등급 — 핸드오프 §6 (A=코랄, B=앰버, C=그레이) ───────
@@ -233,6 +246,7 @@ export interface CollectedProject {
   contact_party: string | null; // 연락 주체 (민간: 건축주/시공사, 관급: 낙찰사)
   awarded_company: string | null; // 낙찰사명 (관급, 낙찰 후)
   est_amount: number | null; // 추정가격/기초금액 (관급)
+  source_url?: string | null; // 고시/공고 원문 링크 (notice 등)
   raw: unknown; // 원시 응답 (디버깅·재처리)
 }
 
@@ -285,6 +299,7 @@ export interface RadarProjectRow {
   relevance_grade: RelevanceGrade | null;
   relevance_score: number | null;
   est_amount: number | null;
+  source_url: string | null;
   linked_partner_id: string | null;
   created_at: string; // = 최초 수집(first seen)
   updated_at: string; // = 최종 갱신

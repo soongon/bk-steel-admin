@@ -159,3 +159,14 @@ export const NARA_AMOUNT_TIERS: Array<[number, number]> = [
   [500_000_000, 0.5], //      5억+
   [0, 0.2],
 ];
+
+// ── 시청 고시(선점) 철근관련성 — 카테고리별 ──────────────────
+/** 고시 카테고리 점수(0~1). 산단·물류=최대(대형 철근 선행), 도로·인프라=중. */
+export const NOTICE_CATEGORY_SCORE: Record<string, number> = {
+  industrial_complex: 1.0, // 산업단지·물류단지 — 대형 철근 선행
+  redevelopment: 0.85, //    정비·재개발·도시개발·택지
+  large_building: 0.8, //    대형건축 심의
+  road: 0.5, //              도로(옹벽·구조물)
+  infra: 0.5, //             도시계획시설·펌프장 등
+  etc: 0.3,
+};

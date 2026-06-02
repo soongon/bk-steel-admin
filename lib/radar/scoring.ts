@@ -20,6 +20,7 @@ import {
   NARA_CATEGORY_SCORE,
   NARA_WEIGHTS,
   NARA_AMOUNT_TIERS,
+  NOTICE_CATEGORY_SCORE,
 } from "./config";
 import type { RelevanceGrade, StructureType } from "./types";
 
@@ -145,4 +146,13 @@ export function computeNaraRelevance(input: {
   const grade: RelevanceGrade =
     score >= GRADE_THRESHOLDS.A ? "A" : score >= GRADE_THRESHOLDS.B ? "B" : "C";
   return { score: Math.round(score * 10) / 10, grade, breakdown: parts };
+}
+
+/** 시청 고시(선점) 철근관련성 — 카테고리 점수 × 100. 산단·물류=A, 도로·인프라=B. */
+export function computeNoticeRelevance(category: string | null): RelevanceResult {
+  const cat = (category ? NOTICE_CATEGORY_SCORE[category] : undefined) ?? 0.3;
+  const score = Math.round(cat * 1000) / 10;
+  const grade: RelevanceGrade =
+    score >= GRADE_THRESHOLDS.A ? "A" : score >= GRADE_THRESHOLDS.B ? "B" : "C";
+  return { score, grade, breakdown: { usage: score, structure: 0, floorArea: 0, distance: 0 } };
 }
