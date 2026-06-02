@@ -92,6 +92,78 @@ export const STRUCTURE_LABEL: Record<StructureType, string> = {
   etc: "기타",
 };
 
+// ── 민간 라이프사이클 — 영업 보드 ────────────────────────────
+
+/** 배송 추정 — 규모로 5톤 크레인 vs 25톤. */
+export type DeliveryTier = "5t" | "25t";
+export function estimateDeliveryTier(
+  floorArea: number | null,
+  usage: string | null,
+): DeliveryTier {
+  if (usage === "factory" || usage === "warehouse") return "25t";
+  if (floorArea != null && floorArea >= 1000) return "25t";
+  return "5t";
+}
+export const DELIVERY_LABEL: Record<DeliveryTier, string> = {
+  "5t": "5톤 크레인",
+  "25t": "25톤",
+};
+
+/** 판매(허가~착공) vs 매입(준공·철거). */
+export type SalesPlay = "sell" | "buy";
+
+/** 민간 보드 컬럼 (라이프사이클 단계). */
+export type BoardColumn = "permit" | "imminent" | "construction" | "completed";
+
+/** 민간 레코드 → 보드 컬럼. 허가+착공예정 잡힘=견적, 허가만=선점. */
+export function boardColumn(p: {
+  stage: RadarStage;
+  sched_start_date: string | null;
+  start_date: string | null;
+}): BoardColumn {
+  if (p.stage === "completed") return "completed"; // 준공 = 매입
+  if (p.stage === "construction_start") return "construction"; // 착공 = 납품
+  if (p.sched_start_date && !p.start_date) return "imminent"; // 허가+착공예정 = 견적
+  return "permit"; // 허가만 = 선점
+}
+
+export const BOARD_COLUMNS: Array<{
+  key: BoardColumn;
+  label: string;
+  sub: string;
+  play: SalesPlay;
+  className: string;
+}> = [
+  {
+    key: "permit",
+    label: "① 허가·선점",
+    sub: "관계구축",
+    play: "sell",
+    className: "border-zinc-400/40 bg-zinc-50 dark:bg-zinc-900/40",
+  },
+  {
+    key: "imminent",
+    label: "② 착공임박·견적",
+    sub: "견적 타이밍",
+    play: "sell",
+    className: "border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/30",
+  },
+  {
+    key: "construction",
+    label: "③ 착공·납품 💰",
+    sub: "지금 납품",
+    play: "sell",
+    className: "border-red-500/40 bg-red-50/60 dark:bg-red-950/30",
+  },
+  {
+    key: "completed",
+    label: "④ 준공·매입 💰",
+    sub: "남은 철근",
+    play: "buy",
+    className: "border-emerald-500/40 bg-emerald-50/60 dark:bg-emerald-950/30",
+  },
+];
+
 /** 용도 카테고리 표시 라벨 (점수 키 → 한글). config.USAGE_SCORE 키와 동일 집합. */
 export const USAGE_LABEL: Record<string, string> = {
   factory: "공장",
@@ -151,7 +223,12 @@ export interface CollectedProject {
   structure: StructureType | null;
   floor_area: number | null; // ㎡
   stage: RadarStage;
-  stage_date: string | null; // ISO date (YYYY-MM-DD)
+  stage_date: string | null; // ISO date (YYYY-MM-DD) — 현재 단계 기준일
+  // 라이프사이클 날짜 (민간; 관급은 null) — 카드 타임라인·보드 컬럼용
+  permit_date: string | null; //      건축허가일 (선점)
+  sched_start_date: string | null; // 착공예정일 (견적)
+  start_date: string | null; //       실착공일   (납품)
+  completion_date: string | null; //  사용승인일 (매입)
   ordering_org: string | null; // 발주처 (관급, 표시용 — 연락 대상 아님)
   contact_party: string | null; // 연락 주체 (민간: 건축주/시공사, 관급: 낙찰사)
   awarded_company: string | null; // 낙찰사명 (관급, 낙찰 후)
@@ -198,6 +275,10 @@ export interface RadarProjectRow {
   est_rebar_ton: number | null;
   stage: RadarStage;
   stage_date: string | null;
+  permit_date: string | null;
+  sched_start_date: string | null;
+  start_date: string | null;
+  completion_date: string | null;
   ordering_org: string | null;
   contact_party: string | null;
   awarded_company: string | null;

@@ -28,6 +28,8 @@ export interface CollectContext {
   naraWindowDays?: number;
   /** 특정 소스만 실행(building_permit | nara_bid). 미지정=전체. */
   sources?: RadarSource[];
+  /** 민간: 최근 준공(매입 대상) 유지 기간(일). 기본 180. */
+  buybackWindowDays?: number;
 }
 
 export interface Collector {

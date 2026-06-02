@@ -12,10 +12,9 @@ export default async function RadarPage() {
   const { data, error } = await supabase
     .from("construction_project")
     .select(
-      "id, source, source_key, region, sigungu_code, project_type, title, address, lat, lng, distance_km, usage, structure, floor_area, est_rebar_ton, stage, stage_date, ordering_org, contact_party, awarded_company, relevance_grade, relevance_score, est_amount, linked_partner_id, created_at, updated_at",
+      "id, source, source_key, region, sigungu_code, project_type, title, address, lat, lng, distance_km, usage, structure, floor_area, est_rebar_ton, stage, stage_date, permit_date, sched_start_date, start_date, completion_date, ordering_org, contact_party, awarded_company, relevance_grade, relevance_score, est_amount, linked_partner_id, created_at, updated_at",
     )
     .is("deleted_at", null)
-    .neq("stage", "completed")
     .order("relevance_score", { ascending: false });
 
   return (

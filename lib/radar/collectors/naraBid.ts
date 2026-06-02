@@ -152,6 +152,10 @@ export function normalizeAward(item: Record<string, any>): CollectedProject | nu
     floor_area: null,
     stage: "awarded",
     stage_date: toIsoDate(item.fnlSucsfDate ?? item.rlOpengDt),
+    permit_date: null,
+    sched_start_date: null,
+    start_date: null,
+    completion_date: null,
     ordering_org: item.dminsttNm?.trim() || null, // 발주처(표시용·연락대상 아님)
     contact_party: winner ? (tel ? `${winner} · ${tel}` : winner) : "낙찰사", // 낙찰사 + 전화
     awarded_company: winner,
@@ -184,6 +188,10 @@ export function normalizeBid(item: Record<string, any>): CollectedProject | null
     floor_area: null,
     stage: "bid_notice",
     stage_date: toIsoDate(item.bidNtceDt),
+    permit_date: null,
+    sched_start_date: null,
+    start_date: null,
+    completion_date: null,
     ordering_org: item.dminsttNm?.trim() || item.ntceInsttNm?.trim() || null,
     contact_party: "낙찰 전 — 연락 대상 미정", // 낙찰 후 낙찰사로 채워짐
     awarded_company: null,

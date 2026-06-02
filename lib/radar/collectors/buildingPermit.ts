@@ -114,6 +114,10 @@ export function normalizePermitItem(item: Record<string, any>, sigunguCd: string
     floor_area: num(item.totArea) ?? num(item.vlRatEstmTotArea),
     stage,
     stage_date: stageDate,
+    permit_date: toIsoDate(item.archPmsDay),
+    sched_start_date: toIsoDate(item.stcnsSchedDay),
+    start_date: toIsoDate(item.realStcnsDay),
+    completion_date: toIsoDate(item.useAprDay),
     ordering_org: null,
     contact_party: "건축주/시공사", // TODO: 건축주명 필드 있으면 채움
     awarded_company: null,
@@ -122,11 +126,18 @@ export function normalizePermitItem(item: Record<string, any>, sigunguCd: string
   };
 }
 
-/** active+recent 필터: 준공(completed) 제외 + stage_date가 기준일 이후. */
-function keepActiveRecent(p: CollectedProject, cutoffIso: string): boolean {
-  if (p.stage === "completed") return false;
+/**
+ * 수집 유지 필터.
+ *  - 진행 현장(허가/착공): stage_date가 activeCutoff 이후 → 판매 대상.
+ *  - 준공: completion_date가 buybackCutoff 이후(최근 준공)만 → 매입 대상.
+ *    (오래된 준공은 현장 정리 끝 → 매입 가치 낮음.)
+ */
+function keepActiveRecent(p: CollectedProject, activeCutoff: string, buybackCutoff: string): boolean {
+  if (p.stage === "completed") {
+    return !!p.completion_date && p.completion_date >= buybackCutoff;
+  }
   if (!p.stage_date) return false;
-  return p.stage_date >= cutoffIso;
+  return p.stage_date >= activeCutoff;
 }
 
 function isoDaysAgo(days: number): string {
@@ -147,7 +158,8 @@ export const buildingPermitCollector: Collector = {
 
     const out: CollectedProject[] = [];
     const maxPages = ctx.maxPagesPerBjdong ?? Number.POSITIVE_INFINITY;
-    const cutoff = isoDaysAgo(ctx.activeWindowDays ?? 730);
+    const activeCutoff = isoDaysAgo(ctx.activeWindowDays ?? 730);
+    const buybackCutoff = isoDaysAgo(ctx.buybackWindowDays ?? 180);
 
     for (const region of REGIONS) {
       if (ctx.regions && !ctx.regions.includes(region.region)) continue;
@@ -177,7 +189,7 @@ export const buildingPermitCollector: Collector = {
 
               for (const it of items) {
                 const p = normalizePermitItem(it, sg.code);
-                if (p && keepActiveRecent(p, cutoff)) out.push(p);
+                if (p && keepActiveRecent(p, activeCutoff, buybackCutoff)) out.push(p);
               }
 
               const total = Number(body?.totalCount ?? 0);
