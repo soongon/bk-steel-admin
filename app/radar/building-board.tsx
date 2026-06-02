@@ -47,6 +47,34 @@ function relLabel(iso: string | null): string {
   return `${-n}일 전`;
 }
 
+const FRESH_DAYS = 90; // 3개월 — 착공 후 철근 납품 타이밍(이후는 이미 샀거나 준공 미반영 의심)
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const d = new Date(iso + "T00:00:00");
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.round((now.getTime() - d.getTime()) / 86_400_000);
+}
+const isFresh = (iso: string | null) => {
+  const n = daysSince(iso);
+  return n != null && n >= 0 && n <= FRESH_DAYS;
+};
+
+const GRADE_RANK: Record<string, number> = { A: 0, B: 1, C: 2 };
+/** 컬럼 정렬: 신선한 것(최근 날짜) 위로 → 그다음 등급 A·B·C → 같으면 날짜 최신순. */
+function sortColumn(col: BoardColumn, rows: RadarProjectRow[]): RadarProjectRow[] {
+  const key = COL_DATE[col];
+  return rows.slice().sort((a, b) => {
+    const fa = isFresh(a[key] as string | null) ? 0 : 1;
+    const fb = isFresh(b[key] as string | null) ? 0 : 1;
+    if (fa !== fb) return fa - fb;
+    const ga = GRADE_RANK[a.relevance_grade ?? "C"] ?? 2;
+    const gb = GRADE_RANK[b.relevance_grade ?? "C"] ?? 2;
+    if (ga !== gb) return ga - gb;
+    return String(b[key] ?? "").localeCompare(String(a[key] ?? ""));
+  });
+}
+
 function BuildingCard({ p, col }: { p: RadarProjectRow; col: BoardColumn }) {
   const grade = p.relevance_grade ? RELEVANCE_GRADE_META[p.relevance_grade] : null;
   const tier = estimateDeliveryTier(p.floor_area, p.usage);
@@ -92,6 +120,18 @@ function BuildingCard({ p, col }: { p: RadarProjectRow; col: BoardColumn }) {
         ) : null}
       </div>
 
+      {isNow && dateVal ? (
+        isFresh(dateVal) ? (
+          <span className="self-start rounded bg-red-100 px-1 text-[10px] font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300">
+            🔥 신선 · 지금 납품
+          </span>
+        ) : (
+          <span className="self-start rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+            ⚠ 장기 · 준공 미반영 의심
+          </span>
+        )
+      ) : null}
+
       <div
         className={cn(
           "mt-0.5 flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium",
@@ -126,9 +166,7 @@ export function BuildingBoard({ projects }: { projects: RadarProjectRow[] }) {
       completed: [],
     };
     for (const p of projects) m[boardColumn(p)].push(p);
-    for (const k of Object.keys(m) as BoardColumn[]) {
-      m[k].sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0));
-    }
+    for (const k of Object.keys(m) as BoardColumn[]) m[k] = sortColumn(k, m[k]);
     return m;
   }, [projects]);
 
@@ -137,7 +175,14 @@ export function BuildingBoard({ projects }: { projects: RadarProjectRow[] }) {
     const ton = projects
       .filter((p) => boardColumn(p) !== "completed")
       .reduce((s, p) => s + (p.est_rebar_ton ?? 0), 0);
-    return { construction: byCol.construction.length, completed: byCol.completed.length, big, ton };
+    const freshStart = byCol.construction.filter((p) => isFresh(p.start_date)).length;
+    return {
+      construction: byCol.construction.length,
+      freshStart,
+      completed: byCol.completed.length,
+      big,
+      ton,
+    };
   }, [projects, byCol]);
 
   const cols = BOARD_COLUMNS.filter((c) => play === "all" || c.play === play);
@@ -145,7 +190,11 @@ export function BuildingBoard({ projects }: { projects: RadarProjectRow[] }) {
   return (
     <div className="flex flex-col gap-4">
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard title="착공·납품 현장 💰" value={`${kpi.construction}건`} hint="지금 납품 대상" />
+        <KpiCard
+          title="착공·납품 (최근 3개월) 💰"
+          value={`${kpi.freshStart}건`}
+          hint={`진짜 납품 타이밍 · 착공 전체 ${kpi.construction}`}
+        />
         <KpiCard title="준공·매입 대상 💰" value={`${kpi.completed}건`} hint="남은 철근 매입" />
         <KpiCard title="대형 현장 (25톤)" value={`${kpi.big}건`} hint="대량·반복 거래" />
         <KpiCard
