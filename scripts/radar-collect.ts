@@ -28,7 +28,12 @@ import type { RadarRegion, RadarSource } from "../lib/radar/types";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 const SINCE_DAYS = Number(process.env.RADAR_SINCE_DAYS ?? 30);
-const envNum = (k: string) => (process.env[k] ? Number(process.env[k]) : undefined);
+const envNum = (k: string) => {
+  const v = process.env[k];
+  if (!v) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined; // 비수치(NaN) 입력은 무시 — isoDaysAgo(NaN) RangeError 방지
+};
 
 async function main() {
   // throttle/테스트 노브(선택): RADAR_ACTIVE_DAYS · RADAR_MAX_PAGES · RADAR_MAX_BJDONG

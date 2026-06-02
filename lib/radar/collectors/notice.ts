@@ -29,17 +29,17 @@ interface NoticeRow {
   url: string;
 }
 
-// 철근 관련 대형 개발 신호 (선점 대상)
+// 철근 관련 대형 개발 신호 (선점 대상). noticeCategory 와 키워드 정합 유지.
 const INCLUDE = [
-  "도시계획도로", "도시계획시설", "도로구역", "개발행위", "지구단위", "산업단지", "물류단지",
-  "정비사업", "재개발", "재건축", "도시개발", "택지", "부지조성", "주택건설", "공동주택",
+  "도시계획도로", "도시계획시설", "도로구역", "개발행위", "지구단위", "산업단지", "산단", "물류단지",
+  "물류센터", "정비사업", "재개발", "재건축", "도시개발", "택지", "부지조성", "주택건설", "공동주택",
   "대지조성", "건축위원회", "구조분야", "건축심의", "공장", "산업로", "빗물펌프장",
 ];
 // 노이즈 컷 — 행정처분·세금·송달·지적도 + 용역공고·생활프로그램(실제 발주 아님)
 const EXCLUDE = [
   "시가표준액", "이행강제금", "공시송달", "취소", "위반", "처분", "반송", "납세", "과태료",
   "독촉", "송달", "예고", "지적도", "채용", "입찰", "수의계약",
-  "금연", "활성화사업", "수행능력", "수행기관", "안전점검",
+  "금연", "공동체 활성화", "수행능력", "수행기관", "안전점검",
 ];
 
 /** 고시 제목 → 철근관련성 카테고리. */
@@ -83,8 +83,9 @@ function parseGyeongju(html: string, origin: string): NoticeRow[] {
 /** 포항 새올 고시·일반공고 게시판(seCode=01) 행 파서. data-action 의 notAncmtMgtNo 가 자연키. */
 function parsePohang(html: string, origin: string): NoticeRow[] {
   const out: NoticeRow[] = [];
+  // 목록 <a> 의 data-action(notAncmtMgtNo)만 — 같은 행의 list_date td 까지가 한 행.
   const re =
-    /data-action="([^"]*notAncmtMgtNo=(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<td class="list_date">\s*(\d{4}-\d{2}-\d{2})\s*<\/td>/g;
+    /<a\b[^>]*data-action="([^"]*notAncmtMgtNo=(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<td class="list_date"[^>]*>\s*(\d{4}-\d{2}-\d{2})\s*<\/td>/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
     out.push({
@@ -100,15 +101,17 @@ function parsePohang(html: string, origin: string): NoticeRow[] {
 /** 울산광역시 고시공고 게시판 행 파서. 노드ID(`46444.ulsan`)가 자연키, 행 마지막 td 가 게시일. */
 function parseUlsan(html: string, origin: string): NoticeRow[] {
   const out: NoticeRow[] = [];
+  // gosi td 의 <a href="./NNNN.ulsan…"> ~ 같은 행 마지막 td(게시일)/</tr>. class·속성 변화에 견고하게 완화.
   const re =
-    /<td class="gosi"[^>]*>\s*<a href="\.\/(\d+)\.ulsan([^"]*)">([\s\S]*?)<\/a>[\s\S]*?<td class="mobilehidden">\s*(\d{4}-\d{2}-\d{2})\s*<\/td>\s*<\/tr>/g;
+    /<td class="gosi[^"]*"[^>]*>\s*<a\b[^>]*href="\.\/(\d+)\.ulsan([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<td[^>]*>\s*(\d{4}-\d{2}-\d{2})\s*<\/td>\s*<\/tr>/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
     out.push({
       key: `ulsan-${m[1]}`,
       title: cleanTitle(m[3]),
       date: m[4],
-      url: `${origin}/u/rep/${m[1]}.ulsan${m[2].replace(/&amp;/g, "&")}`,
+      // 목록 페이지(/u/rep/contents.ulsan) 기준 ./NNNN.ulsan → /u/rep/transfer/notice/NNNN.ulsan (상세는 이 경로에서만 열림).
+      url: `${origin}/u/rep/transfer/notice/${m[1]}.ulsan${m[2].replace(/&amp;/g, "&")}`,
     });
   }
   return out;
@@ -148,6 +151,28 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** HTML 목록 fetch — 12s 타임아웃 + 1회 재시도. 한 게시판 무응답이 전체 수집을 멈추지 않게(building fetchJsonRetry 대응). */
+async function fetchText(
+  url: string,
+  init: { method: string; headers: Record<string, string>; body?: string },
+  timeoutMs = 12000,
+): Promise<string> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { ...init, signal: ac.signal });
+      return await res.text();
+    } catch (e) {
+      lastErr = e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr;
+}
+
 export const noticeCollector: Collector = {
   source: "notice",
   label: "시청 고시(선점)",
@@ -159,9 +184,10 @@ export const noticeCollector: Collector = {
     for (const board of BOARDS) {
       if (ctx.regions && !ctx.regions.includes(board.region)) continue;
       try {
+        let prevSig: string | null = null;
         for (let page = 1; page <= maxPages; page++) {
           const req = board.request(page);
-          const res = await fetch(req.url, {
+          const html = await fetchText(req.url, {
             method: req.method ?? "GET",
             headers: {
               "User-Agent": "Mozilla/5.0 (radar)",
@@ -171,12 +197,17 @@ export const noticeCollector: Collector = {
             },
             body: req.body,
           });
-          const rows = board.parse(await res.text(), board.origin);
+          const rows = board.parse(html, board.origin);
           if (rows.length === 0) break;
 
-          let oldest = "9999";
+          // 범위 밖 페이지에서 마지막 페이지를 반복 반환하는 게시판(울산 등) 방어 — 직전 페이지와 동일하면 중단.
+          const sig = rows.map((r) => r.key).join(",");
+          if (sig === prevSig) break;
+          prevSig = sig;
+
+          let newest = "0000";
           for (const r of rows) {
-            if (r.date < oldest) oldest = r.date;
+            if (r.date > newest) newest = r.date;
             if (r.date < cutoff) continue; // 기간 밖
             if (!INCLUDE.some((k) => r.title.includes(k))) continue;
             if (EXCLUDE.some((k) => r.title.includes(k))) continue;
@@ -205,7 +236,9 @@ export const noticeCollector: Collector = {
               raw: r,
             });
           }
-          if (oldest < cutoff) break; // 페이지가 기간 밖으로 넘어가면 중단
+          // 이 페이지의 '가장 최신' 글도 윈도우 밖이면 이후 페이지는 전부 더 과거 → 중단.
+          // (oldest 가 아니라 newest 기준 — 상단고정 공지의 옛 날짜에 조기중단되지 않게.)
+          if (newest < cutoff) break;
         }
       } catch (e) {
         console.error(`[radar] 고시 수집 실패 ${board.region}:`, (e as Error).message);
