@@ -193,16 +193,14 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
   const documented = parsed.is_documented;
   const { vatType, vatRate, vat, total } = computeVat(documented, parsed.tax_doc_type, subtotal);
 
-  // 매출 헤더
-  const { data: sale, error: saleErr } = await supabase
-    .from("sale")
-    .insert({
+  // 헤더 + 라인 한 트랜잭션(RPC) — 분리 insert 시 라인 실패하면 헤더만 남던 문제 방지.
+  const { error: rpcErr } = await supabase.rpc("create_sale_with_line", {
+    p_sale: {
       book: parsed.book,
       doc_no: docNo,
       partner_id: parsed.partner_id,
       site_id: resolvedSiteId,
       site_name: parsed.site_name,
-      sale_subtype: "external",
       ordered_on: parsed.ordered_on,
       delivered_on: parsed.delivered_on,
       is_documented: documented,
@@ -216,26 +214,17 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
       settled_on: parsed.status === "settled" ? (parsed.delivered_on ?? parsed.ordered_on) : null,
       status: parsed.status,
       notes: parsed.notes,
-    })
-    .select("id")
-    .single();
-  if (saleErr || !sale) return { ok: false, error: friendly(saleErr?.message ?? "매출 생성 실패") };
-
-  // 라인
-  const { error: lineErr } = await supabase.from("sale_line").insert({
-    sale_id: sale.id,
-    book: parsed.book,
-    item_id: parsed.item_id,
-    unit: parsed.unit,
-    qty: parsed.qty,
-    unit_price_krw: parsed.unit_price_krw,
-    weight_kg: parsed.weight_kg,
-    theoretical_weight_kg: parsed.weight_kg,
-    price_basis: "theoretical",
-    line_subtotal_krw: subtotal,
-    status: parsed.status,
+    },
+    p_line: {
+      item_id: parsed.item_id,
+      unit: parsed.unit,
+      qty: parsed.qty,
+      unit_price_krw: parsed.unit_price_krw,
+      weight_kg: parsed.weight_kg,
+      line_subtotal_krw: subtotal,
+    },
   });
-  if (lineErr) return { ok: false, error: friendly(lineErr.message) };
+  if (rpcErr) return { ok: false, error: friendly(rpcErr.message) };
 
   bumpRevalidation();
   return { ok: true };
@@ -363,10 +352,8 @@ export async function cancelSale(id: string): Promise<SaleActionResult> {
 
 export async function deleteSale(id: string): Promise<SaleActionResult> {
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("sale")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+  // RPC가 manager 권한을 강제(soft-delete가 staff UPDATE 정책으로 우회되던 문제 차단).
+  const { error } = await supabase.rpc("soft_delete_sale", { p_id: id });
   if (error) return { ok: false, error: friendly(error.message) };
   bumpRevalidation();
   return { ok: true };
