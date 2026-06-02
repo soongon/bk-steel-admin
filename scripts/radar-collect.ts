@@ -38,6 +38,8 @@ async function main() {
     maxPagesPerBjdong: envNum("RADAR_MAX_PAGES"),
     maxBjdongPerSigungu: envNum("RADAR_MAX_BJDONG"),
     naraWindowDays: envNum("RADAR_NARA_DAYS"),
+    noticeMaxPages: envNum("RADAR_NOTICE_PAGES"),
+    noticeWindowDays: envNum("RADAR_NOTICE_DAYS"),
     regions: process.env.RADAR_REGIONS
       ? (process.env.RADAR_REGIONS.split(",").map((s) => s.trim()).filter(Boolean) as RadarRegion[])
       : undefined,

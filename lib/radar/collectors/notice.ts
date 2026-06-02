@@ -5,7 +5,8 @@
  * 착공 스트림이 아니라 **가장 이른 대형 철근 수요 신호**(계획 승인 단계 = 착공 몇 달~몇 년 전).
  * 고시 **게시일을 stage_date에 저장**(날짜 핵심). 원문 링크는 source_url.
  *
- * 경주(gyeongju.go.kr) 검증 완료. 포항·울산은 게시판 URL/파서 추가 필요(TODO).
+ * 경주(gyeongju.go.kr)·포항(pohang.go.kr 새올)·울산(ulsan.go.kr 휴먼프레임워크) 검증 완료.
+ * 게시판마다 HTML·페이징이 달라 per-city parse + request(GET/POST) 로 분리.
  * 참조(PoC): scripts/radar-scrape-gyeongju.ts
  */
 
@@ -15,7 +16,9 @@ import type { Collector, CollectContext } from "./types";
 interface NoticeBoard {
   region: RadarRegion;
   origin: string;
-  listUrl: (pageNo: number) => string;
+  // 페이지 요청 — 게시판별 GET(기본) 또는 POST(울산 list.ulsan) 분기.
+  // eslint-disable-next-line no-unused-vars
+  request: (pageNo: number) => { url: string; method?: "GET" | "POST"; body?: string };
   // eslint-disable-next-line no-unused-vars
   parse: (html: string, origin: string) => NoticeRow[];
 }
@@ -32,10 +35,11 @@ const INCLUDE = [
   "정비사업", "재개발", "재건축", "도시개발", "택지", "부지조성", "주택건설", "공동주택",
   "대지조성", "건축위원회", "구조분야", "건축심의", "공장", "산업로", "빗물펌프장",
 ];
-// 노이즈 컷 — 행정처분·세금·송달·지적도 등
+// 노이즈 컷 — 행정처분·세금·송달·지적도 + 용역공고·생활프로그램(실제 발주 아님)
 const EXCLUDE = [
   "시가표준액", "이행강제금", "공시송달", "취소", "위반", "처분", "반송", "납세", "과태료",
   "독촉", "송달", "예고", "지적도", "채용", "입찰", "수의계약",
+  "금연", "활성화사업", "수행능력", "수행기관", "안전점검",
 ];
 
 /** 고시 제목 → 철근관련성 카테고리. */
@@ -46,6 +50,15 @@ export function noticeCategory(title: string): string {
   if (/도로|산업로|도로구역/.test(title)) return "road";
   if (/도시계획시설|펌프장|폐기물|방수|상수도|하수/.test(title)) return "infra";
   return "etc";
+}
+
+/** 제목 정리 — 태그(새글 뱃지 등) 제거 · &amp; 복원 · 공백 접기. */
+function cleanTitle(raw: string): string {
+  return raw
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** 경주 게시판(서버 HTML 테이블) 행 파서. */
@@ -67,14 +80,66 @@ function parseGyeongju(html: string, origin: string): NoticeRow[] {
   return out;
 }
 
+/** 포항 새올 고시·일반공고 게시판(seCode=01) 행 파서. data-action 의 notAncmtMgtNo 가 자연키. */
+function parsePohang(html: string, origin: string): NoticeRow[] {
+  const out: NoticeRow[] = [];
+  const re =
+    /data-action="([^"]*notAncmtMgtNo=(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<td class="list_date">\s*(\d{4}-\d{2}-\d{2})\s*<\/td>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    out.push({
+      key: `pohang-${m[2]}`,
+      title: cleanTitle(m[3]),
+      date: m[4],
+      url: origin + m[1].replace(/&amp;/g, "&"),
+    });
+  }
+  return out;
+}
+
+/** 울산광역시 고시공고 게시판 행 파서. 노드ID(`46444.ulsan`)가 자연키, 행 마지막 td 가 게시일. */
+function parseUlsan(html: string, origin: string): NoticeRow[] {
+  const out: NoticeRow[] = [];
+  const re =
+    /<td class="gosi"[^>]*>\s*<a href="\.\/(\d+)\.ulsan([^"]*)">([\s\S]*?)<\/a>[\s\S]*?<td class="mobilehidden">\s*(\d{4}-\d{2}-\d{2})\s*<\/td>\s*<\/tr>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    out.push({
+      key: `ulsan-${m[1]}`,
+      title: cleanTitle(m[3]),
+      date: m[4],
+      url: `${origin}/u/rep/${m[1]}.ulsan${m[2].replace(/&amp;/g, "&")}`,
+    });
+  }
+  return out;
+}
+
 const BOARDS: NoticeBoard[] = [
   {
     region: "gyeongju",
     origin: "https://www.gyeongju.go.kr",
-    listUrl: (n) => `https://www.gyeongju.go.kr/open_content/ko/page.do?mnu_uid=423&pageNo=${n}`,
+    request: (n) => ({ url: `https://www.gyeongju.go.kr/open_content/ko/page.do?mnu_uid=423&pageNo=${n}` }),
     parse: parseGyeongju,
   },
-  // TODO: 포항(pohang.go.kr)·울산 각 구군 — 게시판 URL + 파서 추가
+  {
+    region: "pohang",
+    origin: "https://www.pohang.go.kr",
+    request: (n) => ({
+      url: `https://www.pohang.go.kr/portal/saeol/gosi/list.do?mid=0202010000&seCode=01&page=${n}`,
+    }),
+    parse: parsePohang,
+  },
+  {
+    // 울산광역시 고시공고 — 도시계획·산단·도시개발 결정고시가 광역시 단위. 페이징은 POST(list.ulsan, curPage) 전용.
+    region: "ulsan",
+    origin: "https://www.ulsan.go.kr",
+    request: (n) => ({
+      url: "https://www.ulsan.go.kr/u/rep/transfer/notice/list.ulsan",
+      method: "POST",
+      body: `mId=001004002000000000&curPage=${n}`,
+    }),
+    parse: parseUlsan,
+  },
 ];
 
 function isoDaysAgo(days: number): string {
@@ -95,8 +160,16 @@ export const noticeCollector: Collector = {
       if (ctx.regions && !ctx.regions.includes(board.region)) continue;
       try {
         for (let page = 1; page <= maxPages; page++) {
-          const res = await fetch(board.listUrl(page), {
-            headers: { "User-Agent": "Mozilla/5.0 (radar)" },
+          const req = board.request(page);
+          const res = await fetch(req.url, {
+            method: req.method ?? "GET",
+            headers: {
+              "User-Agent": "Mozilla/5.0 (radar)",
+              ...(req.method === "POST"
+                ? { "Content-Type": "application/x-www-form-urlencoded" }
+                : {}),
+            },
+            body: req.body,
           });
           const rows = board.parse(await res.text(), board.origin);
           if (rows.length === 0) break;
