@@ -124,6 +124,39 @@ export type BankAccount = {
   kind: string;
 };
 
+const GRADE_META: Record<string, { label: string; className: string }> = {
+  normal: { label: "정상", className: "text-muted-foreground" },
+  short: { label: "단기", className: "text-yellow-600 dark:text-yellow-400" },
+  mid: { label: "중기", className: "text-orange-600 dark:text-orange-400" },
+  long: { label: "장기", className: "font-semibold text-red-600 dark:text-red-400" },
+};
+
+/** 미수 등급 — vw_receivable 과 동일 기준(정상/단기1~7/중기8~30/장기31+). 수금완료·취소는 미수 아님. */
+function receivable(s: SaleListRow): { grade: string | null; days: number } {
+  if (s.status === "settled" || s.status === "cancelled") return { grade: null, days: 0 };
+  if (!s.payment_due_on) return { grade: "normal", days: 0 };
+  const due = new Date(s.payment_due_on + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.floor((today.getTime() - due.getTime()) / 86_400_000);
+  if (days <= 0) return { grade: "normal", days };
+  if (days <= 7) return { grade: "short", days };
+  if (days <= 30) return { grade: "mid", days };
+  return { grade: "long", days };
+}
+
+function ReceivableCell({ s }: { s: SaleListRow }) {
+  const { grade, days } = receivable(s);
+  if (!grade) return <span className="text-muted-foreground">—</span>;
+  const meta = GRADE_META[grade];
+  return (
+    <span className={`text-xs ${meta.className}`}>
+      {meta.label}
+      {days > 0 ? <span className="ml-0.5 tabular-nums">+{days}d</span> : null}
+    </span>
+  );
+}
+
 export function SaleTable({
   sales,
   partners,
@@ -132,6 +165,7 @@ export function SaleTable({
   sites,
   bankAccounts,
   view,
+  gradeFilter = "",
   attachmentsByEntity,
 }: {
   sales: SaleListRow[];
@@ -141,6 +175,7 @@ export function SaleTable({
   sites: SiteOption[];
   bankAccounts: BankAccount[];
   view: BookView;
+  gradeFilter?: string;
   attachmentsByEntity?: Record<string, import("@/lib/attachment").Attachment[]>;
 }) {
   const [open, setOpen] = useState(false);
@@ -199,11 +234,17 @@ export function SaleTable({
     });
   }
 
+  // 미수등급 필터는 클라에서(날짜 파생). 나머지 필터는 서버 쿼리에서 이미 적용됨.
+  const filtered = gradeFilter
+    ? sales.filter((s) => receivable(s).grade === gradeFilter)
+    : sales;
+
   return (
     <>
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          총 <span className="font-medium text-foreground">{sales.length}</span>건
+          총 <span className="font-medium text-foreground">{filtered.length}</span>건
+          {gradeFilter && filtered.length !== sales.length ? ` / ${sales.length}` : ""}
         </p>
         <Button onClick={openCreate} size="sm">
           <PlusIcon className="size-4" />
@@ -222,20 +263,27 @@ export function SaleTable({
               <TableHead>품목</TableHead>
               <TableHead className="w-28 text-right">합계</TableHead>
               <TableHead className="w-24 text-center">상태</TableHead>
+              <TableHead className="w-16 text-center">미수</TableHead>
               <TableHead className="w-20">메모</TableHead>
               <TableHead className="w-32 text-right">액션</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sales.length === 0 ? (
+            {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
-                  등록된 매출이 없습니다.{" "}
-                  <button onClick={openCreate} className="underline">신규 추가</button>
+                <TableCell colSpan={10} className="py-12 text-center text-muted-foreground">
+                  {sales.length === 0 ? (
+                    <>
+                      등록된 매출이 없습니다.{" "}
+                      <button onClick={openCreate} className="underline">신규 추가</button>
+                    </>
+                  ) : (
+                    "필터 조건에 맞는 매출이 없습니다."
+                  )}
                 </TableCell>
               </TableRow>
             ) : (
-              sales.map((s) => {
+              filtered.map((s) => {
                 const firstLine = s.sale_line?.[0];
                 const itemSummary = firstLine
                   ? `${firstLine.item?.name ?? "—"} · ${firstLine.qty}${firstLine.unit}`
@@ -301,6 +349,9 @@ export function SaleTable({
                     </TableCell>
                     <TableCell className="text-center">
                       <StatusBadge status={s.status} />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <ReceivableCell s={s} />
                     </TableCell>
                     <TableCell>
                       <NoteCell text={s.notes} />
