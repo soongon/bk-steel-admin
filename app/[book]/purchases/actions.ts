@@ -20,7 +20,25 @@ function bumpRevalidation() {
   for (const b of ["all", "bk", "sl", "b"]) {
     revalidatePath(`/${b}/purchases`);
     revalidatePath(`/${b}/dashboard`);
+    revalidatePath(`/${b}/payables`);
+    revalidatePath(`/${b}/bank`);
   }
+}
+
+/**
+ * 자료성·세금계산서 종류 → 부가세 유형·세액(매출 computeVat 미러).
+ * 계산서=면세(exempt), 무자료/무자료성=불과세(non_taxable) — 부가세 신고대상 뷰에서 자동 제외.
+ */
+function computeVat(isDocumented: boolean, taxDocType: string, subtotal: number) {
+  const vatType =
+    !isDocumented || taxDocType === "none"
+      ? "non_taxable"
+      : taxDocType === "invoice"
+        ? "exempt"
+        : "standard_10";
+  const vatRate = vatType === "standard_10" ? 10 : 0;
+  const vat = vatRate > 0 ? Math.round((subtotal * vatRate) / 100) : 0;
+  return { vatType, vatRate, vat, total: subtotal + vat };
 }
 
 async function generateDocNo(orderedOn: string): Promise<string> {
@@ -121,21 +139,30 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
   const docNo = parsed.doc_no ?? (await generateDocNo(parsed.ordered_on));
   const subtotal = Math.round(parsed.unit_price_krw * parsed.qty);
   const documented = parsed.is_documented;
-  const vatType = documented && parsed.tax_doc_type !== "invoice" && parsed.tax_doc_type !== "none"
-    ? "standard_10"
-    : "zero_rated";
-  const vatRate = vatType === "standard_10" ? 10 : 0;
-  const vat = vatRate > 0 ? Math.round(subtotal * 0.1) : 0;
-  const total = subtotal + vat;
+  const { vatType, vatRate, vat, total } = computeVat(documented, parsed.tax_doc_type, subtotal);
 
-  // 매입 헤더
-  const { data: purchase, error: purErr } = await supabase
-    .from("purchase")
-    .insert({
+  // 기본 창고/존 해석 (본 야적장) — RPC에 넘겨 원자 생성
+  const { data: warehouse } = await supabase
+    .from("warehouse")
+    .select("id")
+    .eq("code", "WH-MAIN")
+    .maybeSingle();
+  if (!warehouse) {
+    return { ok: false, error: "기본 창고(WH-MAIN)가 없습니다. 마이그레이션 스크립트 실행 필요." };
+  }
+  const { data: zone } = await supabase
+    .from("warehouse_zone")
+    .select("id")
+    .eq("warehouse_id", warehouse.id)
+    .eq("preferred_book", parsed.book)
+    .maybeSingle();
+
+  // 헤더 + 라인 한 트랜잭션(RPC) — 분리 insert로 라인 실패 시 헤더만 남던 문제 방지.
+  const { error: rpcErr } = await supabase.rpc("create_purchase_with_line", {
+    p_purchase: {
       book: parsed.book,
       doc_no: docNo,
       partner_id: parsed.partner_id,
-      purchase_subtype: "external",
       ordered_on: parsed.ordered_on,
       delivered_on: parsed.delivered_on,
       is_documented: documented,
@@ -147,54 +174,27 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
       vat_krw: vat,
       total_krw: total,
       payment_due_on: parsed.payment_due_on,
-      paid_on: parsed.paid_on,
+      paid_on: null, // 결제는 '결제' 버튼(통장 출금)으로만 — 생성 시 미결제
       status: parsed.status,
       notes: parsed.notes,
-    })
-    .select("id")
-    .single();
-  if (purErr || !purchase) return { ok: false, error: friendly(purErr?.message ?? "매입 생성 실패") };
-
-  // 매입 라인 (creating warehouse default - 본 야적장)
-  const { data: warehouse } = await supabase
-    .from("warehouse")
-    .select("id")
-    .eq("code", "WH-MAIN")
-    .maybeSingle();
-  const { data: zone } = warehouse
-    ? await supabase
-        .from("warehouse_zone")
-        .select("id")
-        .eq("warehouse_id", warehouse.id)
-        .eq("preferred_book", parsed.book)
-        .maybeSingle()
-    : { data: null };
-
-  if (!warehouse) {
-    return { ok: false, error: "기본 창고(WH-MAIN)가 없습니다. 마이그레이션 스크립트 실행 필요." };
-  }
-
-  const isKgUnit = parsed.unit === "kg";
-  const priceBasis = isKgUnit ? "actual" : "theoretical";
-
-  const { error: lineErr } = await supabase.from("purchase_line").insert({
-    purchase_id: purchase.id,
-    book: parsed.book,
-    warehouse_id: warehouse.id,
-    warehouse_zone_id: zone?.id ?? null,
-    item_id: parsed.item_id,
-    acquired_unit: parsed.unit,
-    acquired_qty: parsed.qty,
-    unit_price_krw: parsed.unit_price_krw,
-    bars_count: parsed.bars_count,
-    theoretical_weight_kg: parsed.theoretical_weight_kg,
-    actual_weight_kg: parsed.actual_weight_kg,
-    invoiced_weight_kg: parsed.actual_weight_kg ?? parsed.theoretical_weight_kg,
-    price_basis: priceBasis,
-    line_subtotal_krw: subtotal,
-    status: parsed.status === "ordered" ? "ordered" : "in_stock",
+    },
+    p_line: {
+      warehouse_id: warehouse.id,
+      warehouse_zone_id: zone?.id ?? null,
+      item_id: parsed.item_id,
+      acquired_unit: parsed.unit,
+      acquired_qty: parsed.qty,
+      unit_price_krw: parsed.unit_price_krw,
+      bars_count: parsed.bars_count,
+      theoretical_weight_kg: parsed.theoretical_weight_kg,
+      actual_weight_kg: parsed.actual_weight_kg,
+      invoiced_weight_kg: parsed.actual_weight_kg ?? parsed.theoretical_weight_kg,
+      price_basis: parsed.unit === "kg" ? "actual" : "theoretical",
+      line_subtotal_krw: subtotal,
+      line_status: parsed.status, // 헤더와 일치 — scrapped/depleted 가 in_stock 유령재고로 남던 문제 방지
+    },
   });
-  if (lineErr) return { ok: false, error: friendly(lineErr.message) };
+  if (rpcErr) return { ok: false, error: friendly(rpcErr.message) };
 
   bumpRevalidation();
   return { ok: true };
@@ -210,14 +210,27 @@ export async function updatePurchaseHeader(
     return typeof v === "string" ? v.trim() : "";
   };
 
+  // 공급가 기준 부가세 재계산(자료종류 전환 시 stale 방지). paid_on 은 결제 RPC 전용이라 여기서 안 건드림.
+  const { data: cur } = await supabase.from("purchase").select("subtotal_krw").eq("id", id).single();
+  const isDocumented = str("is_documented") === "true";
+  const taxDocType = str("tax_doc_type");
+  const { vatType, vatRate, vat, total } = computeVat(
+    isDocumented,
+    taxDocType,
+    Number(cur?.subtotal_krw ?? 0),
+  );
+
   const updates: Record<string, unknown> = {
     delivered_on: str("delivered_on") || null,
     payment_due_on: str("payment_due_on") || null,
-    paid_on: str("paid_on") || null,
     status: str("status"),
-    tax_doc_type: str("tax_doc_type"),
+    tax_doc_type: taxDocType,
     tax_doc_no: str("tax_doc_no") || null,
-    is_documented: str("is_documented") === "true",
+    is_documented: isDocumented,
+    vat_type: vatType,
+    vat_rate: vatRate,
+    vat_krw: vat,
+    total_krw: total,
     notes: str("notes") || null,
   };
 
@@ -250,13 +263,19 @@ export async function markPurchaseReceived(id: string): Promise<PurchaseActionRe
   return { ok: true };
 }
 
-export async function markPurchasePaid(id: string): Promise<PurchaseActionResult> {
+/** 결제완료 — 통장 출금(bank_transaction)을 함께 기록(RPC, 원자적). 통장.book=매입.book 정합 강제. */
+export async function markPurchasePaid(
+  id: string,
+  bankAccountId: string,
+  paidOn?: string,
+): Promise<PurchaseActionResult> {
+  if (!bankAccountId) return { ok: false, error: "결제 통장을 선택해주세요." };
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
-  const { error } = await supabase
-    .from("purchase")
-    .update({ paid_on: today })
-    .eq("id", id);
+  const { error } = await supabase.rpc("pay_purchase_with_payment", {
+    p_purchase_id: id,
+    p_bank_account_id: bankAccountId,
+    p_paid_on: paidOn || new Date().toISOString().slice(0, 10),
+  });
   if (error) return { ok: false, error: friendly(error.message) };
   bumpRevalidation();
   return { ok: true };
@@ -264,10 +283,8 @@ export async function markPurchasePaid(id: string): Promise<PurchaseActionResult
 
 export async function deletePurchase(id: string): Promise<PurchaseActionResult> {
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("purchase")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+  // RPC가 manager 권한을 강제(soft-delete가 staff UPDATE 정책으로 우회되던 문제 차단).
+  const { error } = await supabase.rpc("soft_delete_purchase", { p_id: id });
   if (error) return { ok: false, error: friendly(error.message) };
   bumpRevalidation();
   return { ok: true };

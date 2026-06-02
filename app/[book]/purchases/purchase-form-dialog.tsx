@@ -182,7 +182,6 @@ export function PurchaseFormDialog({
   const [orderedOn, setOrderedOn] = useState(today);
   const [deliveredOn, setDeliveredOn] = useState("");
   const [paymentDueOn, setPaymentDueOn] = useState("");
-  const [paidOn, setPaidOn] = useState("");
   const [status, setStatus] = useState<string>(editing?.status ?? "ordered");
   const [notes, setNotes] = useState(editing?.notes ?? "");
 
@@ -194,7 +193,6 @@ export function PurchaseFormDialog({
         setOrderedOn(editing.ordered_on);
         setDeliveredOn(editing.delivered_on ?? "");
         setPaymentDueOn(editing.payment_due_on ?? "");
-        setPaidOn(editing.paid_on ?? "");
         setStatus(editing.status);
         setIsDocumented(editing.is_documented);
         setTaxDocType(editing.tax_doc_type);
@@ -211,7 +209,6 @@ export function PurchaseFormDialog({
         setOrderedOn(today);
         setDeliveredOn("");
         setPaymentDueOn("");
-        setPaidOn("");
         setStatus("ordered");
         setTaxDocNo("");
         setNotes("");
@@ -244,7 +241,6 @@ export function PurchaseFormDialog({
     fd.set("ordered_on", orderedOn);
     fd.set("delivered_on", deliveredOn);
     fd.set("payment_due_on", paymentDueOn);
-    fd.set("paid_on", paidOn);
     fd.set("status", status);
     fd.set("is_documented", String(isDocumented));
     fd.set("tax_doc_type", taxDocType);
@@ -489,8 +485,8 @@ export function PurchaseFormDialog({
             </Field>
           </div>
 
-          {/* 상태 + 결제 */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* 상태 + 결제 예정일 (결제완료는 목록의 '결제' 버튼=통장 출금으로) */}
+          <div className="grid grid-cols-2 gap-3">
             <Field label="상태">
               <select
                 value={status}
@@ -509,13 +505,6 @@ export function PurchaseFormDialog({
                 type="date"
                 value={paymentDueOn}
                 onChange={(e) => setPaymentDueOn(e.target.value)}
-              />
-            </Field>
-            <Field label="결제일">
-              <Input
-                type="date"
-                value={paidOn}
-                onChange={(e) => setPaidOn(e.target.value)}
               />
             </Field>
           </div>

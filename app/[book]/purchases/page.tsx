@@ -31,7 +31,7 @@ export default async function PurchasesPage({
 
   if (view !== "all") q = q.eq("book", view);
 
-  const [purRes, partnersRes, itemsRes, rebarSpecsRes] = await Promise.all([
+  const [purRes, partnersRes, itemsRes, rebarSpecsRes, bankAccountsRes] = await Promise.all([
     q,
     supabase
       .from("partner")
@@ -51,6 +51,13 @@ export default async function PurchasesPage({
         "spec_code, unit_weight_kg_per_m, standard_length_m, bars_per_bundle, bundle_weight_kg",
       )
       .order("display_order"),
+    supabase
+      .from("bank_account")
+      .select("id, code, bank_name, book, kind")
+      .is("deleted_at", null)
+      .eq("is_active", true)
+      .order("book")
+      .order("is_primary", { ascending: false }),
   ]);
 
   const purchases = (purRes.data as unknown as PurchaseListRow[]) ?? [];
@@ -96,6 +103,7 @@ export default async function PurchasesPage({
         partners={partnersRes.data ?? []}
         items={itemsRes.data ?? []}
         rebarSpecs={rebarSpecsRes.data ?? []}
+        bankAccounts={bankAccountsRes.data ?? []}
         view={view}
         attachmentsByEntity={attachmentsByEntity}
       />
