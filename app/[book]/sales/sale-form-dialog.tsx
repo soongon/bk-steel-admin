@@ -94,6 +94,24 @@ const fmtNum = (n: number, d = 1) => n.toLocaleString("ko-KR", { maximumFraction
 
 export type SiteOption = { id: string; name: string };
 
+/** 철근 여부 — rebar_spec_code 가 있으면 이형철근(환산 대상). category 보조. */
+const isRebarItem = (i: Item) => i.category === "rebar" || !!i.rebar_spec_code;
+/** "D13" → 13. 정렬용(10미리부터). 못 읽으면 맨 뒤. */
+const specMm = (code: string | null) => {
+  const n = parseInt(String(code ?? "").replace(/\D/g, ""), 10);
+  return Number.isFinite(n) ? n : 9999;
+};
+/** 철근 정렬: 8M 우선 → 지름(10미리부터) → 길이. */
+function sortRebar(a: Item, b: Item): number {
+  const a8 = a.length_m === 8 ? 0 : 1;
+  const b8 = b.length_m === 8 ? 0 : 1;
+  if (a8 !== b8) return a8 - b8;
+  const sa = specMm(a.rebar_spec_code);
+  const sb = specMm(b.rebar_spec_code);
+  if (sa !== sb) return sa - sb;
+  return (a.length_m ?? 0) - (b.length_m ?? 0);
+}
+
 export function SaleFormDialog({
   open,
   onOpenChange,
@@ -140,6 +158,16 @@ export function SaleFormDialog({
   const rebarSpec = selectedItem?.rebar_spec_code
     ? rebarSpecs.find((s) => s.spec_code === selectedItem.rebar_spec_code)
     : null;
+
+  // 품목 구분(철근/철제) — 철근 주력이라 기본값. 토글 시 선택 초기화.
+  const [itemKind, setItemKind] = useState<"rebar" | "steel">("rebar");
+  const itemOptions = useMemo(
+    () =>
+      itemKind === "rebar"
+        ? items.filter(isRebarItem).sort(sortRebar)
+        : items.filter((i) => !isRebarItem(i)).sort((a, b) => a.name.localeCompare(b.name, "ko")),
+    [items, itemKind],
+  );
 
   // 단위·수량·단가
   const [unit, setUnit] = useState<"ea" | "kg" | "ton" | "bundle">("ea");
@@ -237,6 +265,7 @@ export function SaleFormDialog({
         setPartnerInput("");
         setSiteName("");
         setItemId("");
+        setItemKind("rebar");
         setUnit("ea");
         setQtyStr("");
         setUnitPriceStr("");
@@ -389,21 +418,43 @@ export function SaleFormDialog({
           {/* 신규일 때만: 품목 + 단위 + 수량 + 단가 */}
           {!editing ? (
             <>
-              <Field label="품목 *">
-                <select
-                  value={itemId}
-                  onChange={(e) => setItemId(e.target.value)}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                  required
-                >
-                  <option value="">— 선택 —</option>
-                  {items.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              <div className="grid grid-cols-[7rem_1fr] gap-3">
+                <Field label="구분 *">
+                  <div className="flex gap-1">
+                    {(["rebar", "steel"] as const).map((k) => (
+                      <button
+                        type="button"
+                        key={k}
+                        onClick={() => {
+                          setItemKind(k);
+                          setItemId("");
+                        }}
+                        className={`flex-1 rounded-md border px-2 py-1 text-xs ${itemKind === k ? "bg-foreground text-background" : "bg-background"}`}
+                      >
+                        {k === "rebar" ? "철근" : "철제"}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+                <Field label="품목 *">
+                  <select
+                    value={itemId}
+                    onChange={(e) => setItemId(e.target.value)}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                    required
+                  >
+                    <option value="">— 선택 —</option>
+                    {itemOptions.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                      </option>
+                    ))}
+                  </select>
+                  {itemOptions.length === 0 ? (
+                    <p className="text-[10px] text-amber-600">이 구분의 활성 품목이 없습니다</p>
+                  ) : null}
+                </Field>
+              </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <Field label="단위 *">
