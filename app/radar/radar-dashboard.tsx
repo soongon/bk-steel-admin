@@ -105,9 +105,11 @@ function NoticeView({ projects }: { projects: RadarProjectRow[] }) {
                     {grade.label}
                   </span>
                 ) : null}
-                <span className="shrink-0 rounded bg-indigo-100 px-1.5 text-[11px] text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
-                  {cat}
-                </span>
+                {cat ? (
+                  <span className="shrink-0 rounded bg-indigo-100 px-1.5 text-[11px] text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+                    {cat}
+                  </span>
+                ) : null}
                 <span className="min-w-0 flex-1 truncate">
                   {p.source_url ? (
                     <a href={p.source_url} target="_blank" rel="noreferrer" className="hover:underline" title={p.title}>
