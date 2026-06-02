@@ -44,15 +44,13 @@ export function scoreProjects(items: CollectedProject[]): UpsertableProject[] {
             floorArea: p.floor_area,
             distanceKm: null,
           });
+    // lat/lng/distance_km은 의도적으로 미포함 — 지오코딩(phase 1.5) 결과를 재싱크 upsert가 덮어쓰지 않도록.
     return {
       ...p,
       relevance_score: rel.score,
       relevance_grade: rel.grade,
       est_rebar_ton:
         p.source === "nara_bid" ? null : estimateRebarTon(p.floor_area, p.usage, p.structure),
-      lat: null,
-      lng: null,
-      distance_km: null,
     };
   });
 }

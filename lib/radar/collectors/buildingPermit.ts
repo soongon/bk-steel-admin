@@ -136,8 +136,11 @@ function keepActiveRecent(p: CollectedProject, activeCutoff: string, buybackCuto
   if (p.stage === "completed") {
     return !!p.completion_date && p.completion_date >= buybackCutoff;
   }
-  if (!p.stage_date) return false;
-  return p.stage_date >= activeCutoff;
+  // 진행/임박: 단계 기준일(허가일/착공일)과 착공예정일 중 최근값으로 판정.
+  // (오래된 허가라도 착공예정일이 최근/임박이면 '착공임박' 리드로 유지 — 보드 imminent와 일치.)
+  const dates = [p.stage_date, p.sched_start_date].filter((d): d is string => !!d).sort();
+  if (dates.length === 0) return false;
+  return dates[dates.length - 1] >= activeCutoff;
 }
 
 function isoDaysAgo(days: number): string {

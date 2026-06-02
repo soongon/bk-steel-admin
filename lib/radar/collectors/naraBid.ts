@@ -128,11 +128,12 @@ async function fetchWindow(base: string, key: string, bgn: string, end: string):
 
 /** 낙찰 item → awarded CollectedProject. 권역 밖이면 null. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function normalizeAward(item: Record<string, any>): CollectedProject | null {
+export function normalizeAward(item: Record<string, any>, regionOverride?: RadarRegion): CollectedProject | null {
   const key = bidKey(item);
   if (!key) return null;
-  // 낙찰엔 현장지역 필드가 없어 수요기관/공고명으로 판정 (낙찰사 주소는 시공사 소재지라 제외).
-  const region = matchRegion(item.dminsttNm) ?? matchRegion(item.bidNtceNm);
+  // 권역: 입찰공고와 조인된 경우 공고의 현장지역(cnstrtsiteRgnNm)을 우선 사용.
+  // 낙찰 응답엔 현장지역 필드가 없어 단독일 땐 수요기관/공고명으로 판정.
+  const region = regionOverride ?? matchRegion(item.dminsttNm) ?? matchRegion(item.bidNtceNm);
   if (!region) return null;
   const category = naraSteelCategory(item.bidNtceNm ?? "");
   if (category === "exclude") return null; // 철근 무관 공종 컷
@@ -211,27 +212,39 @@ export const naraBidCollector: Collector = {
     }
 
     const windows = dateWindows(ctx.naraWindowDays ?? 30);
-    // 공고번호 → 레코드. 낙찰(awarded) 우선, 없으면 입찰공고(bid_notice).
-    const awarded = new Map<string, CollectedProject>();
-    const notices = new Map<string, CollectedProject>();
+    const out = new Map<string, CollectedProject>(); // source_key → 레코드 (낙찰 우선)
 
     for (const [bgn, end] of windows) {
       try {
+        // 낙찰 전부 공고번호로 인덱싱 (지역 무관) — 공고의 현장지역으로 조인하기 위해.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const awardByKey = new Map<string, Record<string, any>>();
         for (const a of await fetchWindow(AWARD_BASE, key, bgn, end)) {
-          const p = normalizeAward(a);
-          if (p) awarded.set(p.source_key, p);
+          const k = bidKey(a);
+          if (k) awardByKey.set(k, a);
         }
+        // 입찰공고: 현장지역(cnstrtsiteRgnNm)으로 권역 판정 → 낙찰 있으면 awarded(공고 지역으로).
         for (const b of await fetchWindow(BID_BASE, key, bgn, end)) {
-          const p = normalizeBid(b);
-          if (p && !awarded.has(p.source_key)) notices.set(p.source_key, p);
+          const region =
+            matchRegion(b.cnstrtsiteRgnNm) ?? matchRegion(b.dminsttNm) ?? matchRegion(b.bidNtceNm);
+          if (!region) continue;
+          const k = bidKey(b);
+          const award = k ? awardByKey.get(k) : null;
+          const p = award ? normalizeAward(award, region) : normalizeBid(b);
+          if (p) out.set(p.source_key, p);
+        }
+        // 낙찰 자체가 지역 매칭되지만 입찰공고에서 못 잡은 것(공고가 기간 밖) 보강.
+        for (const a of awardByKey.values()) {
+          const p = normalizeAward(a);
+          if (p && !out.has(p.source_key)) out.set(p.source_key, p);
         }
       } catch (e) {
         console.error(`[radar] 관급 수집 실패 (${bgn}~${end}):`, (e as Error).message);
       }
     }
 
-    let out = [...awarded.values(), ...notices.values()];
-    if (ctx.regions) out = out.filter((p) => ctx.regions!.includes(p.region));
-    return out;
+    let result = [...out.values()];
+    if (ctx.regions) result = result.filter((p) => ctx.regions!.includes(p.region));
+    return result;
   },
 };
