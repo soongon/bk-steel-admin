@@ -119,6 +119,21 @@ export const DELIVERY_LABEL: Record<DeliveryTier, string> = {
 /** 판매(허가~착공) vs 매입(준공·철거). */
 export type SalesPlay = "sell" | "buy";
 
+/**
+ * 레코드의 영업 모드 — 매입(buy) vs 판매(sell).
+ *  매입 = 나라장터 건물 철거·해체(고철·중고철근 발생) + 민간 준공(남은 철근).
+ *  그 외(허가·착공·낙찰 신축·고시 선점) = 판매.
+ */
+export function salesMode(p: {
+  source: RadarSource;
+  usage: string | null;
+  stage: RadarStage;
+}): SalesPlay {
+  if (p.usage === "demolition") return "buy";
+  if (p.source === "building_permit" && p.stage === "completed") return "buy";
+  return "sell";
+}
+
 /** 민간 보드 컬럼 (라이프사이클 단계). */
 export type BoardColumn = "permit" | "imminent" | "construction" | "completed";
 
