@@ -30,7 +30,7 @@ const COL_DATE_LABEL: Record<BoardColumn, string> = {
 const COL_ACTION: Record<BoardColumn, string> = {
   permit: "선점 · 시공사 파악",
   imminent: "견적 제안",
-  construction: "지금 납품",
+  construction: "납품 타진",
   completed: "남은 철근 매입",
 };
 
@@ -46,7 +46,7 @@ function relLabel(iso: string | null): string {
   return `${-n}일 전`;
 }
 
-const FRESH_DAYS = 90; // 3개월 — 착공 후 철근 납품 타이밍(이후는 이미 샀거나 준공 미반영 의심)
+const FRESH_DAYS = 60; // 착공 후 철근 납품 타이밍(~2개월). 이후는 이미 샀거나 건축HUB 지연으로 후행
 function daysSince(iso: string | null): number | null {
   if (!iso) return null;
   const d = new Date(iso + "T00:00:00");
@@ -100,7 +100,9 @@ function BuildingCard({ p, col }: { p: RadarProjectRow; col: BoardColumn }) {
             "inline-flex items-center gap-0.5 rounded px-1",
             tier === "25t"
               ? "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
-              : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300",
+              : tier === "unsure"
+                ? "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300",
           )}
         >
           <TruckIcon className="size-3" />
@@ -121,11 +123,11 @@ function BuildingCard({ p, col }: { p: RadarProjectRow; col: BoardColumn }) {
       {isNow && dateVal ? (
         isFresh(dateVal) ? (
           <span className="self-start rounded bg-red-100 px-1 text-[10px] font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300">
-            🔥 신선 · 지금 납품
+            🔥 최근 착공 · 납품 확인
           </span>
         ) : (
           <span className="self-start rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-            ⚠ 장기 · 준공 미반영 의심
+            ⚠ 착공 오래됨 · 검증 필요
           </span>
         )
       ) : null}

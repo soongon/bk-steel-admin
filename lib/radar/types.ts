@@ -101,19 +101,24 @@ export const STRUCTURE_LABEL: Record<StructureType, string> = {
 
 // ── 민간 라이프사이클 — 영업 보드 ────────────────────────────
 
-/** 배송 추정 — 규모로 5톤 크레인 vs 25톤. */
-export type DeliveryTier = "5t" | "25t";
+/**
+ * 배송 차량 '가설'(확정 아님) — 규모로 추정. 거리·접근성은 미반영이라 힌트 수준.
+ *  25t=대량(공장·창고·대형), 5t=소형 확실, unsure=중간/미상(현장 확인).
+ */
+export type DeliveryTier = "5t" | "25t" | "unsure";
 export function estimateDeliveryTier(
   floorArea: number | null,
   usage: string | null,
 ): DeliveryTier {
   if (usage === "factory" || usage === "warehouse") return "25t";
   if (floorArea != null && floorArea >= 1000) return "25t";
-  return "5t";
+  if (floorArea != null && floorArea > 0 && floorArea < 300) return "5t";
+  return "unsure"; // 중간 규모·면적 미상 — 차량은 현장 확인
 }
 export const DELIVERY_LABEL: Record<DeliveryTier, string> = {
-  "5t": "5톤 크레인",
-  "25t": "25톤",
+  "5t": "5톤 유리",
+  "25t": "25톤 대량",
+  unsure: "차량 확인",
 };
 
 /** 판매(허가~착공) vs 매입(준공·철거). */
