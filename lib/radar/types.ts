@@ -184,6 +184,7 @@ export const USAGE_LABEL: Record<string, string> = {
   building: "건축",
   civil_struct: "구조토목",
   civil_low: "토목",
+  demolition: "철거·해체", // 매입 신호(고철·중고철근 발생)
   // 시청 고시(선점) 카테고리
   industrial_complex: "산업단지",
   redevelopment: "정비·개발",
