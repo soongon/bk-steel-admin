@@ -507,7 +507,6 @@ export function SaleFormDialog({
                     value={itemId}
                     onChange={(e) => setItemId(e.target.value)}
                     className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                    required
                   >
                     <option value="">— 선택 —</option>
                     {itemOptions.map((i) => (
@@ -546,7 +545,6 @@ export function SaleFormDialog({
                     value={qtyStr}
                     onChange={(e) => setQtyStr(e.target.value)}
                     placeholder="0"
-                    required
                   />
                 </Field>
                 <Field label={itemKind === "rebar" ? "단가(원/kg) *" : "단가(원) *"}>
@@ -556,7 +554,6 @@ export function SaleFormDialog({
                     value={unitPriceStr}
                     onChange={(e) => setUnitPriceStr(e.target.value)}
                     placeholder="0"
-                    required
                   />
                 </Field>
               </div>
