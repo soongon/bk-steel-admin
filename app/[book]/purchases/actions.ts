@@ -259,14 +259,14 @@ export async function updatePurchaseHeader(
   const siteName = str("site_name") || null;
   const resolvedSiteId = await resolveSiteId(supabase, str("site_id") || null, siteName);
 
+  // payment_due_on·tax_doc_no 는 매입 폼에서 입력받지 않으므로 편집 update 에서 제외한다.
+  // (빈 폼값 ""→null 로 기존 데이터를 덮어쓰던 손실 버그 방지)
   const updates: Record<string, unknown> = {
     site_id: resolvedSiteId,
     site_name: siteName,
     delivered_on: str("delivered_on") || null,
-    payment_due_on: str("payment_due_on") || null,
     status: str("status"),
     tax_doc_type: taxDocType,
-    tax_doc_no: str("tax_doc_no") || null,
     is_documented: isDocumented,
     vat_type: vatType,
     vat_rate: vatRate,

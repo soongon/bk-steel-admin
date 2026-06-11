@@ -117,12 +117,6 @@ function parseKrw(s: string | undefined | null): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function parseInt0(s: string | undefined | null): number | null {
-  if (!s) return null;
-  const n = Number(s.toString().replace(/[, ]/g, ""));
-  return Number.isFinite(n) ? n : null;
-}
-
 function isDocumentedFromColumn(value: string | undefined): boolean {
   return normalizeName(value) === "O";
 }
@@ -490,7 +484,6 @@ async function importBankTransactions(
 // ============================================================
 // 5. 품목 (item) — 매출·매입 CSV에서 unique 추출
 // ============================================================
-type ItemKey = string; // category|spec|grade|length
 interface ItemRow {
   code: string;
   name: string;

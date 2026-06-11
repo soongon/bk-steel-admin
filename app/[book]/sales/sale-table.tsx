@@ -168,7 +168,6 @@ export function SaleTable({
   companies,
   view,
   gradeFilter = "",
-  attachmentsByEntity,
 }: {
   sales: SaleListRow[];
   partners: Partner[];
@@ -179,7 +178,6 @@ export function SaleTable({
   companies: CompanyProfile[];
   view: BookView;
   gradeFilter?: string;
-  attachmentsByEntity?: Record<string, import("@/lib/attachment").Attachment[]>;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SaleRow | null>(null);

@@ -30,8 +30,6 @@ export type RebarSpec = {
   spec_code: string;
   unit_weight_kg_per_m: number;
   standard_length_m: number;
-  bars_per_bundle: number | null;
-  bundle_weight_kg: number | null;
 };
 
 export type SiteOption = { id: string; name: string };

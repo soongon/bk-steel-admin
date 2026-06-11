@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import {
   IdeaFormDialog,
   STATUS_OPTIONS,
-  STATUS_LABEL,
   CATEGORY_OPTIONS,
   CATEGORY_LABEL,
   PRIORITY_LABEL,

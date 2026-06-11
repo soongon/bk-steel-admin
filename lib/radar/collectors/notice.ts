@@ -17,9 +17,7 @@ interface NoticeBoard {
   region: RadarRegion;
   origin: string;
   // 페이지 요청 — 게시판별 GET(기본) 또는 POST(울산 list.ulsan) 분기.
-  // eslint-disable-next-line no-unused-vars
   request: (pageNo: number) => { url: string; method?: "GET" | "POST"; body?: string };
-  // eslint-disable-next-line no-unused-vars
   parse: (html: string, origin: string) => NoticeRow[];
 }
 interface NoticeRow {

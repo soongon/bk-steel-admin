@@ -6,7 +6,7 @@ import { type Book, type BookView } from "@/lib/book";
 import { buttonVariants } from "@/components/ui/button";
 import { BookBadge } from "@/components/admin/book-badge";
 import { fetchCompanyProfile } from "@/lib/company-profile";
-import { fetchDeliveryCertById, type DeliveryCertificate } from "@/lib/delivery-certificate";
+import { type DeliveryCertificate } from "@/lib/delivery-certificate";
 import {
   type DeliveryCertData,
 } from "@/components/admin/delivery-cert-form";

@@ -170,7 +170,6 @@ export function InventoryTable({
                 return (
                   <FragmentRow
                     key={key}
-                    rowKey={key}
                     expanded={expanded}
                     onToggle={() => toggleExpand(key)}
                     summary={r}
@@ -190,7 +189,6 @@ export function InventoryTable({
 }
 
 function FragmentRow({
-  rowKey,
   expanded,
   onToggle,
   summary,
@@ -199,7 +197,6 @@ function FragmentRow({
   lots,
   view,
 }: {
-  rowKey: string;
   expanded: boolean;
   onToggle: () => void;
   summary: SummaryRow;

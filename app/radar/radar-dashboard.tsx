@@ -324,7 +324,10 @@ export function RadarDashboard({ projects }: { projects: RadarProjectRow[] }) {
   const modeCounts = useMemo(() => {
     let sell = 0;
     let buy = 0;
-    for (const p of inRegion) (salesMode(p) === "buy" ? (buy += 1) : (sell += 1));
+    for (const p of inRegion) {
+      if (salesMode(p) === "buy") buy += 1;
+      else sell += 1;
+    }
     return { sell, buy };
   }, [inRegion]);
 

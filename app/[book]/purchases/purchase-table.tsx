@@ -150,7 +150,6 @@ export function PurchaseTable({
   bankAccounts,
   sites,
   view,
-  attachmentsByEntity,
 }: {
   purchases: PurchaseListRow[];
   partners: Partner[];
@@ -159,7 +158,6 @@ export function PurchaseTable({
   bankAccounts: BankAccount[];
   sites: SiteOption[];
   view: BookView;
-  attachmentsByEntity?: Record<string, import("@/lib/attachment").Attachment[]>;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PurchaseRow | null>(null);
