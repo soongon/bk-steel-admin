@@ -291,9 +291,7 @@ function StatementCopy({
                 <td className={`border ${baseClass} px-1 py-0.5 text-right tabular-nums`}>
                   {fmtKrw(line.vat_krw)}
                 </td>
-                <td className={`border ${baseClass} px-1 py-0.5 text-center text-[10px]`}>
-                  {line.weight_kg ? `${Math.round(line.weight_kg).toLocaleString()}kg` : ""}
-                </td>
+                <td className={`border ${baseClass} px-1 py-0.5 text-center text-[10px]`}></td>
               </tr>
             ) : (
               <tr key={i}>
