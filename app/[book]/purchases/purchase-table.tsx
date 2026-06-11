@@ -37,6 +37,7 @@ import {
   type Item,
   type RebarSpec,
   type PurchaseRow,
+  type SiteOption,
 } from "./purchase-form-dialog";
 import { deletePurchase, markPurchasePaid, markPurchaseReceived } from "./actions";
 
@@ -66,8 +67,11 @@ export type PurchaseListRow = {
   tax_doc_type: string;
   tax_doc_no: string | null;
   partner_id: string;
+  site_id: string | null;
+  site_name: string | null;
   notes: string | null;
   partner: { id: string; name: string; code: string } | null;
+  site: { id: string; name: string; code: string } | null;
   purchase_line: PurchaseLine[];
 };
 
@@ -144,6 +148,7 @@ export function PurchaseTable({
   items,
   rebarSpecs,
   bankAccounts,
+  sites,
   view,
   attachmentsByEntity,
 }: {
@@ -152,6 +157,7 @@ export function PurchaseTable({
   items: Item[];
   rebarSpecs: RebarSpec[];
   bankAccounts: BankAccount[];
+  sites: SiteOption[];
   view: BookView;
   attachmentsByEntity?: Record<string, import("@/lib/attachment").Attachment[]>;
 }) {
@@ -170,6 +176,8 @@ export function PurchaseTable({
       book: p.book,
       doc_no: p.doc_no,
       partner_id: p.partner_id,
+      site_id: p.site_id,
+      site_name: p.site?.name ?? p.site_name,
       ordered_on: p.ordered_on,
       delivered_on: p.delivered_on,
       paid_on: p.paid_on,
@@ -276,6 +284,9 @@ export function PurchaseTable({
                     </TableCell>
                     <TableCell>
                       <div className="font-medium">{p.partner?.name ?? "—"}</div>
+                      {p.site?.name || p.site_name ? (
+                        <div className="text-xs text-muted-foreground">{p.site?.name ?? p.site_name}</div>
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-sm">{itemSummary}</TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -336,6 +347,7 @@ export function PurchaseTable({
         partners={partners}
         items={items}
         rebarSpecs={rebarSpecs}
+        sites={sites}
         attachments={editing ? attachmentsByEntity?.[editing.id] ?? [] : []}
       />
 

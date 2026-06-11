@@ -51,10 +51,37 @@ async function generateDocNo(orderedOn: string): Promise<string> {
   return `${datePart}-${String((count ?? 0) + 1).padStart(3, "0")}`;
 }
 
+/** site_id 없고 site_name만 있으면 site 마스터 자동 생성(UNIQUE 충돌 시 기존 조회). 매출과 동일. */
+async function resolveSiteId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  siteId: string | null,
+  siteName: string | null,
+): Promise<string | null> {
+  if (siteId) return siteId;
+  if (!siteName) return null;
+  const trimmed = siteName.trim();
+  if (!trimmed) return null;
+  const { data: created } = await supabase
+    .from("site")
+    .insert({ name: trimmed })
+    .select("id")
+    .maybeSingle();
+  if (created) return created.id;
+  const { data: existing } = await supabase
+    .from("site")
+    .select("id")
+    .eq("name", trimmed)
+    .is("deleted_at", null)
+    .maybeSingle();
+  return existing?.id ?? null;
+}
+
 type CreateInput = {
   book: Book;
   doc_no?: string;
   partner_id: string;
+  site_id?: string | null;
+  site_name?: string | null;
   ordered_on: string;
   delivered_on?: string | null;
   paid_on?: string | null;
@@ -111,6 +138,8 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
     book,
     doc_no: str("doc_no") || undefined,
     partner_id,
+    site_id: str("site_id") || null,
+    site_name: str("site_name") || null,
     ordered_on,
     delivered_on: str("delivered_on") || null,
     paid_on: str("paid_on") || null,
@@ -137,7 +166,12 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
   const supabase = await createClient();
 
   const docNo = parsed.doc_no ?? (await generateDocNo(parsed.ordered_on));
-  const subtotal = Math.round(parsed.unit_price_krw * parsed.qty);
+  const resolvedSiteId = await resolveSiteId(supabase, parsed.site_id ?? null, parsed.site_name ?? null);
+  // 철근(이론중량 있음)은 원/kg 단가 × 실제 중량, 비철근은 단가 × 수량.
+  const weightForPrice = parsed.actual_weight_kg ?? parsed.theoretical_weight_kg ?? null;
+  const subtotal = weightForPrice
+    ? Math.round(parsed.unit_price_krw * weightForPrice)
+    : Math.round(parsed.unit_price_krw * parsed.qty);
   const documented = parsed.is_documented;
   const { vatType, vatRate, vat, total } = computeVat(documented, parsed.tax_doc_type, subtotal);
 
@@ -163,6 +197,8 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
       book: parsed.book,
       doc_no: docNo,
       partner_id: parsed.partner_id,
+      site_id: resolvedSiteId,
+      site_name: parsed.site_name,
       ordered_on: parsed.ordered_on,
       delivered_on: parsed.delivered_on,
       is_documented: documented,
@@ -220,7 +256,12 @@ export async function updatePurchaseHeader(
     Number(cur?.subtotal_krw ?? 0),
   );
 
+  const siteName = str("site_name") || null;
+  const resolvedSiteId = await resolveSiteId(supabase, str("site_id") || null, siteName);
+
   const updates: Record<string, unknown> = {
+    site_id: resolvedSiteId,
+    site_name: siteName,
     delivered_on: str("delivered_on") || null,
     payment_due_on: str("payment_due_on") || null,
     status: str("status"),

@@ -38,11 +38,15 @@ export type RebarSpec = {
   bundle_weight_kg: number | null;
 };
 
+export type SiteOption = { id: string; name: string };
+
 export type PurchaseRow = {
   id: string;
   book: Book;
   doc_no: string;
   partner_id: string;
+  site_id: string | null;
+  site_name: string | null;
   ordered_on: string;
   delivered_on: string | null;
   paid_on: string | null;
@@ -74,7 +78,6 @@ const UNIT_OPTIONS = [
   { value: "ea", label: "가닥/EA" },
   { value: "kg", label: "kg (실중량)" },
   { value: "ton", label: "톤 (이론중량)" },
-  { value: "bundle", label: "번들" },
 ] as const;
 
 const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
@@ -88,6 +91,7 @@ export function PurchaseFormDialog({
   partners,
   items,
   rebarSpecs,
+  sites,
   attachments: initialAttachments = [],
 }: {
   open: boolean;
@@ -97,6 +101,7 @@ export function PurchaseFormDialog({
   partners: Partner[];
   items: Item[];
   rebarSpecs: RebarSpec[];
+  sites: SiteOption[];
   attachments?: Attachment[];
 }) {
   const [attachments, setAttachments] = useState<Attachment[]>(initialAttachments);
@@ -116,13 +121,16 @@ export function PurchaseFormDialog({
   const [partnerInput, setPartnerInput] = useState(partnerInitial?.name ?? "");
   const matchedPartner = partners.find((p) => p.name === partnerInput);
 
+  const [siteName, setSiteName] = useState(editing?.site_name ?? "");
+  const matchedSite = sites.find((s) => s.name === siteName);
+
   const [itemId, setItemId] = useState("");
   const selectedItem = items.find((i) => i.id === itemId);
   const rebarSpec = selectedItem?.rebar_spec_code
     ? rebarSpecs.find((s) => s.spec_code === selectedItem.rebar_spec_code)
     : null;
 
-  const [unit, setUnit] = useState<"ea" | "kg" | "ton" | "bundle">("ea");
+  const [unit, setUnit] = useState<"ea" | "kg" | "ton">("ea");
   const [qtyStr, setQtyStr] = useState("");
   const [unitPriceStr, setUnitPriceStr] = useState("");
   const qty = Number(qtyStr) || 0;
@@ -172,12 +180,9 @@ export function PurchaseFormDialog({
         theoreticalKg = qty * 1000; // 표준본수 없는 비표준 길이 → 명목 1000kg fallback
         bars = Math.ceil(theoreticalKg / kgPerBar);
       }
-    } else if (unit === "bundle") {
-      const barsPerBundle = rebarSpec.bars_per_bundle ?? 0;
-      bars = qty * barsPerBundle;
-      theoreticalKg = bars * kgPerBar;
     }
-    const subtotal = Math.round(unitPrice * qty);
+    // 철근 단가는 원/kg — 단위(가닥·kg·톤)와 무관하게 공급가 = 단가 × 실제 이론중량.
+    const subtotal = Math.round(unitPrice * theoreticalKg);
     const tonStd = unit === "ton" && selectedItem?.bars_per_tonne != null;
     return { bars, theoreticalKg, kgPerBar, lengthM, subtotal, tonStd };
   }, [rebarSpec, selectedItem, unit, qty, unitPrice]);
@@ -199,6 +204,7 @@ export function PurchaseFormDialog({
       setError(null);
       if (editing) {
         setBook(editing.book);
+        setSiteName(editing.site_name ?? "");
         setOrderedOn(editing.ordered_on);
         setDeliveredOn(editing.delivered_on ?? "");
         setPaymentDueOn(editing.payment_due_on ?? "");
@@ -210,6 +216,7 @@ export function PurchaseFormDialog({
       } else {
         setBook(view !== "all" ? (view as Book) : "sl");
         setPartnerInput("");
+        setSiteName("");
         setItemId("");
         setUnit("ea");
         setQtyStr("");
@@ -247,6 +254,8 @@ export function PurchaseFormDialog({
 
     const fd = new FormData();
     fd.set("book", book);
+    fd.set("site_name", siteName);
+    if (matchedSite) fd.set("site_id", matchedSite.id);
     fd.set("ordered_on", orderedOn);
     fd.set("delivered_on", deliveredOn);
     fd.set("payment_due_on", paymentDueOn);
@@ -343,6 +352,24 @@ export function PurchaseFormDialog({
             </Field>
           </div>
 
+          {/* 현장 (중고·해체 철근 출처) */}
+          <Field label="현장">
+            <Input
+              list="purchase-site-list"
+              value={siteName}
+              onChange={(e) => setSiteName(e.target.value)}
+              placeholder="현장 검색·신규 입력 (선택)"
+            />
+            <datalist id="purchase-site-list">
+              {sites.map((s) => (
+                <option key={s.id} value={s.name} />
+              ))}
+            </datalist>
+            {siteName && !matchedSite ? (
+              <p className="text-[10px] text-amber-600">미등록 현장 — 저장 시 자동 생성됩니다</p>
+            ) : null}
+          </Field>
+
           {/* 발주일 + 입고일 */}
           <div className="grid grid-cols-2 gap-3">
             <Field label="발주일 *">
@@ -387,7 +414,7 @@ export function PurchaseFormDialog({
                   <select
                     value={unit}
                     onChange={(e) =>
-                      setUnit(e.target.value as "ea" | "kg" | "ton" | "bundle")
+                      setUnit(e.target.value as "ea" | "kg" | "ton")
                     }
                     className="h-8 rounded-md border border-input bg-background px-2 text-sm"
                   >
@@ -401,14 +428,15 @@ export function PurchaseFormDialog({
                 <Field label={unit === "kg" ? "수량(=실중량) *" : "수량 *"}>
                   <Input
                     type="number"
-                    step="0.001"
+                    step="1"
+                    min="0"
                     value={qtyStr}
                     onChange={(e) => setQtyStr(e.target.value)}
                     placeholder="0"
                     required
                   />
                 </Field>
-                <Field label="단가(원) *">
+                <Field label={rebarSpec ? "단가(원/kg) *" : "단가(원) *"}>
                   <Input
                     type="number"
                     step="1"

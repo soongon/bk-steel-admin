@@ -19,8 +19,9 @@ export default async function PurchasesPage({
       `
       id, book, doc_no, ordered_on, delivered_on, paid_on, payment_due_on, status,
       subtotal_krw, vat_krw, total_krw, is_documented,
-      tax_doc_type, tax_doc_no, partner_id, notes,
+      tax_doc_type, tax_doc_no, partner_id, site_id, site_name, notes,
       partner:partner(id, name, code),
+      site:site(id, name, code),
       purchase_line(id, acquired_qty, acquired_unit, unit_price_krw, actual_weight_kg, theoretical_weight_kg, item:item(id, name, code))
     `,
     )
@@ -31,7 +32,7 @@ export default async function PurchasesPage({
 
   if (view !== "all") q = q.eq("book", view);
 
-  const [purRes, partnersRes, itemsRes, rebarSpecsRes, bankAccountsRes] = await Promise.all([
+  const [purRes, partnersRes, itemsRes, rebarSpecsRes, bankAccountsRes, sitesRes] = await Promise.all([
     q,
     supabase
       .from("partner")
@@ -58,6 +59,12 @@ export default async function PurchasesPage({
       .eq("is_active", true)
       .order("book")
       .order("is_primary", { ascending: false }),
+    supabase
+      .from("site")
+      .select("id, name")
+      .is("deleted_at", null)
+      .eq("is_active", true)
+      .order("name"),
   ]);
 
   const purchases = (purRes.data as unknown as PurchaseListRow[]) ?? [];
@@ -104,6 +111,7 @@ export default async function PurchasesPage({
         items={itemsRes.data ?? []}
         rebarSpecs={rebarSpecsRes.data ?? []}
         bankAccounts={bankAccountsRes.data ?? []}
+        sites={sitesRes.data ?? []}
         view={view}
         attachmentsByEntity={attachmentsByEntity}
       />
