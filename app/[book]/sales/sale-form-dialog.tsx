@@ -12,14 +12,24 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PrinterIcon } from "lucide-react";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
+import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
 import { AttachmentUploader } from "@/components/admin/attachments/attachment-uploader";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
+import { SalesStatement, type SalesStatementData } from "@/components/admin/sales-statement";
 import { type Attachment } from "@/lib/attachment";
 import { createSale, updateSaleHeader } from "./actions";
 
-export type Partner = { id: string; code: string; name: string };
+export type Partner = {
+  id: string;
+  code: string;
+  name: string;
+  business_no?: string | null;
+  representative?: string | null;
+  address?: string | null;
+};
 export type Item = {
   id: string;
   code: string;
@@ -121,6 +131,7 @@ export function SaleFormDialog({
   items,
   rebarSpecs,
   sites,
+  companies,
   attachments: initialAttachments = [],
 }: {
   open: boolean;
@@ -131,6 +142,7 @@ export function SaleFormDialog({
   items: Item[];
   rebarSpecs: RebarSpec[];
   sites: SiteOption[];
+  companies: CompanyProfile[];
   attachments?: Attachment[];
 }) {
   const [attachments, setAttachments] = useState<Attachment[]>(initialAttachments);
@@ -140,6 +152,7 @@ export function SaleFormDialog({
   }, [initialAttachments]);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [showStatement, setShowStatement] = useState(false); // 거래명세서 미리보기 모달
   const today = new Date().toISOString().slice(0, 10);
 
   // 책 (view='all'이면 사용자 선택, 아니면 고정)
@@ -283,21 +296,41 @@ export function SaleFormDialog({
     }
   }, [open, editing, view, today]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
+  // 거래명세서 공급자(우리) — B 책은 SL 정보로 발행.
+  const company = companies.find((c) => c.book === (book === "b" ? "sl" : book)) ?? null;
+  const statementData: SalesStatementData | null = useMemo(() => {
+    if (!matchedPartner || !calc || qty <= 0) return null;
+    const isReb = !!selectedItem?.rebar_spec_code;
+    const itemName = isReb ? "철근" : selectedItem?.name ?? "";
+    const spec = isReb
+      ? `${selectedItem!.rebar_spec_code} ${selectedItem!.length_m ?? ""}M`.trim()
+      : "";
+    const qtyLabel =
+      unit === "ton"
+        ? `${qty}톤 (${fmtNum(calc.weightKg)}kg)`
+        : unit === "kg"
+          ? `${fmtNum(calc.weightKg)}kg`
+          : `${qty}가닥 (${fmtNum(calc.weightKg)}kg)`;
+    return {
+      doc_no: null,
+      ordered_on: orderedOn,
+      site_name: siteName || null,
+      partner: {
+        name: matchedPartner.name,
+        business_no: matchedPartner.business_no ?? null,
+        representative: matchedPartner.representative ?? null,
+        address: matchedPartner.address ?? null,
+      },
+      lines: [
+        { item_name: itemName, spec, qty_label: qtyLabel, unit_price: unitPrice, supply: lineSubtotal, vat },
+      ],
+      supply_total: lineSubtotal,
+      vat_total: vat,
+      total,
+    };
+  }, [matchedPartner, calc, selectedItem, unit, qty, orderedOn, siteName, unitPrice, lineSubtotal, vat, total]);
 
-    if (!editing) {
-      if (!matchedPartner) {
-        setError("거래처는 마스터에 등록된 이름을 정확히 선택해주세요.");
-        return;
-      }
-      if (!itemId) {
-        setError("품목을 선택해주세요.");
-        return;
-      }
-    }
-
+  function buildFormData(): FormData {
     const fd = new FormData();
     fd.set("book", book);
     fd.set("ordered_on", orderedOn);
@@ -309,7 +342,6 @@ export function SaleFormDialog({
     fd.set("site_name", siteName);
     if (matchedSite) fd.set("site_id", matchedSite.id);
     fd.set("notes", notes);
-
     if (!editing) {
       fd.set("partner_id", matchedPartner!.id);
       fd.set("item_id", itemId);
@@ -318,23 +350,48 @@ export function SaleFormDialog({
       fd.set("unit_price_krw", String(unitPrice));
       if (calc) fd.set("weight_kg", String(calc.weightKg));
     }
+    return fd;
+  }
 
+  function doSave() {
+    const fd = buildFormData();
     startTransition(async () => {
       const result = editing
         ? await updateSaleHeader(editing.id, fd)
         : await createSale(fd);
       if (result.ok) {
         toast.success(editing ? "매출이 수정되었습니다" : "매출이 등록되었습니다");
+        setShowStatement(false);
         onOpenChange(false);
       } else {
+        setShowStatement(false);
         setError(result.error);
       }
     });
   }
 
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!editing) {
+      if (!matchedPartner) {
+        setError("거래처는 마스터에 등록된 이름을 정확히 선택해주세요.");
+        return;
+      }
+      if (!itemId) {
+        setError("품목을 선택해주세요.");
+        return;
+      }
+      setShowStatement(true); // 신규 → 거래명세서 미리보기(확인 시 등록)
+      return;
+    }
+    doSave(); // 편집 → 헤더만 바로 저장
+  }
+
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl print:hidden">
         <DialogHeader>
           <DialogTitle>{editing ? "매출 수정" : "신규 매출"}</DialogTitle>
           <DialogDescription>
@@ -648,6 +705,36 @@ export function SaleFormDialog({
         </form>
       </DialogContent>
     </Dialog>
+
+    {showStatement && statementData ? (
+      <Dialog open onOpenChange={(o) => { if (!o) setShowStatement(false); }}>
+        <DialogContent className="!max-w-[920px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="print:hidden">
+            <DialogTitle>거래명세서 미리보기 (공급받는자 보관용)</DialogTitle>
+            <DialogDescription>
+              확인하면 매출이 등록됩니다. 내용이 다르면 ‘수정’으로 돌아가세요.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="bg-zinc-100 p-3 print:bg-white print:p-0 dark:bg-zinc-900">
+            <div className="mx-auto max-w-[800px] rounded bg-white p-6 text-zinc-900 shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+              <SalesStatement data={statementData} company={company} />
+            </div>
+          </div>
+          <DialogFooter className="print:hidden">
+            <Button variant="outline" onClick={() => setShowStatement(false)}>
+              수정
+            </Button>
+            <Button variant="secondary" onClick={() => window.print()}>
+              <PrinterIcon className="size-4" /> 출력
+            </Button>
+            <Button onClick={doSave} disabled={pending}>
+              {pending ? "등록 중..." : "확인 (등록)"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    ) : null}
+    </>
   );
 }
 

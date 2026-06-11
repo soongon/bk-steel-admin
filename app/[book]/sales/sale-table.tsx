@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { type Book, type BookView } from "@/lib/book";
+import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -164,6 +165,7 @@ export function SaleTable({
   rebarSpecs,
   sites,
   bankAccounts,
+  companies,
   view,
   gradeFilter = "",
   attachmentsByEntity,
@@ -174,6 +176,7 @@ export function SaleTable({
   rebarSpecs: RebarSpec[];
   sites: SiteOption[];
   bankAccounts: BankAccount[];
+  companies: CompanyProfile[];
   view: BookView;
   gradeFilter?: string;
   attachmentsByEntity?: Record<string, import("@/lib/attachment").Attachment[]>;
@@ -413,6 +416,7 @@ export function SaleTable({
         items={items}
         rebarSpecs={rebarSpecs}
         sites={sites}
+        companies={companies}
         attachments={editing ? attachmentsByEntity?.[editing.id] ?? [] : []}
       />
 

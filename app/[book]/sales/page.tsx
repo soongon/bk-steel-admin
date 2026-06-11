@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { type BookView, BOOK_VIEW_LABEL } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 import { type Attachment } from "@/lib/attachment";
+import { fetchAllCompanyProfiles } from "@/lib/company-profile";
 import { SaleTable, type SaleListRow } from "./sale-table";
 import { SaleFilters } from "./sale-filters";
 
@@ -55,11 +56,11 @@ export default async function SalesPage({
   else if (sp.doc === "n") saleQuery = saleQuery.eq("is_documented", false);
   saleQuery = saleQuery.limit(hasAnyFilter ? 500 : 100);
 
-  const [salesRes, partnersRes, itemsRes, rebarSpecsRes, sitesRes, bankAccountsRes] = await Promise.all([
+  const [salesRes, partnersRes, itemsRes, rebarSpecsRes, sitesRes, bankAccountsRes, companies] = await Promise.all([
     saleQuery,
     supabase
       .from("partner")
-      .select("id, code, name")
+      .select("id, code, name, business_no, representative, address")
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),
@@ -88,6 +89,7 @@ export default async function SalesPage({
       .eq("is_active", true)
       .order("book")
       .order("is_primary", { ascending: false }),
+    fetchAllCompanyProfiles(supabase),
   ]);
 
   const sales = (salesRes.data as unknown as SaleListRow[]) ?? [];
@@ -137,6 +139,7 @@ export default async function SalesPage({
         rebarSpecs={rebarSpecsRes.data ?? []}
         sites={sitesRes.data ?? []}
         bankAccounts={bankAccountsRes.data ?? []}
+        companies={companies}
         view={view}
         gradeFilter={sp.grade ?? ""}
         attachmentsByEntity={attachmentsByEntity}
