@@ -277,16 +277,19 @@ export function SaleFormDialog({
               .filter(Boolean)
               .join(" ")
           : "";
-        // 철근은 실제 중량(kg) 기준 — 수량×단가(원/kg)=공급가 정합. 비철근은 입력 수량×단가.
+        // 수량·단위는 입력 그대로(톤이면 '톤'). 단가는 입력단위당으로 환산해 수량×단가=공급가 정합 유지.
+        // 철근 실제 이론중량(kg)은 비고란에 보조 표기.
         const sub = c ? c.subtotal : Math.round(l.unitPrice * l.qty);
+        const unitLabel = l.unit === "ton" ? "톤" : l.unit === "kg" ? "kg" : "EA";
         return {
           item_name: lineItem.name,
           spec,
-          qty: isReb ? Math.round(c!.weightKg) : l.qty,
-          unit: isReb ? "kg" : l.unit,
-          unit_price_krw: l.unitPrice,
+          qty: l.qty,
+          unit: unitLabel,
+          unit_price_krw: l.qty > 0 ? Math.round(sub / l.qty) : l.unitPrice,
           subtotal_krw: sub,
           vat_krw: vatRate > 0 ? Math.round((sub * vatRate) / 100) : 0,
+          weight_kg: isReb && c ? c.weightKg : null,
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);

@@ -179,12 +179,16 @@ export default async function SaleDetailPage({
       const subtotal = Number(line.line_subtotal_krw ?? line.qty * line.unit_price_krw);
       const vatRate = Number(sale.vat_rate ?? 10);
       const vat = sale.is_documented ? Math.round((subtotal * vatRate) / 100) : 0;
+      // 수량·단위는 저장된 입력 그대로(톤이면 톤). 단가는 입력단위당으로 환산해 수량×단가=공급가 정합.
+      const q = Number(line.qty);
+      const unitLabel =
+        line.unit === "ton" ? "톤" : line.unit === "kg" ? "kg" : line.unit === "ea" ? "EA" : line.unit;
       return {
         item_name: item?.name ?? "—",
         spec,
-        qty: Number(line.qty),
-        unit: line.unit,
-        unit_price_krw: Number(line.unit_price_krw),
+        qty: q,
+        unit: unitLabel,
+        unit_price_krw: q > 0 ? Math.round(subtotal / q) : Number(line.unit_price_krw),
         subtotal_krw: subtotal,
         vat_krw: vat,
         weight_kg: line.theoretical_weight_kg ?? line.weight_kg,
