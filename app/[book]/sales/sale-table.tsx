@@ -265,8 +265,9 @@ export function SaleTable({
             ) : (
               filtered.map((s) => {
                 const firstLine = s.sale_line?.[0];
+                const lineCount = s.sale_line?.length ?? 0;
                 const itemSummary = firstLine
-                  ? `${firstLine.item?.name ?? "—"} · ${firstLine.qty}${firstLine.unit}`
+                  ? `${firstLine.item?.name ?? "—"} · ${firstLine.qty}${firstLine.unit}${lineCount > 1 ? ` 외 ${lineCount - 1}건` : ""}`
                   : "—";
                 return (
                   <TableRow key={s.id}>

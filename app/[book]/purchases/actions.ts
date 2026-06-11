@@ -27,6 +27,15 @@ async function generateDocNo(orderedOn: string): Promise<string> {
   return `${datePart}-${String((count ?? 0) + 1).padStart(3, "0")}`;
 }
 
+type PurchaseLineInput = {
+  item_id: string;
+  unit: "ton" | "kg" | "ea" | "piece" | "bundle";
+  qty: number;
+  unit_price_krw: number;
+  bars_count: number | null;
+  theoretical_weight_kg: number | null;
+  actual_weight_kg: number | null;
+};
 type CreateInput = {
   book: Book;
   doc_no?: string;
@@ -36,13 +45,7 @@ type CreateInput = {
   ordered_on: string;
   delivered_on?: string | null;
   paid_on?: string | null;
-  item_id: string;
-  unit: "ton" | "kg" | "ea" | "piece" | "bundle";
-  qty: number;
-  unit_price_krw: number;
-  bars_count?: number | null;
-  theoretical_weight_kg?: number | null;
-  actual_weight_kg?: number | null;
+  lines: PurchaseLineInput[];
   status: "ordered" | "in_stock" | "partial_out" | "depleted" | "transferred_out" | "scrapped";
   is_documented: boolean;
   tax_doc_type: "tax_invoice_electronic" | "tax_invoice_paper" | "invoice" | "cash_receipt" | "simple_receipt" | "none";
@@ -57,33 +60,46 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
     if (typeof v !== "string") return "";
     return v.trim();
   };
-  const num = (k: string) => {
-    const v = str(k).replace(/[, ]/g, "");
-    return v === "" ? 0 : Number(v);
-  };
-
   const book = str("book") as Book;
   if (!book || !["bk", "sl", "b"].includes(book)) return { error: "책을 선택해주세요." };
   const partner_id = str("partner_id");
   if (!partner_id) return { error: "매입처를 선택해주세요." };
   const ordered_on = str("ordered_on");
   if (!ordered_on) return { error: "발주일을 입력해주세요." };
-  const item_id = str("item_id");
-  if (!item_id) return { error: "품목을 선택해주세요." };
-  const unit = str("unit") as CreateInput["unit"];
-  if (!unit) return { error: "단위를 선택해주세요." };
-  const qty = num("qty");
-  if (qty <= 0) return { error: "수량을 입력해주세요." };
-  const unit_price_krw = num("unit_price_krw");
-  if (unit_price_krw <= 0) return { error: "단가를 입력해주세요." };
+
+  // 품목 라인 — 폼이 JSON 배열로 전송(여러 품목)
+  let lines: PurchaseLineInput[];
+  try {
+    const raw: unknown = JSON.parse(str("lines") || "[]");
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return { error: "품목을 1개 이상 추가해주세요." };
+    }
+    const numOr = (v: unknown) => (v != null && v !== "" ? Number(v) : null);
+    lines = raw.map((l) => {
+      const o = l as Record<string, unknown>;
+      return {
+        item_id: String(o.item_id ?? ""),
+        unit: String(o.unit ?? "") as PurchaseLineInput["unit"],
+        qty: Number(o.qty) || 0,
+        unit_price_krw: Number(o.unit_price_krw) || 0,
+        bars_count: numOr(o.bars_count),
+        theoretical_weight_kg: numOr(o.theoretical_weight_kg),
+        actual_weight_kg: numOr(o.actual_weight_kg),
+      };
+    });
+  } catch {
+    return { error: "품목 데이터를 읽지 못했습니다." };
+  }
+  for (const l of lines) {
+    if (!l.item_id) return { error: "품목을 선택해주세요." };
+    if (!l.unit) return { error: "단위를 선택해주세요." };
+    if (l.qty <= 0) return { error: "수량을 입력해주세요." };
+    if (l.unit_price_krw <= 0) return { error: "단가를 입력해주세요." };
+  }
 
   const is_documented = str("is_documented") === "true";
   const tax_doc_type = (str("tax_doc_type") || (book === "b" ? "none" : "tax_invoice_electronic")) as CreateInput["tax_doc_type"];
   const status = (str("status") || "ordered") as CreateInput["status"];
-
-  const theo_str = str("theoretical_weight_kg");
-  const actual_str = str("actual_weight_kg");
-  const bars_str = str("bars_count");
 
   return {
     book,
@@ -94,13 +110,7 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
     ordered_on,
     delivered_on: str("delivered_on") || null,
     paid_on: str("paid_on") || null,
-    item_id,
-    unit,
-    qty,
-    unit_price_krw,
-    bars_count: bars_str ? Number(bars_str) : null,
-    theoretical_weight_kg: theo_str ? Number(theo_str) : null,
-    actual_weight_kg: actual_str ? Number(actual_str) : null,
+    lines,
     status,
     is_documented,
     tax_doc_type,
@@ -118,15 +128,8 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
 
   const docNo = parsed.doc_no ?? (await generateDocNo(parsed.ordered_on));
   const resolvedSiteId = await resolveSiteId(supabase, parsed.site_id ?? null, parsed.site_name ?? null);
-  // 철근(이론중량 있음)은 원/kg 단가 × 실제 중량, 비철근은 단가 × 수량.
-  const weightForPrice = parsed.actual_weight_kg ?? parsed.theoretical_weight_kg ?? null;
-  const subtotal = weightForPrice
-    ? Math.round(parsed.unit_price_krw * weightForPrice)
-    : Math.round(parsed.unit_price_krw * parsed.qty);
-  const documented = parsed.is_documented;
-  const { vatType, vatRate, vat, total } = computeVat(documented, parsed.tax_doc_type, subtotal);
 
-  // 기본 창고/존 해석 (본 야적장) — RPC에 넘겨 원자 생성
+  // 기본 창고/존 해석 (본 야적장) — 모든 라인 공통.
   const { data: warehouse } = await supabase
     .from("warehouse")
     .select("id")
@@ -142,8 +145,34 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
     .eq("preferred_book", parsed.book)
     .maybeSingle();
 
-  // 헤더 + 라인 한 트랜잭션(RPC) — 분리 insert로 라인 실패 시 헤더만 남던 문제 방지.
-  const { error: rpcErr } = await supabase.rpc("create_purchase_with_line", {
+  // 라인별 공급가(철근=원/kg×실제중량, 비철근=단가×수량) → 헤더 합계 + RPC 라인 배열.
+  const lines = parsed.lines.map((l) => {
+    const weightForPrice = l.actual_weight_kg ?? l.theoretical_weight_kg ?? null;
+    const lineSubtotal = weightForPrice
+      ? Math.round(l.unit_price_krw * weightForPrice)
+      : Math.round(l.unit_price_krw * l.qty);
+    return {
+      warehouse_id: warehouse.id,
+      warehouse_zone_id: zone?.id ?? null,
+      item_id: l.item_id,
+      acquired_unit: l.unit,
+      acquired_qty: l.qty,
+      unit_price_krw: l.unit_price_krw,
+      bars_count: l.bars_count,
+      theoretical_weight_kg: l.theoretical_weight_kg,
+      actual_weight_kg: l.actual_weight_kg,
+      invoiced_weight_kg: l.actual_weight_kg ?? l.theoretical_weight_kg,
+      price_basis: l.unit === "kg" ? "actual" : "theoretical",
+      line_subtotal_krw: lineSubtotal,
+      line_status: parsed.status, // 헤더와 일치 — scrapped/depleted 가 in_stock 유령재고로 남던 문제 방지
+    };
+  });
+  const subtotal = lines.reduce((s, l) => s + l.line_subtotal_krw, 0);
+  const documented = parsed.is_documented;
+  const { vatType, vatRate, vat, total } = computeVat(documented, parsed.tax_doc_type, subtotal);
+
+  // 헤더 + 라인 N개 한 트랜잭션(RPC) — 분리 insert로 라인 실패 시 헤더만 남던 문제 방지.
+  const { error: rpcErr } = await supabase.rpc("create_purchase_with_lines", {
     p_purchase: {
       book: parsed.book,
       doc_no: docNo,
@@ -165,21 +194,7 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
       status: parsed.status,
       notes: parsed.notes,
     },
-    p_line: {
-      warehouse_id: warehouse.id,
-      warehouse_zone_id: zone?.id ?? null,
-      item_id: parsed.item_id,
-      acquired_unit: parsed.unit,
-      acquired_qty: parsed.qty,
-      unit_price_krw: parsed.unit_price_krw,
-      bars_count: parsed.bars_count,
-      theoretical_weight_kg: parsed.theoretical_weight_kg,
-      actual_weight_kg: parsed.actual_weight_kg,
-      invoiced_weight_kg: parsed.actual_weight_kg ?? parsed.theoretical_weight_kg,
-      price_basis: parsed.unit === "kg" ? "actual" : "theoretical",
-      line_subtotal_krw: subtotal,
-      line_status: parsed.status, // 헤더와 일치 — scrapped/depleted 가 in_stock 유령재고로 남던 문제 방지
-    },
+    p_lines: lines,
   });
   if (rpcErr) return { ok: false, error: friendly(rpcErr.message) };
 

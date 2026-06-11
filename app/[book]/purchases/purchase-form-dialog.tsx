@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PlusIcon, XIcon } from "lucide-react";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
@@ -67,6 +68,15 @@ const UNIT_OPTIONS = [
   { value: "kg", label: "kg (실중량)" },
   { value: "ton", label: "톤 (이론중량)" },
 ] as const;
+
+type LineDraft = {
+  itemKind: "rebar" | "steel";
+  itemId: string;
+  unit: "ea" | "kg" | "ton";
+  qty: number;
+  unitPrice: number;
+  actualWeight: number | null;
+};
 
 export function PurchaseFormDialog({
   open,
@@ -126,6 +136,10 @@ export function PurchaseFormDialog({
 
   // 실중량 (kg 단위가 아닐 때만 별도 입력. kg 단위면 qty가 곧 실중량)
   const [actualWeightStr, setActualWeightStr] = useState("");
+  const actualWeight = actualWeightStr ? Number(actualWeightStr) : null;
+
+  // 누적 품목 라인 (신규 등록 — 여러 품목)
+  const [lines, setLines] = useState<LineDraft[]>([]);
 
   const [isDocumented, setIsDocumented] = useState(book === "b" ? false : true);
   const [taxDocType, setTaxDocType] = useState<string>(
@@ -144,13 +158,34 @@ export function PurchaseFormDialog({
     }
   }, [book]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 환산 — 톤 환산·원/kg 정합은 lib/rebar 한 곳에서. (weightKg = 이론중량)
+  // 현재 입력 라인 환산 미리보기 (weightKg = 이론중량)
   const calc = useMemo(
     () => (rebarSpec ? calculateRebarWeight(selectedItem!, rebarSpec, unit, qty, unitPrice) : null),
     [rebarSpec, selectedItem, unit, qty, unitPrice],
   );
 
-  const lineSubtotal = calc ? calc.subtotal : Math.round(unitPrice * qty);
+  // 라인 → 품목·환산·공급가 (목록·합계 공용). 실중량 있으면 우선, 없으면 이론중량.
+  const calcLine = (l: LineDraft) => {
+    const lineItem = items.find((i) => i.id === l.itemId) ?? null;
+    const lineSpec = lineItem?.rebar_spec_code
+      ? rebarSpecs.find((s) => s.spec_code === lineItem.rebar_spec_code) ?? null
+      : null;
+    const c = lineItem && lineSpec ? calculateRebarWeight(lineItem, lineSpec, l.unit, l.qty, l.unitPrice) : null;
+    const theoreticalKg = c ? c.weightKg : null;
+    const weightForPrice = l.actualWeight ?? theoreticalKg;
+    const subtotal = weightForPrice ? Math.round(l.unitPrice * weightForPrice) : Math.round(l.unitPrice * l.qty);
+    return { item: lineItem, calc: c, theoreticalKg, subtotal };
+  };
+
+  // 현재 입력이 유효하면 임시 라인으로 포함(추가 안 눌러도 마지막 1건 반영)
+  const pendingLine: LineDraft | null =
+    itemId && qty > 0 && unitPrice > 0
+      ? { itemKind, itemId, unit, qty, unitPrice, actualWeight: unit === "kg" ? qty : actualWeight }
+      : null;
+  const allLines = pendingLine ? [...lines, pendingLine] : lines;
+
+  // 세금·합계 — 모든 라인 공급가 합
+  const lineSubtotal = allLines.reduce((s, l) => s + calcLine(l).subtotal, 0);
   const vatRate =
     isDocumented && taxDocType !== "invoice" && taxDocType !== "none" ? 10 : 0;
   const vat = Math.round((lineSubtotal * vatRate) / 100);
@@ -183,6 +218,7 @@ export function PurchaseFormDialog({
         setQtyStr("");
         setUnitPriceStr("");
         setActualWeightStr("");
+        setLines([]);
         setOrderedOn(today);
         setDeliveredOn(today);
         setStatus("ordered");
@@ -190,6 +226,21 @@ export function PurchaseFormDialog({
       }
     }
   }, [open, editing, view, today]);
+
+  function addLine() {
+    if (!itemId) { setError("품목을 선택해주세요."); return; }
+    if (qty <= 0) { setError("수량을 입력해주세요."); return; }
+    if (unitPrice <= 0) { setError("단가를 입력해주세요."); return; }
+    setLines((prev) => [...prev, { itemKind, itemId, unit, qty, unitPrice, actualWeight: unit === "kg" ? qty : actualWeight }]);
+    setItemId("");
+    setQtyStr("");
+    setUnitPriceStr("");
+    setActualWeightStr("");
+    setError(null);
+  }
+  function removeLine(idx: number) {
+    setLines((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -200,14 +251,9 @@ export function PurchaseFormDialog({
         setError("매입처는 거래처 마스터에 등록된 이름을 정확히 선택해주세요.");
         return;
       }
-      if (!itemId) {
-        setError("품목을 선택해주세요.");
+      if (allLines.length === 0) {
+        setError("품목을 1개 이상 추가해주세요.");
         return;
-      }
-      if (unit === "kg") {
-        // kg 단위면 qty 자체가 실중량 → actual_weight_kg = qty
-      } else if (actualWeightStr === "" && rebarSpec) {
-        // 가닥/톤/번들이면 actual은 선택 (이론중량은 자동)
       }
     }
 
@@ -224,19 +270,24 @@ export function PurchaseFormDialog({
 
     if (!editing) {
       fd.set("partner_id", matchedPartner!.id);
-      fd.set("item_id", itemId);
-      fd.set("unit", unit);
-      fd.set("qty", String(qty));
-      fd.set("unit_price_krw", String(unitPrice));
-      if (calc) {
-        fd.set("theoretical_weight_kg", String(calc.weightKg));
-        if (calc.bars > 0) fd.set("bars_count", String(calc.bars));
-      }
-      if (unit === "kg") {
-        fd.set("actual_weight_kg", String(qty));
-      } else if (actualWeightStr) {
-        fd.set("actual_weight_kg", actualWeightStr);
-      }
+      // 모든 라인(추가분 + 현재 입력) — 철근 환산중량·가닥수·실중량 동봉.
+      fd.set(
+        "lines",
+        JSON.stringify(
+          allLines.map((l) => {
+            const { calc: c } = calcLine(l);
+            return {
+              item_id: l.itemId,
+              unit: l.unit,
+              qty: l.qty,
+              unit_price_krw: l.unitPrice,
+              bars_count: c && c.bars > 0 ? c.bars : null,
+              theoretical_weight_kg: c ? c.weightKg : null,
+              actual_weight_kg: l.actualWeight,
+            };
+          }),
+        ),
+      );
     }
 
     startTransition(async () => {
@@ -451,6 +502,46 @@ export function PurchaseFormDialog({
                     <span>이론중량: <strong>{fmtNum(calc.weightKg)}kg</strong> ({fmtNum(calc.weightKg / 1000, 3)}톤)</span>
                     <span>단위: {rebarSpec.unit_weight_kg_per_m}kg/m × {calc.lengthM}m</span>
                   </div>
+                </div>
+              ) : null}
+
+              {/* 품목 추가 버튼 + 누적 리스트 */}
+              <div className="flex items-center justify-between">
+                <Button type="button" variant="outline" size="sm" onClick={addLine}>
+                  <PlusIcon className="size-4" /> 품목 추가
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {lines.length > 0
+                    ? `추가된 품목 ${lines.length}건`
+                    : "입력 후 ‘품목 추가’ (마지막 1건은 자동 포함)"}
+                </span>
+              </div>
+
+              {lines.length > 0 ? (
+                <div className="divide-y rounded-lg border">
+                  {lines.map((l, idx) => {
+                    const { item: li, calc: c, theoreticalKg, subtotal: sub } = calcLine(l);
+                    const reb = !!li?.rebar_spec_code && !!c;
+                    const w = l.actualWeight ?? theoreticalKg;
+                    return (
+                      <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-xs">
+                        <span className="flex-1 truncate font-medium">{li?.name ?? "—"}</span>
+                        <span className="text-muted-foreground">
+                          {reb && w ? `${fmtNum(w)}kg` : `${l.qty}${l.unit}`} × {fmtKrw(l.unitPrice)}
+                          {reb ? "/kg" : ""}
+                        </span>
+                        <span className="w-24 text-right tabular-nums">{fmtKrw(sub)}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeLine(idx)}
+                          aria-label="삭제"
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <XIcon className="size-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : null}
 

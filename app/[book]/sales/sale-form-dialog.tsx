@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { FileTextIcon, PrinterIcon } from "lucide-react";
+import { FileTextIcon, PlusIcon, PrinterIcon, XIcon } from "lucide-react";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
@@ -93,6 +93,14 @@ const UNIT_OPTIONS = [
 
 export type SiteOption = { id: string; name: string };
 
+type LineDraft = {
+  itemKind: "rebar" | "steel";
+  itemId: string;
+  unit: "ea" | "kg" | "ton";
+  qty: number;
+  unitPrice: number;
+};
+
 export function SaleFormDialog({
   open,
   onOpenChange,
@@ -153,6 +161,9 @@ export function SaleFormDialog({
   const qty = Number(qtyStr) || 0;
   const unitPrice = Number(unitPriceStr) || 0;
 
+  // 누적 품목 라인 (신규 등록 — 여러 품목)
+  const [lines, setLines] = useState<LineDraft[]>([]);
+
   // 자료성·세금
   const [isDocumented, setIsDocumented] = useState(book === "b" ? false : true);
   const [taxDocType, setTaxDocType] = useState<string>(
@@ -173,14 +184,29 @@ export function SaleFormDialog({
     // sl은 자유
   }, [book]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 환산 계산 (rebar) — 톤 환산·원/kg 정합은 lib/rebar 한 곳에서.
+  // 현재 입력 라인 환산 미리보기 (rebar)
   const calc = useMemo(
     () => (rebarSpec ? calculateRebarWeight(selectedItem!, rebarSpec, unit, qty, unitPrice) : null),
     [rebarSpec, selectedItem, unit, qty, unitPrice],
   );
 
-  // 세금 계산
-  const lineSubtotal = calc ? calc.subtotal : Math.round(unitPrice * qty);
+  // 라인 → 품목·환산·공급가 (목록·명세서·합계 공용)
+  const calcLine = (l: LineDraft) => {
+    const lineItem = items.find((i) => i.id === l.itemId) ?? null;
+    const lineSpec = lineItem?.rebar_spec_code
+      ? rebarSpecs.find((s) => s.spec_code === lineItem.rebar_spec_code) ?? null
+      : null;
+    const c = lineItem && lineSpec ? calculateRebarWeight(lineItem, lineSpec, l.unit, l.qty, l.unitPrice) : null;
+    return { item: lineItem, calc: c, subtotal: c ? c.subtotal : Math.round(l.unitPrice * l.qty) };
+  };
+
+  // 현재 입력이 유효하면 임시 라인으로 포함(추가 버튼 안 눌러도 마지막 1건 반영)
+  const pendingLine: LineDraft | null =
+    itemId && qty > 0 && unitPrice > 0 ? { itemKind, itemId, unit, qty, unitPrice } : null;
+  const allLines = pendingLine ? [...lines, pendingLine] : lines;
+
+  // 세금·합계 — 모든 라인 공급가 합
+  const lineSubtotal = allLines.reduce((s, l) => s + calcLine(l).subtotal, 0);
   const vatRate =
     isDocumented && taxDocType !== "invoice" && taxDocType !== "none" ? 10 : 0;
   const vat = Math.round((lineSubtotal * vatRate) / 100);
@@ -227,6 +253,7 @@ export function SaleFormDialog({
         setUnit("ea");
         setQtyStr("");
         setUnitPriceStr("");
+        setLines([]);
         setOrderedOn(today);
         setDeliveredOn("");
         setPaymentDueOn("");
@@ -238,17 +265,32 @@ export function SaleFormDialog({
 
   // 거래명세표 공급자(우리) — B 책은 SL 정보로 발행.
   const company = companies.find((c) => c.book === (book === "b" ? "sl" : book)) ?? null;
-  const statementData: StatementData | null = useMemo(() => {
-    if (!matchedPartner || qty <= 0 || !selectedItem) return null;
-    const isReb = !!selectedItem.rebar_spec_code && !!calc;
-    const spec = isReb
-      ? [selectedItem.rebar_spec_code, selectedItem.rebar_grade_code, selectedItem.length_m ? `${selectedItem.length_m}M` : null]
-          .filter(Boolean)
-          .join(" ")
-      : "";
-    // 철근은 실제 중량(kg) 기준 — 수량×단가(원/kg)=공급가 정합. 비철근은 입력 수량×단가.
-    const lineQty = isReb ? Math.round(calc!.weightKg) : qty;
-    const lineUnit = isReb ? "kg" : unit;
+  const statementData: StatementData | null = (() => {
+    if (!matchedPartner || allLines.length === 0) return null;
+    const stLines = allLines
+      .map((l) => {
+        const { item: lineItem, calc: c } = calcLine(l);
+        if (!lineItem) return null;
+        const isReb = !!lineItem.rebar_spec_code && !!c;
+        const spec = isReb
+          ? [lineItem.rebar_spec_code, lineItem.rebar_grade_code, lineItem.length_m ? `${lineItem.length_m}M` : null]
+              .filter(Boolean)
+              .join(" ")
+          : "";
+        // 철근은 실제 중량(kg) 기준 — 수량×단가(원/kg)=공급가 정합. 비철근은 입력 수량×단가.
+        const sub = c ? c.subtotal : Math.round(l.unitPrice * l.qty);
+        return {
+          item_name: lineItem.name,
+          spec,
+          qty: isReb ? Math.round(c!.weightKg) : l.qty,
+          unit: isReb ? "kg" : l.unit,
+          unit_price_krw: l.unitPrice,
+          subtotal_krw: sub,
+          vat_krw: vatRate > 0 ? Math.round((sub * vatRate) / 100) : 0,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+    const lineVatSum = stLines.reduce((s, ln) => s + ln.vat_krw, 0);
     return {
       doc_no: "(미발급)",
       ordered_on: orderedOn,
@@ -264,23 +306,27 @@ export function SaleFormDialog({
       },
       site_name: siteName || null,
       is_documented: isDocumented,
-      lines: [
-        {
-          item_name: selectedItem.name,
-          spec,
-          qty: lineQty,
-          unit: lineUnit,
-          unit_price_krw: unitPrice,
-          subtotal_krw: lineSubtotal,
-          vat_krw: vat,
-        },
-      ],
+      lines: stLines,
       subtotal_krw: lineSubtotal,
-      vat_krw: vat,
-      total_krw: total,
+      vat_krw: lineVatSum,
+      total_krw: lineSubtotal + lineVatSum,
       notes: notes || null,
     };
-  }, [matchedPartner, calc, selectedItem, unit, qty, orderedOn, siteName, isDocumented, unitPrice, lineSubtotal, vat, total, notes]);
+  })();
+
+  function addLine() {
+    if (!itemId) { setError("품목을 선택해주세요."); return; }
+    if (qty <= 0) { setError("수량을 입력해주세요."); return; }
+    if (unitPrice <= 0) { setError("단가를 입력해주세요."); return; }
+    setLines((prev) => [...prev, { itemKind, itemId, unit, qty, unitPrice }]);
+    setItemId("");
+    setQtyStr("");
+    setUnitPriceStr("");
+    setError(null);
+  }
+  function removeLine(idx: number) {
+    setLines((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   function buildFormData(): FormData {
     const fd = new FormData();
@@ -296,11 +342,22 @@ export function SaleFormDialog({
     fd.set("notes", notes);
     if (!editing) {
       fd.set("partner_id", matchedPartner!.id);
-      fd.set("item_id", itemId);
-      fd.set("unit", unit);
-      fd.set("qty", String(qty));
-      fd.set("unit_price_krw", String(unitPrice));
-      if (calc) fd.set("weight_kg", String(calc.weightKg));
+      // 모든 라인(추가분 + 현재 입력) — 철근은 환산 중량 동봉.
+      fd.set(
+        "lines",
+        JSON.stringify(
+          allLines.map((l) => {
+            const { calc: c } = calcLine(l);
+            return {
+              item_id: l.itemId,
+              unit: l.unit,
+              qty: l.qty,
+              unit_price_krw: l.unitPrice,
+              weight_kg: c ? c.weightKg : null,
+            };
+          }),
+        ),
+      );
     }
     return fd;
   }
@@ -330,8 +387,8 @@ export function SaleFormDialog({
         setError("거래처는 마스터에 등록된 이름을 정확히 선택해주세요.");
         return;
       }
-      if (!itemId) {
-        setError("품목을 선택해주세요.");
+      if (allLines.length === 0) {
+        setError("품목을 1개 이상 추가해주세요.");
         return;
       }
       setShowStatement(true); // 신규 → 거래명세서 미리보기(확인 시 등록)
@@ -520,6 +577,45 @@ export function SaleFormDialog({
                     <span>실중량: <strong>{fmtNum(calc.weightKg)}kg</strong> ({fmtNum(calc.weightKg / 1000, 3)}톤)</span>
                     <span>단위중량: {rebarSpec.unit_weight_kg_per_m}kg/m × {calc.lengthM}m</span>
                   </div>
+                </div>
+              ) : null}
+
+              {/* 품목 추가 버튼 + 누적 리스트 */}
+              <div className="flex items-center justify-between">
+                <Button type="button" variant="outline" size="sm" onClick={addLine}>
+                  <PlusIcon className="size-4" /> 품목 추가
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {lines.length > 0
+                    ? `추가된 품목 ${lines.length}건`
+                    : "입력 후 ‘품목 추가’ (마지막 1건은 자동 포함)"}
+                </span>
+              </div>
+
+              {lines.length > 0 ? (
+                <div className="divide-y rounded-lg border">
+                  {lines.map((l, idx) => {
+                    const { item: li, calc: c, subtotal: sub } = calcLine(l);
+                    const reb = !!li?.rebar_spec_code && !!c;
+                    return (
+                      <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-xs">
+                        <span className="flex-1 truncate font-medium">{li?.name ?? "—"}</span>
+                        <span className="text-muted-foreground">
+                          {reb ? `${fmtNum(c!.weightKg)}kg` : `${l.qty}${l.unit}`} × {fmtKrw(l.unitPrice)}
+                          {reb ? "/kg" : ""}
+                        </span>
+                        <span className="w-24 text-right tabular-nums">{fmtKrw(sub)}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeLine(idx)}
+                          aria-label="삭제"
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <XIcon className="size-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : null}
 

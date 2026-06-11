@@ -227,11 +227,12 @@ export function PurchaseTable({
             ) : (
               purchases.map((p) => {
                 const firstLine = p.purchase_line?.[0];
+                const lineCount = p.purchase_line?.length ?? 0;
                 let itemSummary = "—";
                 if (firstLine) {
                   const w = firstLine.actual_weight_kg ?? firstLine.theoretical_weight_kg;
                   const wStr = w ? ` (${Math.round(w).toLocaleString()}kg)` : "";
-                  itemSummary = `${firstLine.item?.name ?? "—"} · ${firstLine.acquired_qty}${firstLine.acquired_unit}${wStr}`;
+                  itemSummary = `${firstLine.item?.name ?? "—"} · ${firstLine.acquired_qty}${firstLine.acquired_unit}${wStr}${lineCount > 1 ? ` 외 ${lineCount - 1}건` : ""}`;
                 }
                 return (
                   <TableRow key={p.id}>
