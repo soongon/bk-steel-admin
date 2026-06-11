@@ -87,7 +87,6 @@ const UNIT_OPTIONS = [
   { value: "ea", label: "가닥/EA" },
   { value: "kg", label: "kg" },
   { value: "ton", label: "톤" },
-  { value: "bundle", label: "번들" },
 ] as const;
 
 const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
@@ -171,7 +170,7 @@ export function SaleFormDialog({
   );
 
   // 단위·수량·단가
-  const [unit, setUnit] = useState<"ea" | "kg" | "ton" | "bundle">("ea");
+  const [unit, setUnit] = useState<"ea" | "kg" | "ton">("ea");
   const [qtyStr, setQtyStr] = useState("");
   const [unitPriceStr, setUnitPriceStr] = useState("");
   const qty = Number(qtyStr) || 0;
@@ -220,12 +219,8 @@ export function SaleFormDialog({
         weightKg = qty * 1000; // 표준본수 없는 비표준 길이 → 명목 1000kg fallback
         bars = Math.ceil(weightKg / kgPerBar);
       }
-    } else if (unit === "bundle") {
-      const barsPerBundle = rebarSpec.bars_per_bundle ?? 0;
-      bars = qty * barsPerBundle;
-      weightKg = bars * kgPerBar;
     }
-    // 철근 단가는 원/kg — 단위(톤·본·번들)와 무관하게 공급가 = 단가 × 실제 이론중량.
+    // 철근 단가는 원/kg — 단위(가닥·kg·톤)와 무관하게 공급가 = 단가 × 실제 이론중량.
     const subtotal = Math.round(unitPrice * weightKg);
     const tonStd = unit === "ton" && selectedItem?.bars_per_tonne != null;
     return { bars, weightKg, kgPerBar, lengthM, subtotal, tonStd };
@@ -471,7 +466,7 @@ export function SaleFormDialog({
                   <select
                     value={unit}
                     onChange={(e) =>
-                      setUnit(e.target.value as "ea" | "kg" | "ton" | "bundle")
+                      setUnit(e.target.value as "ea" | "kg" | "ton")
                     }
                     className="h-8 rounded-md border border-input bg-background px-2 text-sm"
                   >
@@ -485,7 +480,8 @@ export function SaleFormDialog({
                 <Field label="수량 *">
                   <Input
                     type="number"
-                    step={unit === "ton" ? "1" : "0.001"}
+                    step="1"
+                    min="0"
                     value={qtyStr}
                     onChange={(e) => setQtyStr(e.target.value)}
                     placeholder="0"
