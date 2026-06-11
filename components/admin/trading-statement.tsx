@@ -268,10 +268,12 @@ function StatementCopy({
             line ? (
               <tr key={i}>
                 <td className={`border ${baseClass} px-1 py-0.5 text-center text-xs`}>
-                  {(() => {
-                    const d = line.ordered_on ? new Date(line.ordered_on) : null;
-                    return d ? `${d.getMonth() + 1}/${d.getDate()}` : `${dateMonth}/${dateDay}`;
-                  })()}
+                  {i === 0
+                    ? (() => {
+                        const d = line.ordered_on ? new Date(line.ordered_on) : null;
+                        return d ? `${d.getMonth() + 1}/${d.getDate()}` : `${dateMonth}/${dateDay}`;
+                      })()
+                    : ""}
                 </td>
                 <td className={`border ${baseClass} px-1 py-0.5`}>{line.item_name}</td>
                 <td className={`border ${baseClass} px-1 py-0.5 text-center text-xs`}>
