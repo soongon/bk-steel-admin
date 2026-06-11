@@ -225,7 +225,8 @@ export function SaleFormDialog({
       bars = qty * barsPerBundle;
       weightKg = bars * kgPerBar;
     }
-    const subtotal = Math.round(unitPrice * qty);
+    // 철근 단가는 원/kg — 단위(톤·본·번들)와 무관하게 공급가 = 단가 × 실제 이론중량.
+    const subtotal = Math.round(unitPrice * weightKg);
     const tonStd = unit === "ton" && selectedItem?.bars_per_tonne != null;
     return { bars, weightKg, kgPerBar, lengthM, subtotal, tonStd };
   }, [rebarSpec, selectedItem, unit, qty, unitPrice]);
@@ -484,14 +485,14 @@ export function SaleFormDialog({
                 <Field label="수량 *">
                   <Input
                     type="number"
-                    step="0.001"
+                    step={unit === "ton" ? "1" : "0.001"}
                     value={qtyStr}
                     onChange={(e) => setQtyStr(e.target.value)}
                     placeholder="0"
                     required
                   />
                 </Field>
-                <Field label="단가(원) *">
+                <Field label={itemKind === "rebar" ? "단가(원/kg) *" : "단가(원) *"}>
                   <Input
                     type="number"
                     step="1"

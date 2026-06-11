@@ -191,7 +191,10 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
 
   const docNo = parsed.doc_no ?? (await generateDocNo(parsed.ordered_on));
   const resolvedSiteId = await resolveSiteId(supabase, parsed.site_id ?? null, parsed.site_name ?? null);
-  const subtotal = Math.round(parsed.unit_price_krw * parsed.qty);
+  // 철근(weight_kg 있음)은 원/kg 단가 × 실제 이론중량, 비철근은 단가 × 수량.
+  const subtotal = parsed.weight_kg
+    ? Math.round(parsed.unit_price_krw * parsed.weight_kg)
+    : Math.round(parsed.unit_price_krw * parsed.qty);
   const documented = parsed.is_documented;
   const { vatType, vatRate, vat, total } = computeVat(documented, parsed.tax_doc_type, subtotal);
 
