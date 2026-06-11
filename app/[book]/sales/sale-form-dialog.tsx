@@ -88,7 +88,8 @@ const STATUS_NEXT: Record<string, string[]> = {
 const UNIT_OPTIONS = [
   { value: "ea", label: "가닥/EA" },
   { value: "kg", label: "kg" },
-  { value: "ton", label: "톤" },
+  { value: "ton", label: "톤 (이론중량)" },
+  { value: "ton_metric", label: "톤 (1,000kg)" },
 ] as const;
 
 export type SiteOption = { id: string; name: string };
@@ -530,10 +531,12 @@ export function SaleFormDialog({
               <div className="grid grid-cols-3 gap-3">
                 <Field label="단위 *">
                   <select
-                    value={unit}
-                    onChange={(e) =>
-                      setUnit(e.target.value as "ea" | "kg" | "ton")
-                    }
+                    value={tonMetric ? "ton_metric" : unit}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setTonMetric(v === "ton_metric");
+                      setUnit(v === "ton_metric" ? "ton" : (v as "ea" | "kg" | "ton"));
+                    }}
                     className="h-8 rounded-md border border-input bg-background px-2 text-sm"
                   >
                     {UNIT_OPTIONS.map((u) => (
@@ -563,19 +566,6 @@ export function SaleFormDialog({
                   />
                 </Field>
               </div>
-
-              {/* 톤 계산 방식 — 1톤=1000kg 옵션 (소량·배달비 포함) */}
-              {unit === "ton" ? (
-                <label className="flex items-center gap-2 rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={tonMetric}
-                    onChange={(e) => setTonMetric(e.target.checked)}
-                    className="size-3.5 accent-foreground"
-                  />
-                  1톤 = 1,000kg로 계산 (소량·배달비 포함 — 끄면 규격별 이론중량)
-                </label>
-              ) : null}
 
               {/* 환산 표시 (rebar) */}
               {calc && rebarSpec ? (
