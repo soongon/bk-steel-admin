@@ -7,8 +7,8 @@ import { buttonVariants } from "@/components/ui/button";
 import { BookBadge } from "@/components/admin/book-badge";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
+import { fmtKrw } from "@/lib/format";
 
-const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
 const fmtNum = (n: number, d = 0) =>
   n.toLocaleString("ko-KR", { maximumFractionDigits: d });
 

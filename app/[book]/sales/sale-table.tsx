@@ -33,6 +33,7 @@ import {
 import { type Book, type BookView } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
+import { NoteCell } from "@/components/admin/note-cell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   SaleFormDialog,
@@ -43,6 +44,7 @@ import {
   type SiteOption,
 } from "./sale-form-dialog";
 import { cancelSale, deleteSale, markSaleDelivered, settleSale } from "./actions";
+import { fmtKrw } from "@/lib/format";
 
 type SaleLine = {
   id: string;
@@ -76,8 +78,6 @@ export type SaleListRow = {
   sale_line: SaleLine[];
 };
 
-const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
-
 const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   reserved:  { label: "주문",     className: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300" },
   confirmed: { label: "확정",     className: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300" },
@@ -93,27 +93,6 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${s.className}`}>
       {s.label}
     </span>
-  );
-}
-
-const NOTE_PREVIEW_LEN = 5;
-
-function NoteCell({ text }: { text: string | null }) {
-  if (!text) return <span className="text-muted-foreground">—</span>;
-  const isLong = text.length > NOTE_PREVIEW_LEN;
-  const preview = isLong ? text.slice(0, NOTE_PREVIEW_LEN) + "…" : text;
-  if (!isLong) return <span className="text-xs text-muted-foreground">{preview}</span>;
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span className="cursor-help text-xs text-muted-foreground underline decoration-dotted underline-offset-2" />
-        }
-      >
-        {preview}
-      </TooltipTrigger>
-      <TooltipContent className="max-w-md whitespace-pre-wrap">{text}</TooltipContent>
-    </Tooltip>
   );
 }
 

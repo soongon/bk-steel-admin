@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
+import { fmtKrw, fmtNum } from "@/lib/format";
+import { TAX_DOC_OPTIONS } from "@/lib/tax-doc";
 import { createPurchase, updatePurchaseHeader } from "./actions";
 
 export type Partner = { id: string; code: string; name: string };
@@ -53,15 +55,6 @@ export type PurchaseRow = {
   notes: string | null;
 };
 
-const TAX_DOC_OPTIONS = [
-  { value: "tax_invoice_electronic", label: "전자세금계산서" },
-  { value: "tax_invoice_paper", label: "종이세금계산서" },
-  { value: "invoice", label: "계산서 (면세)" },
-  { value: "cash_receipt", label: "현금영수증" },
-  { value: "simple_receipt", label: "간이영수증" },
-  { value: "none", label: "무자료" },
-] as const;
-
 const STATUS_OPTIONS = [
   { value: "ordered", label: "발주" },
   { value: "in_stock", label: "입고완료" },
@@ -74,9 +67,6 @@ const UNIT_OPTIONS = [
   { value: "kg", label: "kg (실중량)" },
   { value: "ton", label: "톤 (이론중량)" },
 ] as const;
-
-const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
-const fmtNum = (n: number, d = 1) => n.toLocaleString("ko-KR", { maximumFractionDigits: d });
 
 export function PurchaseFormDialog({
   open,

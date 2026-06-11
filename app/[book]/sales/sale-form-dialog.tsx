@@ -18,6 +18,8 @@ import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
 import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
 import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
+import { fmtKrw, fmtNum } from "@/lib/format";
+import { TAX_DOC_OPTIONS } from "@/lib/tax-doc";
 import { createSale, updateSaleHeader } from "./actions";
 
 export type Partner = {
@@ -63,15 +65,6 @@ export type SaleRow = {
   notes: string | null;
 };
 
-const TAX_DOC_OPTIONS = [
-  { value: "tax_invoice_electronic", label: "전자세금계산서" },
-  { value: "tax_invoice_paper", label: "종이세금계산서" },
-  { value: "invoice", label: "계산서 (면세)" },
-  { value: "cash_receipt", label: "현금영수증" },
-  { value: "simple_receipt", label: "간이영수증" },
-  { value: "none", label: "무자료" },
-] as const;
-
 const STATUS_LABEL: Record<string, string> = {
   reserved: "주문 (미납품)",
   confirmed: "확정",
@@ -97,9 +90,6 @@ const UNIT_OPTIONS = [
   { value: "kg", label: "kg" },
   { value: "ton", label: "톤" },
 ] as const;
-
-const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
-const fmtNum = (n: number, d = 1) => n.toLocaleString("ko-KR", { maximumFractionDigits: d });
 
 export type SiteOption = { id: string; name: string };
 

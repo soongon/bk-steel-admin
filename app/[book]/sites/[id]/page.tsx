@@ -11,8 +11,8 @@ import {
   type DeliveryCertData,
 } from "@/components/admin/delivery-cert-form";
 import { SiteCertButton } from "./site-cert-button";
+import { fmtKrw } from "@/lib/format";
 
-const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
 const fmtNum = (n: number) => Math.round(n).toLocaleString("ko-KR");
 
 const STATUS_LABEL: Record<string, string> = {

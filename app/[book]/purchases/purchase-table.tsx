@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { type Book, type BookView } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { NoteCell } from "@/components/admin/note-cell";
 import {
   PurchaseFormDialog,
   type Partner,
@@ -40,6 +40,7 @@ import {
   type SiteOption,
 } from "./purchase-form-dialog";
 import { deletePurchase, markPurchasePaid, markPurchaseReceived } from "./actions";
+import { fmtKrw } from "@/lib/format";
 
 type PurchaseLine = {
   id: string;
@@ -75,8 +76,6 @@ export type PurchaseListRow = {
   purchase_line: PurchaseLine[];
 };
 
-const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
-
 const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   ordered:         { label: "발주",     className: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300" },
   in_stock:        { label: "입고완료", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" },
@@ -92,27 +91,6 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${s.className}`}>
       {s.label}
     </span>
-  );
-}
-
-const NOTE_PREVIEW_LEN = 5;
-
-function NoteCell({ text }: { text: string | null }) {
-  if (!text) return <span className="text-muted-foreground">—</span>;
-  const isLong = text.length > NOTE_PREVIEW_LEN;
-  const preview = isLong ? text.slice(0, NOTE_PREVIEW_LEN) + "…" : text;
-  if (!isLong) return <span className="text-xs text-muted-foreground">{preview}</span>;
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span className="cursor-help text-xs text-muted-foreground underline decoration-dotted underline-offset-2" />
-        }
-      >
-        {preview}
-      </TooltipTrigger>
-      <TooltipContent className="max-w-md whitespace-pre-wrap">{text}</TooltipContent>
-    </Tooltip>
   );
 }
 

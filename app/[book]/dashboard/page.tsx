@@ -2,8 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { type Book, type BookView, BOOK_VIEW_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 import { KpiCard } from "@/components/admin/kpi-card";
-
-const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
+import { fmtKrw } from "@/lib/format";
 
 function monthStartFromDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;

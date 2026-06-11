@@ -12,8 +12,7 @@ import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { DeliveryCertButton } from "./delivery-cert-button";
-
-const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
+import { fmtKrw } from "@/lib/format";
 
 const STATUS_KO: Record<string, string> = {
   reserved: "주문",

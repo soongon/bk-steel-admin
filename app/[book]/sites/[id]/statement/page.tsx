@@ -12,8 +12,7 @@ import {
   type StatementLine,
 } from "@/components/admin/trading-statement";
 import { fetchCompanyProfile } from "@/lib/company-profile";
-
-const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
+import { fmtKrw } from "@/lib/format";
 
 export default async function SiteStatementPage({
   params,
