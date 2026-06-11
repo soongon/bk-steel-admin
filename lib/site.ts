@@ -38,3 +38,34 @@ export async function fetchAllSites(supabase: SupabaseClient): Promise<Site[]> {
     .order("name");
   return (data ?? []) as Site[];
 }
+
+/**
+ * site_id 가 없고 site_name 만 있는 경우(미등록 현장) site 마스터 자동 생성.
+ * UNIQUE(name) 충돌 시 기존 row 조회로 fallback. 매출·매입 등록/편집 공용.
+ */
+export async function resolveSiteId(
+  supabase: SupabaseClient,
+  siteId: string | null,
+  siteName: string | null,
+): Promise<string | null> {
+  if (siteId) return siteId;
+  if (!siteName) return null;
+  const trimmed = siteName.trim();
+  if (!trimmed) return null;
+
+  const { data: created } = await supabase
+    .from("site")
+    .insert({ name: trimmed })
+    .select("id")
+    .maybeSingle();
+  if (created) return created.id;
+
+  // UNIQUE 충돌 등 → 기존 row 조회
+  const { data: existing } = await supabase
+    .from("site")
+    .select("id")
+    .eq("name", trimmed)
+    .is("deleted_at", null)
+    .maybeSingle();
+  return existing?.id ?? null;
+}

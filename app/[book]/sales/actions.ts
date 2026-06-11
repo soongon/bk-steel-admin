@@ -1,8 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { type Book } from "@/lib/book";
+import { resolveSiteId } from "@/lib/site";
+import { computeVat, revalidateTransactionPaths } from "@/lib/transaction";
 
 export type SaleActionResult = { ok: true } | { ok: false; error: string };
 
@@ -12,15 +13,6 @@ function friendly(message: string): string {
   if (message.includes("chk_b_undocumented_sale")) return "B계좌 매출은 무자료만 가능합니다.";
   if (message.includes("row-level security")) return "권한이 없습니다.";
   return message;
-}
-
-function bumpRevalidation() {
-  for (const b of ["all", "bk", "sl", "b"]) {
-    revalidatePath(`/${b}/sales`);
-    revalidatePath(`/${b}/dashboard`);
-    revalidatePath(`/${b}/receivables`);
-    revalidatePath(`/${b}/bank`);
-  }
 }
 
 /** 매출 상태 전이 규칙 — 주문→확정→납품완료→수금완료(+연체·취소). 같은 상태는 무변경 허용. */
@@ -46,23 +38,6 @@ function transitionError(from: string, to: string): string | null {
   if (from === to) return null;
   if ((SALE_TRANSITIONS[from] ?? []).includes(to)) return null;
   return `'${STATUS_LABEL[from] ?? from}' → '${STATUS_LABEL[to] ?? to}' 상태 전이는 허용되지 않습니다.`;
-}
-
-/**
- * 자료성·세금계산서 종류 → 부가세 유형·세액.
- * 계산서=면세(exempt), 무자료/무자료성=불과세(non_taxable) — 둘 다 부가세 신고대상 뷰에서 자동 제외.
- * 그 외 자료거래(세금계산서·현금영수증 등)는 과세 10%.
- */
-function computeVat(isDocumented: boolean, taxDocType: string, subtotal: number) {
-  const vatType =
-    !isDocumented || taxDocType === "none"
-      ? "non_taxable"
-      : taxDocType === "invoice"
-        ? "exempt"
-        : "standard_10";
-  const vatRate = vatType === "standard_10" ? 10 : 0;
-  const vat = vatRate > 0 ? Math.round((subtotal * vatRate) / 100) : 0;
-  return { vatType, vatRate, vat, total: subtotal + vat };
 }
 
 /**
@@ -152,37 +127,6 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
   };
 }
 
-/**
- * site_id 가 없고 site_name 만 있는 경우(미등록 현장) site 마스터 자동 생성.
- * UNIQUE(name) 충돌 시 기존 row 조회로 fallback.
- */
-async function resolveSiteId(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  siteId: string | null,
-  siteName: string | null,
-): Promise<string | null> {
-  if (siteId) return siteId;
-  if (!siteName) return null;
-  const trimmed = siteName.trim();
-  if (!trimmed) return null;
-
-  const { data: created } = await supabase
-    .from("site")
-    .insert({ name: trimmed })
-    .select("id")
-    .maybeSingle();
-  if (created) return created.id;
-
-  // UNIQUE 충돌 등 → 기존 row 조회
-  const { data: existing } = await supabase
-    .from("site")
-    .select("id")
-    .eq("name", trimmed)
-    .is("deleted_at", null)
-    .maybeSingle();
-  return existing?.id ?? null;
-}
-
 export async function createSale(formData: FormData): Promise<SaleActionResult> {
   const parsed = readCreateInput(formData);
   if ("error" in parsed) return { ok: false, error: parsed.error };
@@ -231,7 +175,7 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
   });
   if (rpcErr) return { ok: false, error: friendly(rpcErr.message) };
 
-  bumpRevalidation();
+  revalidateTransactionPaths("sales");
   return { ok: true };
 }
 
@@ -293,7 +237,7 @@ export async function updateSaleHeader(
 
   const { error } = await supabase.from("sale").update(updates).eq("id", id);
   if (error) return { ok: false, error: friendly(error.message) };
-  bumpRevalidation();
+  revalidateTransactionPaths("sales");
   return { ok: true };
 }
 
@@ -320,7 +264,7 @@ export async function markSaleDelivered(id: string): Promise<SaleActionResult> {
     .update({ status: "delivered" })
     .eq("sale_id", id)
     .neq("status", "cancelled");
-  bumpRevalidation();
+  revalidateTransactionPaths("sales");
   return { ok: true };
 }
 
@@ -341,7 +285,7 @@ export async function settleSale(
     p_settled_on: settledOn || new Date().toISOString().slice(0, 10),
   });
   if (error) return { ok: false, error: friendly(error.message) };
-  bumpRevalidation();
+  revalidateTransactionPaths("sales");
   return { ok: true };
 }
 
@@ -357,7 +301,7 @@ export async function cancelSale(id: string): Promise<SaleActionResult> {
     .update({ status: "cancelled", settled_on: null })
     .eq("id", id);
   if (error) return { ok: false, error: friendly(error.message) };
-  bumpRevalidation();
+  revalidateTransactionPaths("sales");
   return { ok: true };
 }
 
@@ -366,6 +310,6 @@ export async function deleteSale(id: string): Promise<SaleActionResult> {
   // RPC가 manager 권한을 강제(soft-delete가 staff UPDATE 정책으로 우회되던 문제 차단).
   const { error } = await supabase.rpc("soft_delete_sale", { p_id: id });
   if (error) return { ok: false, error: friendly(error.message) };
-  bumpRevalidation();
+  revalidateTransactionPaths("sales");
   return { ok: true };
 }

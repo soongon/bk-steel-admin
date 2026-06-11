@@ -1,8 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { type Book } from "@/lib/book";
+import { resolveSiteId } from "@/lib/site";
+import { computeVat, revalidateTransactionPaths } from "@/lib/transaction";
 
 export type PurchaseActionResult = { ok: true } | { ok: false; error: string };
 
@@ -16,31 +17,6 @@ function friendly(message: string): string {
   return message;
 }
 
-function bumpRevalidation() {
-  for (const b of ["all", "bk", "sl", "b"]) {
-    revalidatePath(`/${b}/purchases`);
-    revalidatePath(`/${b}/dashboard`);
-    revalidatePath(`/${b}/payables`);
-    revalidatePath(`/${b}/bank`);
-  }
-}
-
-/**
- * 자료성·세금계산서 종류 → 부가세 유형·세액(매출 computeVat 미러).
- * 계산서=면세(exempt), 무자료/무자료성=불과세(non_taxable) — 부가세 신고대상 뷰에서 자동 제외.
- */
-function computeVat(isDocumented: boolean, taxDocType: string, subtotal: number) {
-  const vatType =
-    !isDocumented || taxDocType === "none"
-      ? "non_taxable"
-      : taxDocType === "invoice"
-        ? "exempt"
-        : "standard_10";
-  const vatRate = vatType === "standard_10" ? 10 : 0;
-  const vat = vatRate > 0 ? Math.round((subtotal * vatRate) / 100) : 0;
-  return { vatType, vatRate, vat, total: subtotal + vat };
-}
-
 async function generateDocNo(orderedOn: string): Promise<string> {
   const supabase = await createClient();
   const datePart = orderedOn.replace(/-/g, "");
@@ -49,31 +25,6 @@ async function generateDocNo(orderedOn: string): Promise<string> {
     .select("id", { count: "exact", head: true })
     .eq("ordered_on", orderedOn);
   return `${datePart}-${String((count ?? 0) + 1).padStart(3, "0")}`;
-}
-
-/** site_id 없고 site_name만 있으면 site 마스터 자동 생성(UNIQUE 충돌 시 기존 조회). 매출과 동일. */
-async function resolveSiteId(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  siteId: string | null,
-  siteName: string | null,
-): Promise<string | null> {
-  if (siteId) return siteId;
-  if (!siteName) return null;
-  const trimmed = siteName.trim();
-  if (!trimmed) return null;
-  const { data: created } = await supabase
-    .from("site")
-    .insert({ name: trimmed })
-    .select("id")
-    .maybeSingle();
-  if (created) return created.id;
-  const { data: existing } = await supabase
-    .from("site")
-    .select("id")
-    .eq("name", trimmed)
-    .is("deleted_at", null)
-    .maybeSingle();
-  return existing?.id ?? null;
 }
 
 type CreateInput = {
@@ -232,7 +183,7 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
   });
   if (rpcErr) return { ok: false, error: friendly(rpcErr.message) };
 
-  bumpRevalidation();
+  revalidateTransactionPaths("purchases");
   return { ok: true };
 }
 
@@ -277,7 +228,7 @@ export async function updatePurchaseHeader(
 
   const { error } = await supabase.from("purchase").update(updates).eq("id", id);
   if (error) return { ok: false, error: friendly(error.message) };
-  bumpRevalidation();
+  revalidateTransactionPaths("purchases");
   return { ok: true };
 }
 
@@ -300,7 +251,7 @@ export async function markPurchaseReceived(id: string): Promise<PurchaseActionRe
     .eq("status", "ordered");
   if (lErr) return { ok: false, error: friendly(lErr.message) };
 
-  bumpRevalidation();
+  revalidateTransactionPaths("purchases");
   return { ok: true };
 }
 
@@ -318,7 +269,7 @@ export async function markPurchasePaid(
     p_paid_on: paidOn || new Date().toISOString().slice(0, 10),
   });
   if (error) return { ok: false, error: friendly(error.message) };
-  bumpRevalidation();
+  revalidateTransactionPaths("purchases");
   return { ok: true };
 }
 
@@ -327,6 +278,6 @@ export async function deletePurchase(id: string): Promise<PurchaseActionResult> 
   // RPC가 manager 권한을 강제(soft-delete가 staff UPDATE 정책으로 우회되던 문제 차단).
   const { error } = await supabase.rpc("soft_delete_purchase", { p_id: id });
   if (error) return { ok: false, error: friendly(error.message) };
-  bumpRevalidation();
+  revalidateTransactionPaths("purchases");
   return { ok: true };
 }

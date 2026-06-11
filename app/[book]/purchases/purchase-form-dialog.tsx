@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
+import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import { createPurchase, updatePurchaseHeader } from "./actions";
 
 export type Partner = { id: string; code: string; name: string };
@@ -73,24 +74,6 @@ const UNIT_OPTIONS = [
   { value: "kg", label: "kg (실중량)" },
   { value: "ton", label: "톤 (이론중량)" },
 ] as const;
-
-/** 철근 여부 — rebar_spec_code 있으면 이형철근. category 보조. (매출 폼과 동일) */
-const isRebarItem = (i: Item) => i.category === "rebar" || !!i.rebar_spec_code;
-/** "D13" → 13. 정렬용(10미리부터). 못 읽으면 맨 뒤. */
-const specMm = (code: string | null) => {
-  const n = parseInt(String(code ?? "").replace(/\D/g, ""), 10);
-  return Number.isFinite(n) ? n : 9999;
-};
-/** 철근 정렬: 8M 우선 → 지름(10미리부터) → 길이. */
-function sortRebar(a: Item, b: Item): number {
-  const a8 = a.length_m === 8 ? 0 : 1;
-  const b8 = b.length_m === 8 ? 0 : 1;
-  if (a8 !== b8) return a8 - b8;
-  const sa = specMm(a.rebar_spec_code);
-  const sb = specMm(b.rebar_spec_code);
-  if (sa !== sb) return sa - sb;
-  return (a.length_m ?? 0) - (b.length_m ?? 0);
-}
 
 const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
 const fmtNum = (n: number, d = 1) => n.toLocaleString("ko-KR", { maximumFractionDigits: d });
@@ -171,35 +154,11 @@ export function PurchaseFormDialog({
     }
   }, [book]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 환산
-  const calc = useMemo(() => {
-    if (!rebarSpec || qty <= 0) return null;
-    const lengthM = selectedItem?.length_m ?? rebarSpec.standard_length_m ?? 8;
-    const kgPerBar = rebarSpec.unit_weight_kg_per_m * lengthM;
-    let bars = 0;
-    let theoreticalKg = 0;
-    if (unit === "ea") {
-      bars = qty;
-      theoreticalKg = bars * kgPerBar;
-    } else if (unit === "kg") {
-      theoreticalKg = qty;
-      bars = Math.ceil(qty / kgPerBar);
-    } else if (unit === "ton") {
-      // '1톤'은 명목 — 실제는 규격×길이별 표준본수 × 1본중량(이론중량). 1000kg 아님.
-      const bpt = selectedItem?.bars_per_tonne ?? null;
-      if (bpt) {
-        bars = Math.round(qty * bpt);
-        theoreticalKg = bars * kgPerBar;
-      } else {
-        theoreticalKg = qty * 1000; // 표준본수 없는 비표준 길이 → 명목 1000kg fallback
-        bars = Math.ceil(theoreticalKg / kgPerBar);
-      }
-    }
-    // 철근 단가는 원/kg — 단위(가닥·kg·톤)와 무관하게 공급가 = 단가 × 실제 이론중량.
-    const subtotal = Math.round(unitPrice * theoreticalKg);
-    const tonStd = unit === "ton" && selectedItem?.bars_per_tonne != null;
-    return { bars, theoreticalKg, kgPerBar, lengthM, subtotal, tonStd };
-  }, [rebarSpec, selectedItem, unit, qty, unitPrice]);
+  // 환산 — 톤 환산·원/kg 정합은 lib/rebar 한 곳에서. (weightKg = 이론중량)
+  const calc = useMemo(
+    () => (rebarSpec ? calculateRebarWeight(selectedItem!, rebarSpec, unit, qty, unitPrice) : null),
+    [rebarSpec, selectedItem, unit, qty, unitPrice],
+  );
 
   const lineSubtotal = calc ? calc.subtotal : Math.round(unitPrice * qty);
   const vatRate =
@@ -280,7 +239,7 @@ export function PurchaseFormDialog({
       fd.set("qty", String(qty));
       fd.set("unit_price_krw", String(unitPrice));
       if (calc) {
-        fd.set("theoretical_weight_kg", String(calc.theoreticalKg));
+        fd.set("theoretical_weight_kg", String(calc.weightKg));
         if (calc.bars > 0) fd.set("bars_count", String(calc.bars));
       }
       if (unit === "kg") {
@@ -481,7 +440,7 @@ export function PurchaseFormDialog({
                     step="0.001"
                     value={actualWeightStr}
                     onChange={(e) => setActualWeightStr(e.target.value)}
-                    placeholder={`이론 ${calc ? fmtNum(calc.theoreticalKg) : "0"}kg — 비우면 이론중량 사용`}
+                    placeholder={`이론 ${calc ? fmtNum(calc.weightKg) : "0"}kg — 비우면 이론중량 사용`}
                   />
                 </Field>
               ) : null}
@@ -499,7 +458,7 @@ export function PurchaseFormDialog({
                   </p>
                   <div className="grid grid-cols-3 gap-2 font-mono">
                     <span>가닥: <strong>{calc.bars.toLocaleString()}</strong></span>
-                    <span>이론중량: <strong>{fmtNum(calc.theoreticalKg)}kg</strong> ({fmtNum(calc.theoreticalKg / 1000, 3)}톤)</span>
+                    <span>이론중량: <strong>{fmtNum(calc.weightKg)}kg</strong> ({fmtNum(calc.weightKg / 1000, 3)}톤)</span>
                     <span>단위: {rebarSpec.unit_weight_kg_per_m}kg/m × {calc.lengthM}m</span>
                   </div>
                 </div>

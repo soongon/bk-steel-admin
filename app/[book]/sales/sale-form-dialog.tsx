@@ -17,6 +17,7 @@ import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
 import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
+import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import { createSale, updateSaleHeader } from "./actions";
 
 export type Partner = {
@@ -102,24 +103,6 @@ const fmtNum = (n: number, d = 1) => n.toLocaleString("ko-KR", { maximumFraction
 
 export type SiteOption = { id: string; name: string };
 
-/** 철근 여부 — rebar_spec_code 가 있으면 이형철근(환산 대상). category 보조. */
-const isRebarItem = (i: Item) => i.category === "rebar" || !!i.rebar_spec_code;
-/** "D13" → 13. 정렬용(10미리부터). 못 읽으면 맨 뒤. */
-const specMm = (code: string | null) => {
-  const n = parseInt(String(code ?? "").replace(/\D/g, ""), 10);
-  return Number.isFinite(n) ? n : 9999;
-};
-/** 철근 정렬: 8M 우선 → 지름(10미리부터) → 길이. */
-function sortRebar(a: Item, b: Item): number {
-  const a8 = a.length_m === 8 ? 0 : 1;
-  const b8 = b.length_m === 8 ? 0 : 1;
-  if (a8 !== b8) return a8 - b8;
-  const sa = specMm(a.rebar_spec_code);
-  const sb = specMm(b.rebar_spec_code);
-  if (sa !== sb) return sa - sb;
-  return (a.length_m ?? 0) - (b.length_m ?? 0);
-}
-
 export function SaleFormDialog({
   open,
   onOpenChange,
@@ -200,35 +183,11 @@ export function SaleFormDialog({
     // sl은 자유
   }, [book]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 환산 계산 (rebar)
-  const calc = useMemo(() => {
-    if (!rebarSpec || qty <= 0) return null;
-    const lengthM = selectedItem?.length_m ?? rebarSpec.standard_length_m ?? 8;
-    const kgPerBar = rebarSpec.unit_weight_kg_per_m * lengthM;
-    let bars = 0;
-    let weightKg = 0;
-    if (unit === "ea") {
-      bars = qty;
-      weightKg = bars * kgPerBar;
-    } else if (unit === "kg") {
-      weightKg = qty;
-      bars = Math.ceil(weightKg / kgPerBar);
-    } else if (unit === "ton") {
-      // '1톤'은 명목 — 실제는 규격×길이별 표준본수 × 1본중량(이론중량). 1000kg 아님.
-      const bpt = selectedItem?.bars_per_tonne ?? null;
-      if (bpt) {
-        bars = Math.round(qty * bpt);
-        weightKg = bars * kgPerBar;
-      } else {
-        weightKg = qty * 1000; // 표준본수 없는 비표준 길이 → 명목 1000kg fallback
-        bars = Math.ceil(weightKg / kgPerBar);
-      }
-    }
-    // 철근 단가는 원/kg — 단위(가닥·kg·톤)와 무관하게 공급가 = 단가 × 실제 이론중량.
-    const subtotal = Math.round(unitPrice * weightKg);
-    const tonStd = unit === "ton" && selectedItem?.bars_per_tonne != null;
-    return { bars, weightKg, kgPerBar, lengthM, subtotal, tonStd };
-  }, [rebarSpec, selectedItem, unit, qty, unitPrice]);
+  // 환산 계산 (rebar) — 톤 환산·원/kg 정합은 lib/rebar 한 곳에서.
+  const calc = useMemo(
+    () => (rebarSpec ? calculateRebarWeight(selectedItem!, rebarSpec, unit, qty, unitPrice) : null),
+    [rebarSpec, selectedItem, unit, qty, unitPrice],
+  );
 
   // 세금 계산
   const lineSubtotal = calc ? calc.subtotal : Math.round(unitPrice * qty);
