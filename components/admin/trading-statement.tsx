@@ -213,15 +213,20 @@ function StatementCopy({
         </table>
       </div>
 
-      {/* 현장 / 인사말 */}
-      <div className={`mt-2 ${headClass} px-2 py-1 text-center text-xs ${baseClass} border`}>
-        {data.site_name ? (
-          <>
-            <span className="font-semibold">현장:</span> {data.site_name}
-            <span className="mx-2">·</span>
-          </>
-        ) : null}
-        위와 같이 계산합니다. 감사합니다.
+      {/* 현장 / 인사말 + 합계금액 강조 */}
+      <div className={`mt-2 flex items-center justify-between gap-3 ${headClass} px-3 py-1.5 ${baseClass} border`}>
+        <span className="text-xs">
+          {data.site_name ? (
+            <>
+              <span className="font-semibold">현장:</span> {data.site_name}
+              <span className="mx-2">·</span>
+            </>
+          ) : null}
+          위와 같이 계산합니다. 감사합니다.
+        </span>
+        <span className={`whitespace-nowrap text-lg font-bold tabular-nums ${titleClass}`}>
+          합계금액 {fmtKrwSym(data.total_krw)}
+        </span>
       </div>
 
       {/* 라인 표 */}
@@ -282,7 +287,7 @@ function StatementCopy({
         <tfoot className={`${headClass} font-semibold`}>
           <tr>
             <td colSpan={5} className={`border ${baseClass} px-2 py-1 text-right`}>
-              소 계
+              소 계 (공급가액 / 세액)
             </td>
             <td className={`border ${baseClass} px-1 py-1 text-right tabular-nums`}>
               {fmtKrw(data.subtotal_krw)}
@@ -291,17 +296,6 @@ function StatementCopy({
               {fmtKrw(data.vat_krw)}
             </td>
             <td className={`border ${baseClass}`}></td>
-          </tr>
-          <tr>
-            <td colSpan={5} className={`border ${baseClass} px-2 py-1 text-right`}>
-              합 계 금 액
-            </td>
-            <td
-              colSpan={3}
-              className={`border ${baseClass} px-2 py-1 text-right text-base tabular-nums`}
-            >
-              {fmtKrwSym(data.total_krw)}
-            </td>
           </tr>
         </tfoot>
       </table>
