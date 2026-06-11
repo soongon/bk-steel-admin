@@ -239,17 +239,12 @@ function StatementCopy({
         </table>
       </div>
 
-      {/* 현장 + 금액(한글 좌·숫자 우) */}
+      {/* 금액 (한글 좌·숫자 우) */}
       <div className={`mt-2 flex items-center justify-between gap-3 ${headClass} px-3 py-2 ${baseClass} border`}>
-        <span className="text-left text-sm">
-          {data.site_name ? (
-            <span className="mr-2 text-xs">
-              <span className="font-semibold">현장:</span> {data.site_name}
-            </span>
-          ) : null}
+        <span className="text-left text-base font-medium">
           <span className="font-semibold">금 액 :</span> {toKoreanAmount(data.total_krw)}원 정
         </span>
-        <span className={`whitespace-nowrap text-right text-2xl font-bold tabular-nums ${titleClass}`}>
+        <span className={`whitespace-nowrap text-right text-xl font-bold tabular-nums ${titleClass}`}>
           {fmtKrwSym(data.total_krw)}
         </span>
       </div>
