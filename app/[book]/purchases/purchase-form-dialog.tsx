@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -14,9 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
-import { AttachmentUploader } from "@/components/admin/attachments/attachment-uploader";
-import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
-import { type Attachment } from "@/lib/attachment";
 import { createPurchase, updatePurchaseHeader } from "./actions";
 
 export type Partner = { id: string; code: string; name: string };
@@ -110,7 +106,6 @@ export function PurchaseFormDialog({
   items,
   rebarSpecs,
   sites,
-  attachments: initialAttachments = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -120,13 +115,7 @@ export function PurchaseFormDialog({
   items: Item[];
   rebarSpecs: RebarSpec[];
   sites: SiteOption[];
-  attachments?: Attachment[];
 }) {
-  const [attachments, setAttachments] = useState<Attachment[]>(initialAttachments);
-
-  useEffect(() => {
-    setAttachments(initialAttachments);
-  }, [initialAttachments]);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const today = new Date().toISOString().slice(0, 10);
@@ -171,7 +160,6 @@ export function PurchaseFormDialog({
   const [taxDocType, setTaxDocType] = useState<string>(
     book === "b" ? "none" : "tax_invoice_electronic",
   );
-  const [taxDocNo, setTaxDocNo] = useState("");
 
   useEffect(() => {
     if (book === "b") {
@@ -223,7 +211,6 @@ export function PurchaseFormDialog({
 
   const [orderedOn, setOrderedOn] = useState(today);
   const [deliveredOn, setDeliveredOn] = useState(today);
-  const [paymentDueOn, setPaymentDueOn] = useState("");
   const [status, setStatus] = useState<string>(editing?.status ?? "ordered");
   const [notes, setNotes] = useState(editing?.notes ?? "");
 
@@ -235,11 +222,9 @@ export function PurchaseFormDialog({
         setSiteName(editing.site_name ?? "");
         setOrderedOn(editing.ordered_on);
         setDeliveredOn(editing.delivered_on ?? "");
-        setPaymentDueOn(editing.payment_due_on ?? "");
         setStatus(editing.status);
         setIsDocumented(editing.is_documented);
         setTaxDocType(editing.tax_doc_type);
-        setTaxDocNo(editing.tax_doc_no ?? "");
         setNotes(editing.notes ?? "");
       } else {
         setBook(view !== "all" ? (view as Book) : "sl");
@@ -253,9 +238,7 @@ export function PurchaseFormDialog({
         setActualWeightStr("");
         setOrderedOn(today);
         setDeliveredOn(today);
-        setPaymentDueOn("");
         setStatus("ordered");
-        setTaxDocNo("");
         setNotes("");
       }
     }
@@ -287,11 +270,9 @@ export function PurchaseFormDialog({
     if (matchedSite) fd.set("site_id", matchedSite.id);
     fd.set("ordered_on", orderedOn);
     fd.set("delivered_on", deliveredOn);
-    fd.set("payment_due_on", paymentDueOn);
     fd.set("status", status);
     fd.set("is_documented", String(isDocumented));
     fd.set("tax_doc_type", taxDocType);
-    fd.set("tax_doc_no", taxDocNo);
     fd.set("notes", notes);
 
     if (!editing) {
@@ -329,11 +310,6 @@ export function PurchaseFormDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{editing ? "매입 수정" : "신규 매입"}</DialogTitle>
-          <DialogDescription>
-            {editing
-              ? "라인 항목은 수정 불가. 헤더만 변경됩니다."
-              : "kg 단위는 실중량(검수)으로 입력. 가닥/톤은 이론중량 자동 계산."}
-          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -548,7 +524,7 @@ export function PurchaseFormDialog({
             </>
           ) : null}
 
-          {/* 세금계산서 + 상태 */}
+          {/* 세금계산서 종류 + 상태 (결제완료는 목록의 '결제' 버튼=통장 출금으로) */}
           <div className="grid grid-cols-2 gap-3">
             <Field label="세금계산서 종류">
               <select
@@ -571,17 +547,6 @@ export function PurchaseFormDialog({
                 ))}
               </select>
             </Field>
-            <Field label="세금계산서 번호">
-              <Input
-                value={taxDocNo}
-                onChange={(e) => setTaxDocNo(e.target.value)}
-                placeholder="20260507-00001"
-              />
-            </Field>
-          </div>
-
-          {/* 상태 + 결제 예정일 (결제완료는 목록의 '결제' 버튼=통장 출금으로) */}
-          <div className="grid grid-cols-2 gap-3">
             <Field label="상태">
               <select
                 value={status}
@@ -595,13 +560,6 @@ export function PurchaseFormDialog({
                 ))}
               </select>
             </Field>
-            <Field label="결제 예정일">
-              <Input
-                type="date"
-                value={paymentDueOn}
-                onChange={(e) => setPaymentDueOn(e.target.value)}
-              />
-            </Field>
           </div>
 
           {/* 메모 */}
@@ -614,35 +572,6 @@ export function PurchaseFormDialog({
               className="resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           </Field>
-
-          {/* 첨부 — 편집 모드만. 신규는 저장 후 다시 열어 첨부 */}
-          {editing ? (
-            <div className="rounded-md border-dashed border-2 border-zinc-300 p-3 dark:border-zinc-700">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
-                사진 첨부 (영수증·세금계산서·증빙 등)
-              </p>
-              <div className="flex flex-col gap-3">
-                <AttachmentGallery
-                  attachments={attachments}
-                  variant="square"
-                  editable
-                  onDeleted={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
-                  emptyLabel="첨부 없음 — 아래에서 추가"
-                />
-                <AttachmentUploader
-                  entityType="purchase"
-                  entityId={editing.id}
-                  multiple
-                  label="사진 추가"
-                  onUploaded={(att) => setAttachments((prev) => [...prev, att])}
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="rounded-md border border-dashed bg-muted/20 p-3 text-center text-xs text-muted-foreground">
-              사진은 매입 저장 후 첨부할 수 있습니다.
-            </p>
-          )}
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 

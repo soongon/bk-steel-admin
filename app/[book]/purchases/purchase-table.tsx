@@ -348,7 +348,6 @@ export function PurchaseTable({
         items={items}
         rebarSpecs={rebarSpecs}
         sites={sites}
-        attachments={editing ? attachmentsByEntity?.[editing.id] ?? [] : []}
       />
 
       {payTarget ? (

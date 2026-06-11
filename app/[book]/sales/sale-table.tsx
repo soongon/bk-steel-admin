@@ -417,7 +417,6 @@ export function SaleTable({
         rebarSpecs={rebarSpecs}
         sites={sites}
         companies={companies}
-        attachments={editing ? attachmentsByEntity?.[editing.id] ?? [] : []}
       />
 
       {settleTarget ? (

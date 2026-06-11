@@ -16,10 +16,7 @@ import { PrinterIcon } from "lucide-react";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
-import { AttachmentUploader } from "@/components/admin/attachments/attachment-uploader";
-import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { SalesStatement, type SalesStatementData } from "@/components/admin/sales-statement";
-import { type Attachment } from "@/lib/attachment";
 import { createSale, updateSaleHeader } from "./actions";
 
 export type Partner = {
@@ -132,7 +129,6 @@ export function SaleFormDialog({
   rebarSpecs,
   sites,
   companies,
-  attachments: initialAttachments = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -143,13 +139,7 @@ export function SaleFormDialog({
   rebarSpecs: RebarSpec[];
   sites: SiteOption[];
   companies: CompanyProfile[];
-  attachments?: Attachment[];
 }) {
-  const [attachments, setAttachments] = useState<Attachment[]>(initialAttachments);
-
-  useEffect(() => {
-    setAttachments(initialAttachments);
-  }, [initialAttachments]);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [showStatement, setShowStatement] = useState(false); // 거래명세서 미리보기 모달
@@ -394,11 +384,6 @@ export function SaleFormDialog({
       <DialogContent className="max-w-2xl print:hidden">
         <DialogHeader>
           <DialogTitle>{editing ? "매출 수정" : "신규 매출"}</DialogTitle>
-          <DialogDescription>
-            {editing
-              ? "라인 항목은 수정 불가 (취소 후 재등록). 헤더 정보만 변경됩니다."
-              : "거래처는 등록된 마스터에서 선택. 철근 단위는 자동 환산됩니다."}
-          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -662,35 +647,6 @@ export function SaleFormDialog({
               className="resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           </Field>
-
-          {/* 첨부 — 편집 모드만. 신규는 저장 후 다시 열어 첨부 */}
-          {editing ? (
-            <div className="rounded-md border-dashed border-2 border-zinc-300 p-3 dark:border-zinc-700">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
-                사진 첨부 (영수증·세금계산서·증빙 등)
-              </p>
-              <div className="flex flex-col gap-3">
-                <AttachmentGallery
-                  attachments={attachments}
-                  variant="square"
-                  editable
-                  onDeleted={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
-                  emptyLabel="첨부 없음 — 아래에서 추가"
-                />
-                <AttachmentUploader
-                  entityType="sale"
-                  entityId={editing.id}
-                  multiple
-                  label="사진 추가"
-                  onUploaded={(att) => setAttachments((prev) => [...prev, att])}
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="rounded-md border border-dashed bg-muted/20 p-3 text-center text-xs text-muted-foreground">
-              사진은 매출 저장 후 첨부할 수 있습니다.
-            </p>
-          )}
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
