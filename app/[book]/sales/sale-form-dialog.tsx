@@ -28,6 +28,7 @@ export type Item = {
   rebar_spec_code: string | null;
   rebar_grade_code: string | null;
   length_m: number | null;
+  bars_per_tonne: number | null; // 명목 1톤 표준본수 (톤 환산용, 규격×길이별)
 };
 export type RebarSpec = {
   spec_code: string;
@@ -210,15 +211,23 @@ export function SaleFormDialog({
       weightKg = qty;
       bars = Math.ceil(weightKg / kgPerBar);
     } else if (unit === "ton") {
-      weightKg = qty * 1000;
-      bars = Math.ceil(weightKg / kgPerBar);
+      // '1톤'은 명목 — 실제는 규격×길이별 표준본수 × 1본중량(이론중량). 1000kg 아님.
+      const bpt = selectedItem?.bars_per_tonne ?? null;
+      if (bpt) {
+        bars = Math.round(qty * bpt);
+        weightKg = bars * kgPerBar;
+      } else {
+        weightKg = qty * 1000; // 표준본수 없는 비표준 길이 → 명목 1000kg fallback
+        bars = Math.ceil(weightKg / kgPerBar);
+      }
     } else if (unit === "bundle") {
       const barsPerBundle = rebarSpec.bars_per_bundle ?? 0;
       bars = qty * barsPerBundle;
       weightKg = bars * kgPerBar;
     }
     const subtotal = Math.round(unitPrice * qty);
-    return { bars, weightKg, kgPerBar, lengthM, subtotal };
+    const tonStd = unit === "ton" && selectedItem?.bars_per_tonne != null;
+    return { bars, weightKg, kgPerBar, lengthM, subtotal, tonStd };
   }, [rebarSpec, selectedItem, unit, qty, unitPrice]);
 
   // 세금 계산
@@ -497,10 +506,17 @@ export function SaleFormDialog({
               {/* 환산 표시 (rebar) */}
               {calc && rebarSpec ? (
                 <div className="rounded-lg border border-dashed bg-muted/30 p-2 text-xs">
-                  <p className="mb-1 font-medium text-muted-foreground">철근 환산</p>
+                  <p className="mb-1 flex items-center gap-1.5 font-medium text-muted-foreground">
+                    철근 환산
+                    {calc.tonStd ? (
+                      <span className="rounded bg-amber-100 px-1 text-[10px] font-normal text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                        명목 {qty}톤 → 표준 {selectedItem?.bars_per_tonne}본/톤
+                      </span>
+                    ) : null}
+                  </p>
                   <div className="grid grid-cols-3 gap-2 font-mono">
                     <span>가닥: <strong>{calc.bars.toLocaleString()}</strong></span>
-                    <span>중량: <strong>{fmtNum(calc.weightKg)}kg</strong> ({fmtNum(calc.weightKg / 1000, 3)}톤)</span>
+                    <span>실중량: <strong>{fmtNum(calc.weightKg)}kg</strong> ({fmtNum(calc.weightKg / 1000, 3)}톤)</span>
                     <span>단위중량: {rebarSpec.unit_weight_kg_per_m}kg/m × {calc.lengthM}m</span>
                   </div>
                 </div>

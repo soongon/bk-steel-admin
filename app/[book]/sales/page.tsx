@@ -65,7 +65,7 @@ export default async function SalesPage({
       .order("name"),
     supabase
       .from("item")
-      .select("id, code, name, category, rebar_spec_code, rebar_grade_code, length_m")
+      .select("id, code, name, category, rebar_spec_code, rebar_grade_code, length_m, bars_per_tonne")
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),

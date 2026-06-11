@@ -28,6 +28,7 @@ export type Item = {
   rebar_spec_code: string | null;
   rebar_grade_code: string | null;
   length_m: number | null;
+  bars_per_tonne: number | null; // 명목 1톤 표준본수 (톤 환산용, 규격×길이별)
 };
 export type RebarSpec = {
   spec_code: string;
@@ -162,15 +163,23 @@ export function PurchaseFormDialog({
       theoreticalKg = qty;
       bars = Math.ceil(qty / kgPerBar);
     } else if (unit === "ton") {
-      theoreticalKg = qty * 1000;
-      bars = Math.ceil(theoreticalKg / kgPerBar);
+      // '1톤'은 명목 — 실제는 규격×길이별 표준본수 × 1본중량(이론중량). 1000kg 아님.
+      const bpt = selectedItem?.bars_per_tonne ?? null;
+      if (bpt) {
+        bars = Math.round(qty * bpt);
+        theoreticalKg = bars * kgPerBar;
+      } else {
+        theoreticalKg = qty * 1000; // 표준본수 없는 비표준 길이 → 명목 1000kg fallback
+        bars = Math.ceil(theoreticalKg / kgPerBar);
+      }
     } else if (unit === "bundle") {
       const barsPerBundle = rebarSpec.bars_per_bundle ?? 0;
       bars = qty * barsPerBundle;
       theoreticalKg = bars * kgPerBar;
     }
     const subtotal = Math.round(unitPrice * qty);
-    return { bars, theoreticalKg, kgPerBar, lengthM, subtotal };
+    const tonStd = unit === "ton" && selectedItem?.bars_per_tonne != null;
+    return { bars, theoreticalKg, kgPerBar, lengthM, subtotal, tonStd };
   }, [rebarSpec, selectedItem, unit, qty, unitPrice]);
 
   const lineSubtotal = calc ? calc.subtotal : Math.round(unitPrice * qty);
@@ -427,7 +436,14 @@ export function PurchaseFormDialog({
               {/* 환산 표시 */}
               {calc && rebarSpec ? (
                 <div className="rounded-lg border border-dashed bg-muted/30 p-2 text-xs">
-                  <p className="mb-1 font-medium text-muted-foreground">철근 환산</p>
+                  <p className="mb-1 flex items-center gap-1.5 font-medium text-muted-foreground">
+                    철근 환산
+                    {calc.tonStd ? (
+                      <span className="rounded bg-amber-100 px-1 text-[10px] font-normal text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                        명목 {qty}톤 → 표준 {selectedItem?.bars_per_tonne}본/톤
+                      </span>
+                    ) : null}
+                  </p>
                   <div className="grid grid-cols-3 gap-2 font-mono">
                     <span>가닥: <strong>{calc.bars.toLocaleString()}</strong></span>
                     <span>이론중량: <strong>{fmtNum(calc.theoreticalKg)}kg</strong> ({fmtNum(calc.theoreticalKg / 1000, 3)}톤)</span>
