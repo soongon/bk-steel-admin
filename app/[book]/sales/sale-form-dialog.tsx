@@ -16,7 +16,7 @@ import { PrinterIcon } from "lucide-react";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
-import { SalesStatement, type SalesStatementData } from "@/components/admin/sales-statement";
+import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
 import { createSale, updateSaleHeader } from "./actions";
 
 export type Partner = {
@@ -26,6 +26,9 @@ export type Partner = {
   business_no?: string | null;
   representative?: string | null;
   address?: string | null;
+  phone?: string | null;
+  fax?: string | null;
+  industry?: string | null;
 };
 export type Item = {
   id: string;
@@ -286,39 +289,51 @@ export function SaleFormDialog({
     }
   }, [open, editing, view, today]);
 
-  // 거래명세서 공급자(우리) — B 책은 SL 정보로 발행.
+  // 거래명세표 공급자(우리) — B 책은 SL 정보로 발행.
   const company = companies.find((c) => c.book === (book === "b" ? "sl" : book)) ?? null;
-  const statementData: SalesStatementData | null = useMemo(() => {
-    if (!matchedPartner || !calc || qty <= 0) return null;
-    const isReb = !!selectedItem?.rebar_spec_code;
-    const itemName = isReb ? "철근" : selectedItem?.name ?? "";
+  const statementData: StatementData | null = useMemo(() => {
+    if (!matchedPartner || qty <= 0 || !selectedItem) return null;
+    const isReb = !!selectedItem.rebar_spec_code && !!calc;
     const spec = isReb
-      ? `${selectedItem!.rebar_spec_code} ${selectedItem!.length_m ?? ""}M`.trim()
+      ? [selectedItem.rebar_spec_code, selectedItem.rebar_grade_code, selectedItem.length_m ? `${selectedItem.length_m}M` : null]
+          .filter(Boolean)
+          .join(" ")
       : "";
-    const qtyLabel =
-      unit === "ton"
-        ? `${qty}톤 (${fmtNum(calc.weightKg)}kg)`
-        : unit === "kg"
-          ? `${fmtNum(calc.weightKg)}kg`
-          : `${qty}가닥 (${fmtNum(calc.weightKg)}kg)`;
+    // 철근은 실제 중량(kg) 기준 — 수량×단가(원/kg)=공급가 정합. 비철근은 입력 수량×단가.
+    const lineQty = isReb ? Math.round(calc!.weightKg) : qty;
+    const lineUnit = isReb ? "kg" : unit;
     return {
-      doc_no: null,
+      doc_no: "(미발급)",
       ordered_on: orderedOn,
-      site_name: siteName || null,
+      tax_doc_no: null,
       partner: {
         name: matchedPartner.name,
         business_no: matchedPartner.business_no ?? null,
         representative: matchedPartner.representative ?? null,
         address: matchedPartner.address ?? null,
+        phone: matchedPartner.phone ?? null,
+        fax: matchedPartner.fax ?? null,
+        industry: matchedPartner.industry ?? null,
       },
+      site_name: siteName || null,
+      is_documented: isDocumented,
       lines: [
-        { item_name: itemName, spec, qty_label: qtyLabel, unit_price: unitPrice, supply: lineSubtotal, vat },
+        {
+          item_name: selectedItem.name,
+          spec,
+          qty: lineQty,
+          unit: lineUnit,
+          unit_price_krw: unitPrice,
+          subtotal_krw: lineSubtotal,
+          vat_krw: vat,
+        },
       ],
-      supply_total: lineSubtotal,
-      vat_total: vat,
-      total,
+      subtotal_krw: lineSubtotal,
+      vat_krw: vat,
+      total_krw: total,
+      notes: notes || null,
     };
-  }, [matchedPartner, calc, selectedItem, unit, qty, orderedOn, siteName, unitPrice, lineSubtotal, vat, total]);
+  }, [matchedPartner, calc, selectedItem, unit, qty, orderedOn, siteName, isDocumented, unitPrice, lineSubtotal, vat, total, notes]);
 
   function buildFormData(): FormData {
     const fd = new FormData();
@@ -666,14 +681,14 @@ export function SaleFormDialog({
       <Dialog open onOpenChange={(o) => { if (!o) setShowStatement(false); }}>
         <DialogContent className="!max-w-[920px] max-h-[90vh] overflow-y-auto">
           <DialogHeader className="print:hidden">
-            <DialogTitle>거래명세서 미리보기 (공급받는자 보관용)</DialogTitle>
+            <DialogTitle>거래명세표 미리보기</DialogTitle>
             <DialogDescription>
               확인하면 매출이 등록됩니다. 내용이 다르면 ‘수정’으로 돌아가세요.
             </DialogDescription>
           </DialogHeader>
           <div className="bg-zinc-100 p-3 print:bg-white print:p-0 dark:bg-zinc-900">
             <div className="mx-auto max-w-[800px] rounded bg-white p-6 text-zinc-900 shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
-              <SalesStatement data={statementData} company={company} />
+              <TradingStatement data={statementData} company={company} />
             </div>
           </div>
           <DialogFooter className="print:hidden">
