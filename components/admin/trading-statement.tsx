@@ -38,6 +38,32 @@ export type StatementData = {
 const fmtKrw = (n: number) => Math.round(n).toLocaleString("ko-KR");
 const fmtKrwSym = (n: number) => `₩${fmtKrw(n)}`;
 
+/** 숫자 → 한글 금액 (예: 1956240 → 일백구십오만육천이백사십). 거래명세표 격식 표기. */
+function toKoreanAmount(n: number): string {
+  const num = Math.floor(Math.abs(n));
+  if (num === 0) return "영";
+  const digits = ["", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"];
+  const small = ["", "십", "백", "천"];
+  const big = ["", "만", "억", "조", "경"];
+  const groups: string[] = [];
+  let s = String(num);
+  while (s.length > 0) {
+    groups.unshift(s.slice(-4));
+    s = s.slice(0, -4);
+  }
+  let out = "";
+  groups.forEach((g, gi) => {
+    if (parseInt(g, 10) === 0) return;
+    const ds = g.padStart(4, "0").split("").map(Number);
+    let part = "";
+    ds.forEach((d, di) => {
+      if (d !== 0) part += digits[d] + small[3 - di];
+    });
+    out += part + big[groups.length - 1 - gi];
+  });
+  return out;
+}
+
 const MIN_ROWS = 8; // 빈 행으로 표 높이 유지
 
 /**
@@ -213,19 +239,18 @@ function StatementCopy({
         </table>
       </div>
 
-      {/* 현장 / 인사말 + 합계금액 강조 */}
-      <div className={`mt-2 flex items-center justify-between gap-3 ${headClass} px-3 py-1.5 ${baseClass} border`}>
-        <span className="text-xs">
+      {/* 현장 + 금액(한글 좌·숫자 우) */}
+      <div className={`mt-2 flex items-center justify-between gap-3 ${headClass} px-3 py-2 ${baseClass} border`}>
+        <span className="text-left text-sm">
           {data.site_name ? (
-            <>
+            <span className="mr-2 text-xs">
               <span className="font-semibold">현장:</span> {data.site_name}
-              <span className="mx-2">·</span>
-            </>
+            </span>
           ) : null}
-          위와 같이 계산합니다. 감사합니다.
+          <span className="font-semibold">금 액 :</span> {toKoreanAmount(data.total_krw)}원 정
         </span>
-        <span className={`whitespace-nowrap text-lg font-bold tabular-nums ${titleClass}`}>
-          합계금액 {fmtKrwSym(data.total_krw)}
+        <span className={`whitespace-nowrap text-right text-2xl font-bold tabular-nums ${titleClass}`}>
+          {fmtKrwSym(data.total_krw)}
         </span>
       </div>
 
