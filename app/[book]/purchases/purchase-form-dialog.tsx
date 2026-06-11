@@ -80,6 +80,24 @@ const UNIT_OPTIONS = [
   { value: "ton", label: "톤 (이론중량)" },
 ] as const;
 
+/** 철근 여부 — rebar_spec_code 있으면 이형철근. category 보조. (매출 폼과 동일) */
+const isRebarItem = (i: Item) => i.category === "rebar" || !!i.rebar_spec_code;
+/** "D13" → 13. 정렬용(10미리부터). 못 읽으면 맨 뒤. */
+const specMm = (code: string | null) => {
+  const n = parseInt(String(code ?? "").replace(/\D/g, ""), 10);
+  return Number.isFinite(n) ? n : 9999;
+};
+/** 철근 정렬: 8M 우선 → 지름(10미리부터) → 길이. */
+function sortRebar(a: Item, b: Item): number {
+  const a8 = a.length_m === 8 ? 0 : 1;
+  const b8 = b.length_m === 8 ? 0 : 1;
+  if (a8 !== b8) return a8 - b8;
+  const sa = specMm(a.rebar_spec_code);
+  const sb = specMm(b.rebar_spec_code);
+  if (sa !== sb) return sa - sb;
+  return (a.length_m ?? 0) - (b.length_m ?? 0);
+}
+
 const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")}`;
 const fmtNum = (n: number, d = 1) => n.toLocaleString("ko-KR", { maximumFractionDigits: d });
 
@@ -123,6 +141,16 @@ export function PurchaseFormDialog({
 
   const [siteName, setSiteName] = useState(editing?.site_name ?? "");
   const matchedSite = sites.find((s) => s.name === siteName);
+
+  // 품목 구분(철근/철제) — 매출 폼과 동일. 토글 시 선택 초기화.
+  const [itemKind, setItemKind] = useState<"rebar" | "steel">("rebar");
+  const itemOptions = useMemo(
+    () =>
+      itemKind === "rebar"
+        ? items.filter(isRebarItem).sort(sortRebar)
+        : items.filter((i) => !isRebarItem(i)).sort((a, b) => a.name.localeCompare(b.name, "ko")),
+    [items, itemKind],
+  );
 
   const [itemId, setItemId] = useState("");
   const selectedItem = items.find((i) => i.id === itemId);
@@ -194,7 +222,7 @@ export function PurchaseFormDialog({
   const total = lineSubtotal + vat;
 
   const [orderedOn, setOrderedOn] = useState(today);
-  const [deliveredOn, setDeliveredOn] = useState("");
+  const [deliveredOn, setDeliveredOn] = useState(today);
   const [paymentDueOn, setPaymentDueOn] = useState("");
   const [status, setStatus] = useState<string>(editing?.status ?? "ordered");
   const [notes, setNotes] = useState(editing?.notes ?? "");
@@ -218,12 +246,13 @@ export function PurchaseFormDialog({
         setPartnerInput("");
         setSiteName("");
         setItemId("");
+        setItemKind("rebar");
         setUnit("ea");
         setQtyStr("");
         setUnitPriceStr("");
         setActualWeightStr("");
         setOrderedOn(today);
-        setDeliveredOn("");
+        setDeliveredOn(today);
         setPaymentDueOn("");
         setStatus("ordered");
         setTaxDocNo("");
@@ -308,28 +337,30 @@ export function PurchaseFormDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          {/* 책 + 매입처 */}
+          {/* 책 */}
+          <Field label="책 *">
+            {view === "all" && !editing ? (
+              <div className="flex gap-2">
+                {BOOKS.map((b) => (
+                  <button
+                    type="button"
+                    key={b}
+                    onClick={() => setBook(b)}
+                    className={`flex-1 rounded-md border px-2 py-1 text-xs ${book === b ? "bg-foreground text-background" : "bg-background"}`}
+                  >
+                    {BOOK_LABEL[b]}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-8 items-center px-2">
+                <BookBadge book={book} />
+              </div>
+            )}
+          </Field>
+
+          {/* 매입처 + 현장 (나란히) */}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="책 *">
-              {view === "all" && !editing ? (
-                <div className="flex gap-2">
-                  {BOOKS.map((b) => (
-                    <button
-                      type="button"
-                      key={b}
-                      onClick={() => setBook(b)}
-                      className={`flex-1 rounded-md border px-2 py-1 text-xs ${book === b ? "bg-foreground text-background" : "bg-background"}`}
-                    >
-                      {BOOK_LABEL[b]}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex h-8 items-center px-2">
-                  <BookBadge book={book} />
-                </div>
-              )}
-            </Field>
             <Field label="매입처 *">
               <Input
                 list="purchase-partners-list"
@@ -350,25 +381,23 @@ export function PurchaseFormDialog({
                 </p>
               ) : null}
             </Field>
+            <Field label="현장">
+              <Input
+                list="purchase-site-list"
+                value={siteName}
+                onChange={(e) => setSiteName(e.target.value)}
+                placeholder="현장 검색·신규 입력 (선택)"
+              />
+              <datalist id="purchase-site-list">
+                {sites.map((s) => (
+                  <option key={s.id} value={s.name} />
+                ))}
+              </datalist>
+              {siteName && !matchedSite ? (
+                <p className="text-[10px] text-amber-600">미등록 현장 — 저장 시 자동 생성됩니다</p>
+              ) : null}
+            </Field>
           </div>
-
-          {/* 현장 (중고·해체 철근 출처) */}
-          <Field label="현장">
-            <Input
-              list="purchase-site-list"
-              value={siteName}
-              onChange={(e) => setSiteName(e.target.value)}
-              placeholder="현장 검색·신규 입력 (선택)"
-            />
-            <datalist id="purchase-site-list">
-              {sites.map((s) => (
-                <option key={s.id} value={s.name} />
-              ))}
-            </datalist>
-            {siteName && !matchedSite ? (
-              <p className="text-[10px] text-amber-600">미등록 현장 — 저장 시 자동 생성됩니다</p>
-            ) : null}
-          </Field>
 
           {/* 발주일 + 입고일 */}
           <div className="grid grid-cols-2 gap-3">
@@ -393,21 +422,43 @@ export function PurchaseFormDialog({
           {/* 신규: 품목 + 단위 + 수량 + 단가 */}
           {!editing ? (
             <>
-              <Field label="품목 *">
-                <select
-                  value={itemId}
-                  onChange={(e) => setItemId(e.target.value)}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                  required
-                >
-                  <option value="">— 선택 —</option>
-                  {items.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              <div className="grid grid-cols-[7rem_1fr] gap-3">
+                <Field label="구분 *">
+                  <div className="flex gap-1">
+                    {(["rebar", "steel"] as const).map((k) => (
+                      <button
+                        type="button"
+                        key={k}
+                        onClick={() => {
+                          setItemKind(k);
+                          setItemId("");
+                        }}
+                        className={`flex-1 rounded-md border px-2 py-1 text-xs ${itemKind === k ? "bg-foreground text-background" : "bg-background"}`}
+                      >
+                        {k === "rebar" ? "철근" : "철제"}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+                <Field label="품목 *">
+                  <select
+                    value={itemId}
+                    onChange={(e) => setItemId(e.target.value)}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                    required
+                  >
+                    <option value="">— 선택 —</option>
+                    {itemOptions.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                      </option>
+                    ))}
+                  </select>
+                  {itemOptions.length === 0 ? (
+                    <p className="text-[10px] text-amber-600">이 구분의 활성 품목이 없습니다</p>
+                  ) : null}
+                </Field>
+              </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <Field label="단위 *">
