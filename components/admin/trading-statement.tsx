@@ -48,9 +48,12 @@ const MIN_ROWS = 8; // 빈 행으로 표 높이 유지
 export function TradingStatement({
   data,
   company,
+  recipientOnly = false,
 }: {
   data: StatementData;
   company: CompanyProfile | null;
+  /** true면 공급받는자 보관용 1매만(매출 입력 미리보기). 기본은 2매(받는자+공급자). */
+  recipientOnly?: boolean;
 }) {
   if (!company) {
     return (
@@ -67,12 +70,16 @@ export function TradingStatement({
     <div className="statement-print flex flex-col gap-6 print:gap-3">
       {/* 거래명세표는 자료/무자료 무관하게 형식적으로 동일 발행. 무자료 식별은 페이지 상단 메타에서 표시. */}
       <StatementCopy data={data} company={company} variant="recipient" />
-      <div className="relative h-0 border-t-2 border-dashed border-zinc-400 print:border-zinc-600">
-        <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-2 text-[10px] text-muted-foreground print:bg-white">
-          ✂ 절취선 (보관용 분리)
-        </span>
-      </div>
-      <StatementCopy data={data} company={company} variant="supplier" />
+      {recipientOnly ? null : (
+        <>
+          <div className="relative h-0 border-t-2 border-dashed border-zinc-400 print:border-zinc-600">
+            <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-2 text-[10px] text-muted-foreground print:bg-white">
+              ✂ 절취선 (보관용 분리)
+            </span>
+          </div>
+          <StatementCopy data={data} company={company} variant="supplier" />
+        </>
+      )}
     </div>
   );
 }

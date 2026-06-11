@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { PrinterIcon } from "lucide-react";
+import { FileTextIcon, PrinterIcon } from "lucide-react";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
@@ -688,7 +688,7 @@ export function SaleFormDialog({
           </DialogHeader>
           <div className="bg-zinc-100 p-3 print:bg-white print:p-0 dark:bg-zinc-900">
             <div className="mx-auto max-w-[800px] rounded bg-white p-6 text-zinc-900 shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
-              <TradingStatement data={statementData} company={company} />
+              <TradingStatement data={statementData} company={company} recipientOnly />
             </div>
           </div>
           <DialogFooter className="print:hidden">
@@ -696,7 +696,14 @@ export function SaleFormDialog({
               수정
             </Button>
             <Button variant="secondary" onClick={() => window.print()}>
-              <PrinterIcon className="size-4" /> 출력
+              <PrinterIcon className="size-4" /> 프린트
+            </Button>
+            <Button
+              variant="secondary"
+              disabled
+              title="세금계산서 발급은 준비 중입니다"
+            >
+              <FileTextIcon className="size-4" /> 계산서 발급
             </Button>
             <Button onClick={doSave} disabled={pending}>
               {pending ? "등록 중..." : "확인 (등록)"}
