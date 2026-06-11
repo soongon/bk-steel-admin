@@ -28,11 +28,12 @@ export function sortRebar(
 
 export type RebarCalc = {
   bars: number; // 가닥수
-  weightKg: number; // 실제 이론중량(kg)
+  weightKg: number; // 적용 중량(kg) — 이론중량 또는 1000kg/톤
   kgPerBar: number; // 1본 중량
   lengthM: number; // 적용 길이
   subtotal: number; // 공급가 = 원/kg 단가 × weightKg
   tonStd: boolean; // 톤 단위 + 표준본수(bars_per_tonne) 적용됨
+  tonMetric: boolean; // 톤 단위 + 1톤=1000kg 청구 적용됨
 };
 
 /**
@@ -45,6 +46,7 @@ export function calculateRebarWeight(
   unit: "ea" | "kg" | "ton",
   qty: number,
   unitPrice: number,
+  tonAsMetric = false,
 ): RebarCalc | null {
   if (qty <= 0) return null;
   const lengthM = item.length_m ?? spec.standard_length_m ?? 8;
@@ -57,6 +59,10 @@ export function calculateRebarWeight(
   } else if (unit === "kg") {
     weightKg = qty;
     bars = Math.ceil(weightKg / kgPerBar);
+  } else if (tonAsMetric) {
+    // 톤 — 소량(배달비 포함) 관행: 1톤 = 1,000kg 로 청구. 이론중량 대신 명목 1000kg/톤.
+    weightKg = qty * 1000;
+    bars = Math.round(weightKg / kgPerBar);
   } else {
     // ton — '1톤'은 명목. 실제는 규격×길이별 표준본수 × 1본중량(이론중량). 1000kg 아님.
     const bpt = item.bars_per_tonne ?? null;
@@ -68,8 +74,9 @@ export function calculateRebarWeight(
       bars = Math.ceil(weightKg / kgPerBar);
     }
   }
-  // 철근 단가는 원/kg — 단위(가닥·kg·톤)와 무관하게 공급가 = 단가 × 실제 이론중량.
+  // 철근 단가는 원/kg — 단위(가닥·kg·톤)와 무관하게 공급가 = 단가 × 적용 중량.
   const subtotal = Math.round(unitPrice * weightKg);
-  const tonStd = unit === "ton" && item.bars_per_tonne != null;
-  return { bars, weightKg, kgPerBar, lengthM, subtotal, tonStd };
+  const tonStd = unit === "ton" && !tonAsMetric && item.bars_per_tonne != null;
+  const tonMetric = unit === "ton" && tonAsMetric;
+  return { bars, weightKg, kgPerBar, lengthM, subtotal, tonStd, tonMetric };
 }

@@ -99,6 +99,7 @@ type LineDraft = {
   unit: "ea" | "kg" | "ton";
   qty: number;
   unitPrice: number;
+  tonMetric: boolean;
 };
 
 export function SaleFormDialog({
@@ -156,6 +157,7 @@ export function SaleFormDialog({
 
   // 단위·수량·단가
   const [unit, setUnit] = useState<"ea" | "kg" | "ton">("ea");
+  const [tonMetric, setTonMetric] = useState(false); // 톤: 1톤=1000kg 청구(소량·배달비)
   const [qtyStr, setQtyStr] = useState("");
   const [unitPriceStr, setUnitPriceStr] = useState("");
   const qty = Number(qtyStr) || 0;
@@ -186,8 +188,8 @@ export function SaleFormDialog({
 
   // 현재 입력 라인 환산 미리보기 (rebar)
   const calc = useMemo(
-    () => (rebarSpec ? calculateRebarWeight(selectedItem!, rebarSpec, unit, qty, unitPrice) : null),
-    [rebarSpec, selectedItem, unit, qty, unitPrice],
+    () => (rebarSpec ? calculateRebarWeight(selectedItem!, rebarSpec, unit, qty, unitPrice, tonMetric) : null),
+    [rebarSpec, selectedItem, unit, qty, unitPrice, tonMetric],
   );
 
   // 라인 → 품목·환산·공급가 (목록·명세서·합계 공용)
@@ -196,13 +198,13 @@ export function SaleFormDialog({
     const lineSpec = lineItem?.rebar_spec_code
       ? rebarSpecs.find((s) => s.spec_code === lineItem.rebar_spec_code) ?? null
       : null;
-    const c = lineItem && lineSpec ? calculateRebarWeight(lineItem, lineSpec, l.unit, l.qty, l.unitPrice) : null;
+    const c = lineItem && lineSpec ? calculateRebarWeight(lineItem, lineSpec, l.unit, l.qty, l.unitPrice, l.tonMetric) : null;
     return { item: lineItem, calc: c, subtotal: c ? c.subtotal : Math.round(l.unitPrice * l.qty) };
   };
 
   // 현재 입력이 유효하면 임시 라인으로 포함(추가 버튼 안 눌러도 마지막 1건 반영)
   const pendingLine: LineDraft | null =
-    itemId && qty > 0 && unitPrice > 0 ? { itemKind, itemId, unit, qty, unitPrice } : null;
+    itemId && qty > 0 && unitPrice > 0 ? { itemKind, itemId, unit, qty, unitPrice, tonMetric } : null;
   const allLines = pendingLine ? [...lines, pendingLine] : lines;
 
   // 세금·합계 — 모든 라인 공급가 합
@@ -251,6 +253,7 @@ export function SaleFormDialog({
         setItemId("");
         setItemKind("rebar");
         setUnit("ea");
+        setTonMetric(false);
         setQtyStr("");
         setUnitPriceStr("");
         setLines([]);
@@ -321,7 +324,7 @@ export function SaleFormDialog({
     if (!itemId) { setError("품목을 선택해주세요."); return; }
     if (qty <= 0) { setError("수량을 입력해주세요."); return; }
     if (unitPrice <= 0) { setError("단가를 입력해주세요."); return; }
-    setLines((prev) => [...prev, { itemKind, itemId, unit, qty, unitPrice }]);
+    setLines((prev) => [...prev, { itemKind, itemId, unit, qty, unitPrice, tonMetric }]);
     setItemId("");
     setQtyStr("");
     setUnitPriceStr("");
@@ -561,6 +564,19 @@ export function SaleFormDialog({
                 </Field>
               </div>
 
+              {/* 톤 계산 방식 — 1톤=1000kg 옵션 (소량·배달비 포함) */}
+              {unit === "ton" ? (
+                <label className="flex items-center gap-2 rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={tonMetric}
+                    onChange={(e) => setTonMetric(e.target.checked)}
+                    className="size-3.5 accent-foreground"
+                  />
+                  1톤 = 1,000kg로 계산 (소량·배달비 포함 — 끄면 규격별 이론중량)
+                </label>
+              ) : null}
+
               {/* 환산 표시 (rebar) */}
               {calc && rebarSpec ? (
                 <div className="rounded-lg border border-dashed bg-muted/30 p-2 text-xs">
@@ -569,6 +585,10 @@ export function SaleFormDialog({
                     {calc.tonStd ? (
                       <span className="rounded bg-amber-100 px-1 text-[10px] font-normal text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
                         명목 {qty}톤 → 표준 {selectedItem?.bars_per_tonne}본/톤
+                      </span>
+                    ) : calc.tonMetric ? (
+                      <span className="rounded bg-blue-100 px-1 text-[10px] font-normal text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                        1톤=1,000kg 청구 ({qty}톤 = {fmtNum(qty * 1000)}kg)
                       </span>
                     ) : null}
                   </p>
