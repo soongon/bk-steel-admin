@@ -47,6 +47,7 @@ export function calculateRebarWeight(
   qty: number,
   unitPrice: number,
   tonAsMetric = false,
+  ceilWeight = false,
 ): RebarCalc | null {
   if (qty <= 0) return null;
   const lengthM = item.length_m ?? spec.standard_length_m ?? 8;
@@ -74,6 +75,8 @@ export function calculateRebarWeight(
       bars = Math.ceil(weightKg / kgPerBar);
     }
   }
+  // 실중량 올림(예: 940.8 → 941) — 청구·표기 정수화. 호출처(매출)가 켤 때만.
+  if (ceilWeight) weightKg = Math.ceil(weightKg);
   // 철근 단가는 원/kg — 단위(가닥·kg·톤)와 무관하게 공급가 = 단가 × 적용 중량.
   const subtotal = Math.round(unitPrice * weightKg);
   const tonStd = unit === "ton" && !tonAsMetric && item.bars_per_tonne != null;

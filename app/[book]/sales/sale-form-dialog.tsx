@@ -189,7 +189,7 @@ export function SaleFormDialog({
 
   // 현재 입력 라인 환산 미리보기 (rebar)
   const calc = useMemo(
-    () => (rebarSpec ? calculateRebarWeight(selectedItem!, rebarSpec, unit, qty, unitPrice, tonMetric) : null),
+    () => (rebarSpec ? calculateRebarWeight(selectedItem!, rebarSpec, unit, qty, unitPrice, tonMetric, true) : null),
     [rebarSpec, selectedItem, unit, qty, unitPrice, tonMetric],
   );
 
@@ -199,7 +199,7 @@ export function SaleFormDialog({
     const lineSpec = lineItem?.rebar_spec_code
       ? rebarSpecs.find((s) => s.spec_code === lineItem.rebar_spec_code) ?? null
       : null;
-    const c = lineItem && lineSpec ? calculateRebarWeight(lineItem, lineSpec, l.unit, l.qty, l.unitPrice, l.tonMetric) : null;
+    const c = lineItem && lineSpec ? calculateRebarWeight(lineItem, lineSpec, l.unit, l.qty, l.unitPrice, l.tonMetric, true) : null;
     return { item: lineItem, calc: c, subtotal: c ? c.subtotal : Math.round(l.unitPrice * l.qty) };
   };
 
