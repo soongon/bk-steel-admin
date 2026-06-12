@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { type Book, BOOK_LABEL } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 import { type CompanyProfile } from "@/lib/company-profile";
+import { formatBusinessNo, formatPhone } from "@/lib/format";
 import { updateCompanyProfile } from "./actions";
 
 export function CompanyFormDialog({
@@ -69,7 +70,7 @@ export function CompanyFormDialog({
         >
           <div className="grid grid-cols-2 gap-3">
             <Field label="상호 *" name="name" defaultValue={profile?.name} required />
-            <Field label="사업자등록번호 *" name="business_no" defaultValue={profile?.business_no} placeholder="000-00-00000" required />
+            <Field label="사업자등록번호 *" name="business_no" defaultValue={formatBusinessNo(profile?.business_no)} placeholder="000-00-00000" required />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="대표자" name="representative" defaultValue={profile?.representative} />
@@ -81,9 +82,9 @@ export function CompanyFormDialog({
           </div>
           <Field label="사업장 주소" name="address" defaultValue={profile?.address} />
           <div className="grid grid-cols-3 gap-3">
-            <Field label="전화" name="phone" defaultValue={profile?.phone} placeholder="054-000-0000" />
-            <Field label="팩스" name="fax" defaultValue={profile?.fax} />
-            <Field label="휴대폰" name="mobile" defaultValue={profile?.mobile} placeholder="010-0000-0000" />
+            <Field label="전화" name="phone" defaultValue={formatPhone(profile?.phone)} placeholder="054-000-0000" />
+            <Field label="팩스" name="fax" defaultValue={formatPhone(profile?.fax)} />
+            <Field label="휴대폰" name="mobile" defaultValue={formatPhone(profile?.mobile)} placeholder="010-0000-0000" />
           </div>
 
           <div className="rounded-md border-dashed border-2 border-zinc-300 p-3 dark:border-zinc-700">

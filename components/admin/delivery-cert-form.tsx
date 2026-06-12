@@ -1,5 +1,6 @@
 import { type CompanyProfile } from "@/lib/company-profile";
 import { type DeliveryCertificate } from "@/lib/delivery-certificate";
+import { formatBusinessNo } from "@/lib/format";
 
 export type DeliveryCertPartner = {
   name: string;
@@ -112,7 +113,7 @@ export function DeliveryCertForm({
                 등록번호
               </th>
               <td className="border border-zinc-700 px-3 py-1">
-                {data.partner.business_no ?? "—"}
+                {data.partner.business_no ? formatBusinessNo(data.partner.business_no) : "—"}
               </td>
               <th className="border border-zinc-700 bg-zinc-100 px-2 py-1 text-center font-medium">
                 대표자
@@ -325,7 +326,7 @@ export function DeliveryCertForm({
                 등록번호
               </th>
               <td className="border border-zinc-700 px-3 py-1 font-mono">
-                {company.business_no}
+                {formatBusinessNo(company.business_no)}
               </td>
             </tr>
             <tr>

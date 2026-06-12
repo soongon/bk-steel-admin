@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { type Book } from "@/lib/book";
+import { digitsOnly } from "@/lib/format";
 
 export type CompanyActionResult = { ok: true } | { ok: false; error: string };
 
@@ -28,6 +29,12 @@ export async function updateCompanyProfile(
     if (typeof v !== "string") return null;
     const t = v.trim();
     return t === "" ? null : t;
+  };
+  // 연락처는 숫자만 저장 (표시는 lib/format 으로 포맷)
+  const digits = (k: string) => {
+    const v = str(k);
+    const d = v ? digitsOnly(v) : "";
+    return d || null;
   };
 
   const name = str("name");
@@ -70,14 +77,14 @@ export async function updateCompanyProfile(
   const payload: Record<string, unknown> = {
     book,
     name,
-    business_no,
+    business_no: digitsOnly(business_no),
     representative: str("representative"),
     address: str("address"),
     business_type: str("business_type"),
     business_item: str("business_item"),
-    phone: str("phone"),
-    fax: str("fax"),
-    mobile: str("mobile"),
+    phone: digits("phone"),
+    fax: digits("fax"),
+    mobile: digits("mobile"),
     email: str("email"),
     bank_default_name: str("bank_default_name"),
     bank_default_no: str("bank_default_no"),

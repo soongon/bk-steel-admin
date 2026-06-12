@@ -7,7 +7,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { BookBadge } from "@/components/admin/book-badge";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
-import { fmtKrw } from "@/lib/format";
+import { fmtKrw, formatBusinessNo } from "@/lib/format";
 
 const fmtNum = (n: number, d = 0) =>
   n.toLocaleString("ko-KR", { maximumFractionDigits: d });
@@ -178,7 +178,7 @@ export default async function PurchaseDetailPage({
         <MetaCard label="거래처">
           <div className="text-sm font-medium">{partner?.name ?? "—"}</div>
           {partner?.business_no ? (
-            <div className="text-xs text-muted-foreground">{partner.business_no}</div>
+            <div className="text-xs text-muted-foreground">{formatBusinessNo(partner.business_no)}</div>
           ) : null}
         </MetaCard>
         <MetaCard label="자료">

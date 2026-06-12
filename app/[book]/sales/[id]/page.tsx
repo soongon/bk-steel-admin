@@ -12,7 +12,7 @@ import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { DeliveryCertButton } from "./delivery-cert-button";
 import { StatementButton } from "./statement-button";
-import { fmtKrw, fmtNum } from "@/lib/format";
+import { fmtKrw, fmtNum, formatBusinessNo, formatPhone } from "@/lib/format";
 
 const STATUS_KO: Record<string, string> = {
   reserved: "주문",
@@ -251,9 +251,9 @@ export default async function SaleDetailPage({
         <InfoCard label="거래처">
           <div className="text-base font-semibold">{partner?.name ?? "—"}</div>
           <dl className="mt-2 space-y-1 text-xs">
-            {partner?.business_no ? <Row k="사업자" v={partner.business_no} /> : null}
+            {partner?.business_no ? <Row k="사업자" v={formatBusinessNo(partner.business_no)} /> : null}
             {partner?.representative ? <Row k="대표" v={partner.representative} /> : null}
-            {partner?.phone ? <Row k="연락처" v={partner.phone} /> : null}
+            {partner?.phone ? <Row k="연락처" v={formatPhone(partner.phone)} /> : null}
             {partner?.address ? <Row k="주소" v={partner.address} /> : null}
             <Row
               k="현장"

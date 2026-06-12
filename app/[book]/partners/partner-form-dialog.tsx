@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { formatBusinessNo, formatPhone } from "@/lib/format";
 import { createPartner, updatePartner, type PartnerActionResult } from "./actions";
 
 export type PartnerRow = {
@@ -112,10 +113,10 @@ export function PartnerFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="대표자" name="representative" defaultValue={editing?.representative ?? undefined} />
-            <Field label="사업자번호" name="business_no" defaultValue={editing?.business_no ?? undefined} placeholder="000-00-00000" />
+            <Field label="사업자번호" name="business_no" defaultValue={formatBusinessNo(editing?.business_no)} placeholder="000-00-00000" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="연락처" name="phone" defaultValue={initial?.phone ?? undefined} placeholder="010-0000-0000" />
+            <Field label="연락처" name="phone" defaultValue={formatPhone(initial?.phone)} placeholder="010-0000-0000" />
             <Field label="이메일" name="email" type="email" defaultValue={initial?.email ?? undefined} placeholder="contact@partner.com" />
           </div>
           <Field label="업종" name="industry" defaultValue={editing?.industry ?? undefined} placeholder="철근 대리점" />

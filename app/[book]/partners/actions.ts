@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { digitsOnly } from "@/lib/format";
 
 export type PartnerActionResult = { ok: true } | { ok: false; error: string };
 
@@ -25,12 +26,18 @@ function readPartnerInput(formData: FormData): PartnerInput {
     const trimmed = v.trim();
     return trimmed === "" ? null : trimmed;
   };
+  // 사업자번호·전화는 숫자만 저장 (표시는 lib/format 으로 포맷)
+  const digits = (k: string) => {
+    const v = str(k);
+    const d = v ? digitsOnly(v) : "";
+    return d || null;
+  };
   return {
     code: (str("code") ?? "").toUpperCase(),
     name: str("name") ?? "",
-    business_no: str("business_no"),
+    business_no: digits("business_no"),
     representative: str("representative"),
-    phone: str("phone"),
+    phone: digits("phone"),
     email: str("email"),
     address: str("address"),
     industry: str("industry"),

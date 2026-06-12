@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
+import { formatPhone } from "@/lib/format";
 import {
   Table,
   TableBody,
@@ -99,7 +100,7 @@ export function PartnerTable({
                   <TableCell className="font-mono text-xs">{p.code}</TableCell>
                   <TableCell className="font-medium">{p.name}</TableCell>
                   <TableCell>{p.representative ?? "—"}</TableCell>
-                  <TableCell>{p.phone ?? "—"}</TableCell>
+                  <TableCell>{p.phone ? formatPhone(p.phone) : "—"}</TableCell>
                   <TableCell className="text-muted-foreground text-xs">
                     {p.email ?? "—"}
                   </TableCell>

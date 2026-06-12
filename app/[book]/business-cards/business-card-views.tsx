@@ -14,6 +14,7 @@ import {
   Building2Icon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { formatPhone } from "@/lib/format";
 import {
   Table,
   TableBody,
@@ -229,7 +230,7 @@ function CardItem({
         </div>
         {row.phone || row.email ? (
           <div className="space-y-0.5 text-xs text-muted-foreground">
-            {row.phone ? <p>📞 {row.phone}</p> : null}
+            {row.phone ? <p>📞 {formatPhone(row.phone)}</p> : null}
             {row.email ? <p className="truncate">✉ {row.email}</p> : null}
           </div>
         ) : null}
@@ -315,7 +316,7 @@ function TableView({ rows, onEdit, onDelete, onSalesLog, onPartner }: ActionProp
                 </div>
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">
-                {r.phone ? <div>{r.phone}</div> : null}
+                {r.phone ? <div>{formatPhone(r.phone)}</div> : null}
                 {r.email ? <div className="truncate">{r.email}</div> : null}
                 {!r.phone && !r.email ? "—" : null}
               </TableCell>

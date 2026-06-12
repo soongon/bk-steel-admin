@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { type Book, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 import { type CompanyProfile } from "@/lib/company-profile";
+import { formatBusinessNo, formatPhone } from "@/lib/format";
 import { CompanyFormDialog } from "./company-form-dialog";
 
 export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
@@ -54,13 +55,13 @@ export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
                 <>
                   <dl className="grid grid-cols-3 gap-x-3 gap-y-1.5 text-xs">
                     <Row label="상호" value={p.name} bold />
-                    <Row label="사업자번호" value={p.business_no} mono />
+                    <Row label="사업자번호" value={formatBusinessNo(p.business_no)} mono />
                     <Row label="대표자" value={p.representative} />
                     <Row label="업태/종목" value={joinSlash(p.business_type, p.business_item)} />
                     <Row label="주소" value={p.address} colSpan />
-                    <Row label="전화" value={p.phone} />
-                    <Row label="팩스" value={p.fax} />
-                    <Row label="휴대폰" value={p.mobile} />
+                    <Row label="전화" value={p.phone ? formatPhone(p.phone) : p.phone} />
+                    <Row label="팩스" value={p.fax ? formatPhone(p.fax) : p.fax} />
+                    <Row label="휴대폰" value={p.mobile ? formatPhone(p.mobile) : p.mobile} />
                     <Row label="이메일" value={p.email} />
                     {p.bank_default_name ? (
                       <Row

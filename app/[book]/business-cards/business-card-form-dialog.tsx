@@ -18,6 +18,7 @@ import {
 } from "@/components/admin/attachments/attachment-uploader";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { type Attachment } from "@/lib/attachment";
+import { formatPhone } from "@/lib/format";
 import {
   createBusinessCard,
   updateBusinessCard,
@@ -121,7 +122,7 @@ export function BusinessCardFormDialog({
             </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="연락처" name="phone" defaultValue={editing?.phone ?? undefined} placeholder="010-0000-0000" />
+            <Field label="연락처" name="phone" defaultValue={formatPhone(editing?.phone)} placeholder="010-0000-0000" />
             <Field label="이메일" name="email" type="email" defaultValue={editing?.email ?? undefined} />
           </div>
           <Field label="주소" name="address" defaultValue={editing?.address ?? undefined} />

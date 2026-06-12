@@ -1,4 +1,5 @@
 import { type CompanyProfile } from "@/lib/company-profile";
+import { formatBusinessNo, formatPhone } from "@/lib/format";
 
 export type StatementLine = {
   item_name: string;
@@ -182,7 +183,7 @@ function StatementCopy({
             <col />
           </colgroup>
           <tbody>
-            <PartyRow label="등록번호" value={data.partner.business_no} variant={variant} />
+            <PartyRow label="등록번호" value={formatBusinessNo(data.partner.business_no)} variant={variant} />
             <PartyDoubleRow
               label1="상호"
               value1={data.partner.name}
@@ -193,9 +194,9 @@ function StatementCopy({
             <PartyRow label="사업장주소" value={data.partner.address ?? ""} variant={variant} />
             <PartyDoubleRow
               label1="전화"
-              value1={data.partner.phone}
+              value1={formatPhone(data.partner.phone)}
               label2="팩스"
-              value2={data.partner.fax}
+              value2={formatPhone(data.partner.fax)}
               variant={variant}
             />
           </tbody>
@@ -210,7 +211,7 @@ function StatementCopy({
             <col />
           </colgroup>
           <tbody>
-            <PartyRow label="등록번호" value={company.business_no} variant={variant} />
+            <PartyRow label="등록번호" value={formatBusinessNo(company.business_no)} variant={variant} />
             <PartyDoubleRow
               label1="상호"
               value1={company.name}
@@ -237,9 +238,9 @@ function StatementCopy({
             <PartyRow label="사업장주소" value={company.address} variant={variant} />
             <PartyDoubleRow
               label1="전화"
-              value1={company.phone}
+              value1={formatPhone(company.phone)}
               label2="팩스"
-              value2={company.fax}
+              value2={formatPhone(company.fax)}
               variant={variant}
             />
           </tbody>
