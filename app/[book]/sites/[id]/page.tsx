@@ -11,7 +11,7 @@ import {
   type DeliveryCertData,
 } from "@/components/admin/delivery-cert-form";
 import { SiteCertButton } from "./site-cert-button";
-import { QuoteButton, type QuotePartner, type QuoteItem, type QuoteRebarSpec } from "./quote-button";
+import { QuoteButton, type QuotePartner, type QuoteItem, type QuoteRebarSpec } from "@/components/admin/quote-dialog";
 import { fmtKrw } from "@/lib/format";
 
 const fmtNum = (n: number) => Math.round(n).toLocaleString("ko-KR");
@@ -224,11 +224,13 @@ export default async function SiteDetailPage({
         </Link>
         <div className="flex items-center gap-2">
           <QuoteButton
-            siteName={site.name}
-            partners={(partnersRes.data ?? []) as QuotePartner[]}
-            items={(itemsRes.data ?? []) as QuoteItem[]}
-            rebarSpecs={(rebarSpecsRes.data ?? []) as QuoteRebarSpec[]}
-            company={quoteCompany}
+            sources={{
+              partners: (partnersRes.data ?? []) as QuotePartner[],
+              items: (itemsRes.data ?? []) as QuoteItem[],
+              rebarSpecs: (rebarSpecsRes.data ?? []) as QuoteRebarSpec[],
+              company: quoteCompany,
+            }}
+            defaultSiteName={site.name}
           />
           <BookBadge book={view} size="md" />
         </div>

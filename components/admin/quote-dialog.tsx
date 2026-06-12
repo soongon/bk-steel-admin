@@ -44,6 +44,14 @@ export type QuoteRebarSpec = {
   standard_length_m: number;
 };
 
+/** 견적 폼이 필요로 하는 마스터·공급자 데이터. 어느 진입점이든 이 묶음만 넘기면 재사용 가능. */
+export type QuoteSources = {
+  partners: QuotePartner[];
+  items: QuoteItem[];
+  rebarSpecs: QuoteRebarSpec[];
+  company: CompanyProfile | null;
+};
+
 const UNIT_OPTIONS = [
   { value: "ea", label: "가닥/EA" },
   { value: "kg", label: "kg" },
@@ -60,27 +68,34 @@ type LineDraft = {
   tonMetric: boolean;
 };
 
-/** 현장 대상 견적서 작성 — 버튼→폼(매출 폼 패턴)→견적서 모달. DB 저장 없음(작성·출력만). */
-export function QuoteButton({
-  siteName,
-  partners,
-  items,
-  rebarSpecs,
-  company,
+/**
+ * 견적서 작성 다이얼로그 (범용·재사용).
+ * 거래처는 선택(현장명만으로도 작성 가능), 부가세 포함/제외 토글, 멀티라인 품목(매출 폼 동일 환산).
+ * DB 저장 없음 — 작성→미리보기→프린트. open/onOpenChange 외부 제어.
+ */
+export function QuoteDialog({
+  open,
+  onOpenChange,
+  sources,
+  defaultSiteName = "",
+  defaultPartnerName = "",
 }: {
-  siteName: string;
-  partners: QuotePartner[];
-  items: QuoteItem[];
-  rebarSpecs: QuoteRebarSpec[];
-  company: CompanyProfile | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  sources: QuoteSources;
+  defaultSiteName?: string;
+  defaultPartnerName?: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { partners, items, rebarSpecs, company } = sources;
   const [error, setError] = useState<string | null>(null);
   const [showStatement, setShowStatement] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
 
-  const [partnerInput, setPartnerInput] = useState("");
+  const [siteName, setSiteName] = useState(defaultSiteName);
+  const [partnerInput, setPartnerInput] = useState(defaultPartnerName);
   const matchedPartner = partners.find((p) => p.name === partnerInput);
+
+  const [vatExempt, setVatExempt] = useState(false); // 무자료(부가세 제외)
 
   const [itemKind, setItemKind] = useState<"rebar" | "steel">("rebar");
   const itemOptions = useMemo(
@@ -127,7 +142,7 @@ export function QuoteButton({
   const allLines = pendingLine ? [...lines, pendingLine] : lines;
 
   const lineSubtotal = allLines.reduce((s, l) => s + calcLine(l).subtotal, 0);
-  const vatRate = 10; // 견적은 부가세 별도 표기 기본 10%
+  const vatRate = vatExempt ? 0 : 10;
   const vat = Math.round((lineSubtotal * vatRate) / 100);
   const total = lineSubtotal + vat;
 
@@ -135,7 +150,9 @@ export function QuoteButton({
     if (open) {
       setError(null);
       setShowStatement(false);
-      setPartnerInput("");
+      setSiteName(defaultSiteName);
+      setPartnerInput(defaultPartnerName);
+      setVatExempt(false);
       setItemId("");
       setItemKind("rebar");
       setUnit("ea");
@@ -145,10 +162,10 @@ export function QuoteButton({
       setLines([]);
       setNotes("");
     }
-  }, [open]);
+  }, [open, defaultSiteName, defaultPartnerName]);
 
   const statementData: StatementData | null = (() => {
-    if (!matchedPartner || allLines.length === 0) return null;
+    if (allLines.length === 0) return null;
     const stLines = allLines
       .map((l) => {
         const { item: lineItem, calc: c } = calcLine(l);
@@ -179,16 +196,16 @@ export function QuoteButton({
       ordered_on: today,
       tax_doc_no: null,
       partner: {
-        name: matchedPartner.name,
-        business_no: matchedPartner.business_no ?? null,
-        representative: matchedPartner.representative ?? null,
-        address: matchedPartner.address ?? null,
-        phone: matchedPartner.phone ?? null,
-        fax: matchedPartner.fax ?? null,
-        industry: matchedPartner.industry ?? null,
+        name: matchedPartner?.name ?? partnerInput ?? "",
+        business_no: matchedPartner?.business_no ?? null,
+        representative: matchedPartner?.representative ?? null,
+        address: matchedPartner?.address ?? null,
+        phone: matchedPartner?.phone ?? null,
+        fax: matchedPartner?.fax ?? null,
+        industry: matchedPartner?.industry ?? null,
       },
       site_name: siteName || null,
-      is_documented: true,
+      is_documented: !vatExempt,
       lines: stLines,
       subtotal_krw: lineSubtotal,
       vat_krw: lineVatSum,
@@ -214,8 +231,8 @@ export function QuoteButton({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!matchedPartner) {
-      setError("거래처는 마스터에 등록된 이름을 정확히 선택해주세요.");
+    if (!siteName && !partnerInput) {
+      setError("현장명 또는 거래처 중 하나는 입력해주세요.");
       return;
     }
     if (allLines.length === 0) {
@@ -227,29 +244,27 @@ export function QuoteButton({
 
   return (
     <>
-      <Button variant="default" size="sm" onClick={() => setOpen(true)}>
-        <FileTextIcon className="size-4" />
-        견적서 작성
-      </Button>
-
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl print:hidden">
           <DialogHeader>
             <DialogTitle>견적서 작성</DialogTitle>
             <DialogDescription>
-              {siteName} 현장 — 거래처·품목을 입력하면 견적서를 미리보고 출력합니다. (저장 없음)
+              거래처는 선택입니다(현장명만으로도 가능). 부가세 포함/제외를 고른 뒤 품목을 추가하세요. (저장 없음)
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-            {/* 거래처 + 현장 */}
+            {/* 현장 + 거래처(선택) */}
             <div className="grid grid-cols-2 gap-3">
-              <Field label="거래처 *">
+              <Field label="현장명">
+                <Input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="현장명 입력" />
+              </Field>
+              <Field label="거래처 (선택)">
                 <Input
                   list="quote-partners"
                   value={partnerInput}
                   onChange={(e) => setPartnerInput(e.target.value)}
-                  placeholder="거래처명 입력 / 선택"
+                  placeholder="거래처명 입력 / 선택 (생략 가능)"
                 />
                 <datalist id="quote-partners">
                   {partners.map((p) => (
@@ -257,12 +272,30 @@ export function QuoteButton({
                   ))}
                 </datalist>
                 {partnerInput && !matchedPartner ? (
-                  <p className="mt-0.5 text-xs text-amber-600">마스터에 없는 거래처입니다</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">마스터 미등록 — 이름만 견적서에 표기</p>
                 ) : null}
               </Field>
-              <Field label="현장">
-                <div className="flex h-8 items-center px-1 text-sm font-medium">{siteName}</div>
-              </Field>
+            </div>
+
+            {/* 부가세 토글 */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">부가세</span>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setVatExempt(false)}
+                  className={`rounded-md border px-2.5 py-1 text-xs ${!vatExempt ? "bg-foreground text-background" : "bg-background"}`}
+                >
+                  포함 (10%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVatExempt(true)}
+                  className={`rounded-md border px-2.5 py-1 text-xs ${vatExempt ? "bg-foreground text-background" : "bg-background"}`}
+                >
+                  제외 (무자료)
+                </button>
+              </div>
             </div>
 
             {/* 품목 입력 */}
@@ -375,7 +408,7 @@ export function QuoteButton({
                 <span className="font-medium tabular-nums">{fmtKrw(lineSubtotal)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">부가세 (10%)</span>
+                <span className="text-muted-foreground">부가세 ({vatRate}%)</span>
                 <span className="font-medium tabular-nums">{fmtKrw(vat)}</span>
               </div>
               <div className="mt-1 flex justify-between border-t pt-1">
@@ -397,7 +430,7 @@ export function QuoteButton({
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 취소
               </Button>
               <Button type="submit">견적서 확인</Button>
@@ -428,6 +461,40 @@ export function QuoteButton({
           </DialogContent>
         </Dialog>
       ) : null}
+    </>
+  );
+}
+
+/** 트리거 버튼 + QuoteDialog. 버튼 하나로 끝낼 때 사용(현장 상세 등). */
+export function QuoteButton({
+  sources,
+  defaultSiteName,
+  defaultPartnerName,
+  label = "견적서 작성",
+  variant = "default",
+  size = "sm",
+}: {
+  sources: QuoteSources;
+  defaultSiteName?: string;
+  defaultPartnerName?: string;
+  label?: string;
+  variant?: "default" | "outline" | "secondary";
+  size?: "sm" | "default";
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant={variant} size={size} onClick={() => setOpen(true)}>
+        <FileTextIcon className="size-4" />
+        {label}
+      </Button>
+      <QuoteDialog
+        open={open}
+        onOpenChange={setOpen}
+        sources={sources}
+        defaultSiteName={defaultSiteName}
+        defaultPartnerName={defaultPartnerName}
+      />
     </>
   );
 }
