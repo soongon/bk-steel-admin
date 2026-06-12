@@ -11,6 +11,7 @@ import {
   type DeliveryCertData,
 } from "@/components/admin/delivery-cert-form";
 import { SiteCertButton } from "./site-cert-button";
+import { QuoteButton, type QuotePartner, type QuoteItem, type QuoteRebarSpec } from "./quote-button";
 import { fmtKrw } from "@/lib/format";
 
 const fmtNum = (n: number) => Math.round(n).toLocaleString("ko-KR");
@@ -192,6 +193,24 @@ export default async function SiteDetailPage({
     }
   }
 
+  // 견적서용 데이터 (거래처·품목·규격 + SL 공급자 명의)
+  const [partnersRes, itemsRes, rebarSpecsRes, quoteCompany] = await Promise.all([
+    supabase
+      .from("partner")
+      .select("id, code, name, business_no, representative, address, phone, fax, industry")
+      .is("deleted_at", null)
+      .eq("is_active", true)
+      .order("name"),
+    supabase
+      .from("item")
+      .select("id, code, name, category, rebar_spec_code, rebar_grade_code, length_m, bars_per_tonne")
+      .is("deleted_at", null)
+      .eq("is_active", true)
+      .order("name"),
+    supabase.from("rebar_spec").select("spec_code, unit_weight_kg_per_m, standard_length_m").order("display_order"),
+    fetchCompanyProfile(supabase, "sl"),
+  ]);
+
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       {/* 상단 액션 바 */}
@@ -203,7 +222,16 @@ export default async function SiteDetailPage({
           <ArrowLeftIcon className="size-4" />
           현장 목록
         </Link>
-        <BookBadge book={view} size="md" />
+        <div className="flex items-center gap-2">
+          <QuoteButton
+            siteName={site.name}
+            partners={(partnersRes.data ?? []) as QuotePartner[]}
+            items={(itemsRes.data ?? []) as QuoteItem[]}
+            rebarSpecs={(rebarSpecsRes.data ?? []) as QuoteRebarSpec[]}
+            company={quoteCompany}
+          />
+          <BookBadge book={view} size="md" />
+        </div>
       </div>
 
       {/* 현장 메타 */}

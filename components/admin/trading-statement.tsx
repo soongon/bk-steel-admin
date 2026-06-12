@@ -75,11 +75,14 @@ export function TradingStatement({
   data,
   company,
   recipientOnly = false,
+  mode = "statement",
 }: {
   data: StatementData;
   company: CompanyProfile | null;
   /** true면 공급받는자 보관용 1매만(매출 입력 미리보기). 기본은 2매(받는자+공급자). */
   recipientOnly?: boolean;
+  /** "quote"면 견적서 양식(타이틀·하단 문구·1매). 기본 "statement"(거래명세표). */
+  mode?: "statement" | "quote";
 }) {
   if (!company) {
     return (
@@ -92,18 +95,21 @@ export function TradingStatement({
     );
   }
 
+  // 견적서는 1매만(절취선·공급자 카피 없음)
+  const single = recipientOnly || mode === "quote";
+
   return (
     <div className="statement-print flex flex-col gap-6 print:gap-3">
       {/* 거래명세표는 자료/무자료 무관하게 형식적으로 동일 발행. 무자료 식별은 페이지 상단 메타에서 표시. */}
-      <StatementCopy data={data} company={company} variant="recipient" />
-      {recipientOnly ? null : (
+      <StatementCopy data={data} company={company} variant="recipient" mode={mode} />
+      {single ? null : (
         <>
           <div className="relative h-0 border-t-2 border-dashed border-zinc-400 print:border-zinc-600">
             <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-2 text-[10px] text-muted-foreground print:bg-white">
               ✂ 절취선 (보관용 분리)
             </span>
           </div>
-          <StatementCopy data={data} company={company} variant="supplier" />
+          <StatementCopy data={data} company={company} variant="supplier" mode={mode} />
         </>
       )}
     </div>
@@ -114,10 +120,12 @@ function StatementCopy({
   data,
   company,
   variant,
+  mode = "statement",
 }: {
   data: StatementData;
   company: CompanyProfile;
   variant: "recipient" | "supplier";
+  mode?: "statement" | "quote";
 }) {
   const isRec = variant === "recipient";
   const baseClass = isRec ? "border-blue-700 text-blue-900" : "border-red-700 text-red-900";
@@ -151,10 +159,12 @@ function StatementCopy({
       <div className="flex items-baseline justify-between">
         <div className="text-xs text-zinc-500">{data.doc_no}</div>
         <h2 className={`text-center text-lg font-bold tracking-wider ${titleClass}`}>
-          거래명세표
-          <span className="ml-2 text-sm font-normal">
-            ({isRec ? "공급받는자 보관용" : "공급자 보관용"})
-          </span>
+          {mode === "quote" ? "견 적 서" : "거래명세표"}
+          {mode === "quote" ? null : (
+            <span className="ml-2 text-sm font-normal">
+              ({isRec ? "공급받는자 보관용" : "공급자 보관용"})
+            </span>
+          )}
         </h2>
         <div className="text-xs text-zinc-500">
           {dateMonth}월 {dateDay}일
@@ -319,16 +329,22 @@ function StatementCopy({
         </tfoot>
       </table>
 
-      {/* 인수자 / 비고 */}
-      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-        <div className={`col-span-2 border ${baseClass} px-2 py-1`}>
-          <span className="text-muted-foreground">입금계좌: </span>
-          {bankLine}
+      {/* 하단: 명세표=입금계좌+인수자 / 견적서='위와 같이 견적합니다.' */}
+      {mode === "quote" ? (
+        <div className={`mt-2 border ${baseClass} px-3 py-2 text-center text-sm font-medium`}>
+          위와 같이 견적합니다.
         </div>
-        <div className={`border ${baseClass} px-2 py-1 text-center`}>
-          인 수 자: ______________ (인)
+      ) : (
+        <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+          <div className={`col-span-2 border ${baseClass} px-2 py-1`}>
+            <span className="text-muted-foreground">입금계좌: </span>
+            {bankLine}
+          </div>
+          <div className={`border ${baseClass} px-2 py-1 text-center`}>
+            인 수 자: ______________ (인)
+          </div>
         </div>
-      </div>
+      )}
     </article>
   );
 }
