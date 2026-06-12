@@ -36,6 +36,7 @@ import {
 } from "./sale-form-dialog";
 import { cancelSale, deleteSale, markSaleDelivered } from "./actions";
 import { fmtKrw } from "@/lib/format";
+import { saleLifecycleProgress } from "@/lib/sale-lifecycle";
 import { SettleDialog, type BankAccount } from "./settle-dialog";
 
 type SaleLine = {
@@ -61,6 +62,8 @@ export type SaleListRow = {
   tax_doc_type: string;
   payment_due_on: string | null;
   settled_on: string | null;
+  statement_sent_on: string | null;
+  tax_invoice_issued_on: string | null;
   partner_id: string;
   site_id: string | null;
   delivery_cert_id: string | null;
@@ -85,6 +88,19 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${s.className}`}>
       {s.label}
     </span>
+  );
+}
+
+/** 거래 라이프사이클 진행률 — 6단계 중 완료 수(목록 배지). 상세의 SaleLifecyclePanel 과 같은 기준. */
+function ProgressBadge({ s }: { s: SaleListRow }) {
+  const { done, total } = saleLifecycleProgress(s);
+  const full = done === total;
+  return (
+    <div
+      className={`mt-0.5 text-[10px] tabular-nums ${full ? "font-medium text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}
+    >
+      {done}/{total}단계
+    </div>
   );
 }
 
@@ -314,6 +330,7 @@ export function SaleTable({
                     </TableCell>
                     <TableCell className="text-center">
                       <StatusBadge status={s.status} />
+                      <ProgressBadge s={s} />
                     </TableCell>
                     <TableCell className="text-center">
                       <ReceivableCell s={s} />

@@ -37,6 +37,7 @@ export default async function SalesPage({
       id, book, doc_no, ordered_on, delivered_on, status,
       subtotal_krw, vat_krw, total_krw, site_name, site_id, is_documented,
       tax_doc_type, payment_due_on, settled_on, partner_id, delivery_cert_id, notes,
+      statement_sent_on, tax_invoice_issued_on,
       site:site(id, name, code),
       partner:partner(id, name, code),
       sale_line(id, qty, unit, unit_price_krw, item:item(id, name, code))
