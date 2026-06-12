@@ -135,6 +135,13 @@ function StatementCopy({
     ...data.lines,
     ...Array.from({ length: Math.max(0, MIN_ROWS - data.lines.length) }, () => null),
   ];
+  // 철근(규격 있는 라인)은 품목칸에 '철근'을 첫 행만 표기하고 이후는 비움(중복 제거).
+  const firstRebarIdx = data.lines.findIndex((l) => !!l.spec);
+  // 입금계좌 '농협 [번호] 최원식' — bank_default_name 이 '은행/예금주' 포맷이면 분리해 번호를 사이에.
+  const bankParts = (company.bank_default_name ?? "").split("/").map((x) => x.trim());
+  const bankLine = [bankParts[0], company.bank_default_no, bankParts[1] || company.representative]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <article
@@ -174,11 +181,6 @@ function StatementCopy({
               variant={variant}
             />
             <PartyRow label="사업장주소" value={data.partner.address ?? ""} variant={variant} />
-            <PartyRow
-              label="업태/종목"
-              value={data.partner.industry ?? ""}
-              variant={variant}
-            />
             <PartyDoubleRow
               label1="전화"
               value1={data.partner.phone}
@@ -223,11 +225,6 @@ function StatementCopy({
               variant={variant}
             />
             <PartyRow label="사업장주소" value={company.address} variant={variant} />
-            <PartyRow
-              label="업태/종목"
-              value={[company.business_type, company.business_item].filter(Boolean).join(" / ")}
-              variant={variant}
-            />
             <PartyDoubleRow
               label1="전화"
               value1={company.phone}
@@ -275,7 +272,9 @@ function StatementCopy({
                       })()
                     : ""}
                 </td>
-                <td className={`border ${baseClass} px-1 py-0.5`}>{line.item_name}</td>
+                <td className={`border ${baseClass} px-1 py-0.5`}>
+                  {line.spec ? (i === firstRebarIdx ? "철근" : "") : line.item_name}
+                </td>
                 <td className={`border ${baseClass} px-1 py-0.5 text-center text-xs`}>
                   {line.spec}
                 </td>
@@ -323,8 +322,8 @@ function StatementCopy({
       {/* 인수자 / 비고 */}
       <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
         <div className={`col-span-2 border ${baseClass} px-2 py-1`}>
-          <span className="text-muted-foreground">비 고: </span>
-          {data.notes ?? ""}
+          <span className="text-muted-foreground">입금계좌: </span>
+          {bankLine}
         </div>
         <div className={`border ${baseClass} px-2 py-1 text-center`}>
           인 수 자: ______________ (인)
