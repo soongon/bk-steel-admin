@@ -327,3 +327,27 @@ export async function deleteSale(id: string): Promise<SaleActionResult> {
   revalidateTransactionPaths("sales");
   return { ok: true };
 }
+
+/** 거래명세표 송부 토글 — done이면 오늘 날짜, 아니면 null(라이프사이클 단계 표시용 단순 플래그). */
+export async function toggleSaleStatementSent(id: string, done: boolean): Promise<SaleActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("sale")
+    .update({ statement_sent_on: done ? new Date().toISOString().slice(0, 10) : null })
+    .eq("id", id);
+  if (error) return { ok: false, error: friendly(error.message) };
+  revalidateTransactionPaths("sales");
+  return { ok: true };
+}
+
+/** 세금계산서 발행 토글 — done이면 오늘 날짜, 아니면 null. */
+export async function toggleSaleTaxInvoiceIssued(id: string, done: boolean): Promise<SaleActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("sale")
+    .update({ tax_invoice_issued_on: done ? new Date().toISOString().slice(0, 10) : null })
+    .eq("id", id);
+  if (error) return { ok: false, error: friendly(error.message) };
+  revalidateTransactionPaths("sales");
+  return { ok: true };
+}

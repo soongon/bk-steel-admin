@@ -10,8 +10,8 @@ import { fetchCompanyProfile } from "@/lib/company-profile";
 import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
-import { DeliveryCertButton } from "./delivery-cert-button";
-import { StatementButton } from "./statement-button";
+import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
+import { type BankAccount } from "../settle-dialog";
 import { fmtKrw, fmtNum, formatBusinessNo, formatPhone } from "@/lib/format";
 
 const STATUS_KO: Record<string, string> = {
@@ -105,6 +105,7 @@ export default async function SaleDetailPage({
       id, book, doc_no, ordered_on, delivered_on, status,
       subtotal_krw, vat_krw, total_krw, vat_rate, site_name, site_id, partner_id, is_documented,
       tax_doc_type, tax_doc_no, payment_due_on, settled_on, notes, delivery_cert_id,
+      statement_sent_on, tax_invoice_issued_on,
       partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email),
       site:site(id, code, name),
       receive_bank_account_id, receive_bank:bank_account!sale_receive_bank_account_id_fkey(code, bank_name),
@@ -128,6 +129,15 @@ export default async function SaleDetailPage({
 
   // 공급자(우리) 회사 정보 fetch
   const company = await fetchCompanyProfile(supabase, book);
+
+  // 수금 통장 (매출 책) — 라이프사이클 패널 수금 단계용
+  const { data: bankAccounts } = await supabase
+    .from("bank_account")
+    .select("id, code, bank_name, book, kind")
+    .eq("book", book)
+    .is("deleted_at", null)
+    .eq("is_active", true)
+    .order("is_primary", { ascending: false });
 
   // 첨부 사진 fetch
   const { data: attsData } = await supabase
@@ -233,18 +243,34 @@ export default async function SaleDetailPage({
             </span>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
-          <StatementButton data={statementData} company={company} />
-          <DeliveryCertButton
-            book={book}
-            partnerId={sale.partner_id}
-            siteId={sale.site_id}
-            cert={cert}
-            formData={certFormData}
-            company={company}
-          />
-        </div>
       </div>
+
+      {/* 거래 라이프사이클 (주문→납품→명세표→계산서→수금→확인서) */}
+      <SaleLifecyclePanel
+        sale={{
+          id: sale.id,
+          doc_no: sale.doc_no,
+          book,
+          status: sale.status,
+          ordered_on: sale.ordered_on,
+          delivered_on: sale.delivered_on,
+          settled_on: sale.settled_on,
+          payment_due_on: sale.payment_due_on,
+          delivery_cert_id: sale.delivery_cert_id,
+          statement_sent_on: (sale as { statement_sent_on: string | null }).statement_sent_on ?? null,
+          tax_invoice_issued_on: (sale as { tax_invoice_issued_on: string | null }).tax_invoice_issued_on ?? null,
+          is_documented: sale.is_documented,
+          tax_doc_type: sale.tax_doc_type,
+          total_krw: Number(sale.total_krw),
+          partner_id: sale.partner_id,
+          site_id: sale.site_id,
+        }}
+        bankAccounts={(bankAccounts ?? []) as BankAccount[]}
+        company={company}
+        statementData={statementData}
+        cert={cert}
+        certFormData={certFormData}
+      />
 
       {/* 정보 카드 그리드 */}
       <section className="grid gap-4 md:grid-cols-3">
