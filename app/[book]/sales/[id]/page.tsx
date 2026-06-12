@@ -5,14 +5,14 @@ import { createClient } from "@/lib/supabase/server";
 import { type Book } from "@/lib/book";
 import { buttonVariants } from "@/components/ui/button";
 import { BookBadge } from "@/components/admin/book-badge";
-import { PrintButton } from "@/components/admin/print-button";
-import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
+import { type StatementData } from "@/components/admin/trading-statement";
 import { fetchCompanyProfile } from "@/lib/company-profile";
 import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { DeliveryCertButton } from "./delivery-cert-button";
-import { fmtKrw } from "@/lib/format";
+import { StatementButton } from "./statement-button";
+import { fmtKrw, fmtNum } from "@/lib/format";
 
 const STATUS_KO: Record<string, string> = {
   reserved: "주문",
@@ -124,6 +124,7 @@ export default async function SaleDetailPage({
   const partner = sale.partner as any;
   const site = (sale as any).site as { id: string; code: string; name: string } | null;
   const lines = (sale.sale_line ?? []) as any[];
+  const receiveBank = (sale as any).receive_bank as { code: string; bank_name: string } | null;
 
   // 공급자(우리) 회사 정보 fetch
   const company = await fetchCompanyProfile(supabase, book);
@@ -202,30 +203,29 @@ export default async function SaleDetailPage({
   };
 
   return (
-    <div className="flex flex-1 flex-col">
-      {/* 상단 액션 바 — 인쇄 시 숨김 */}
-      <div className="flex items-center justify-between gap-4 border-b bg-card px-6 py-3 print:hidden">
-        <Link
-          href={`/${bookParam}/sales`}
-          className={buttonVariants({ variant: "outline", size: "sm" })}
-        >
-          <ArrowLeftIcon className="size-4" />
-          매출 목록
-        </Link>
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-sm">{sale.doc_no}</span>
+    <div className="flex flex-1 flex-col gap-4 p-6">
+      {/* 액션 바 */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/${bookParam}/sales`}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <ArrowLeftIcon className="size-4" />
+            목록
+          </Link>
+          <span className="ml-1 font-mono text-sm font-medium">{sale.doc_no}</span>
           <BookBadge book={book} />
           <span className="inline-flex h-5 items-center rounded-full bg-muted px-2 text-xs">
             {STATUS_KO[sale.status] ?? sale.status}
           </span>
           {(() => {
             const pay = paymentBadge(sale.status, sale.settled_on, sale.payment_due_on);
-            if (!pay) return null;
-            return (
+            return pay ? (
               <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${pay.className}`}>
                 {pay.label}
               </span>
-            );
+            ) : null;
           })()}
           {!sale.is_documented ? (
             <span className="inline-flex h-5 items-center rounded-full bg-amber-100 px-2 text-xs text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
@@ -234,6 +234,7 @@ export default async function SaleDetailPage({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          <StatementButton data={statementData} company={company} />
           <DeliveryCertButton
             book={book}
             partnerId={sale.partner_id}
@@ -242,107 +243,163 @@ export default async function SaleDetailPage({
             formData={certFormData}
             company={company}
           />
-          <PrintButton />
         </div>
       </div>
 
-      {/* 상단 메타 정보 — 인쇄 시 숨김 */}
-      <section className="grid grid-cols-2 gap-4 px-6 py-4 print:hidden md:grid-cols-4">
-        <MetaCard label="거래처">
-          <div className="text-sm font-medium">{partner?.name ?? "—"}</div>
-          {partner?.business_no ? (
-            <div className="text-xs text-muted-foreground">{partner.business_no}</div>
-          ) : null}
-        </MetaCard>
-        <MetaCard label="현장 / 자료">
-          <div className="text-sm">
-            {site?.id ? (
-              <Link href={`/${bookParam}/sites/${site.id}`} className="hover:underline">
-                {site.name}
-                <span className="ml-1 font-mono text-[10px] text-muted-foreground">
-                  {site.code}
-                </span>
-              </Link>
-            ) : (
-              (sale.site_name ?? "—")
-            )}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {TAX_DOC_KO[sale.tax_doc_type] ?? sale.tax_doc_type}
-            {sale.tax_doc_no ? ` · ${sale.tax_doc_no}` : ""}
-          </div>
-        </MetaCard>
-        <MetaCard label="일정">
-          <div className="space-y-1 text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="w-8 text-muted-foreground">주문</span>
-              <span className="font-mono">{sale.ordered_on}</span>
+      {/* 정보 카드 그리드 */}
+      <section className="grid gap-4 md:grid-cols-3">
+        <InfoCard label="거래처">
+          <div className="text-base font-semibold">{partner?.name ?? "—"}</div>
+          <dl className="mt-2 space-y-1 text-xs">
+            {partner?.business_no ? <Row k="사업자" v={partner.business_no} /> : null}
+            {partner?.representative ? <Row k="대표" v={partner.representative} /> : null}
+            {partner?.phone ? <Row k="연락처" v={partner.phone} /> : null}
+            {partner?.address ? <Row k="주소" v={partner.address} /> : null}
+            <Row
+              k="현장"
+              v={
+                site?.id ? (
+                  <Link href={`/${bookParam}/sites/${site.id}`} className="hover:underline">
+                    {site.name}
+                    <span className="ml-1 font-mono text-[10px] text-muted-foreground">{site.code}</span>
+                  </Link>
+                ) : (
+                  (sale.site_name ?? "—")
+                )
+              }
+            />
+          </dl>
+        </InfoCard>
+
+        <InfoCard label="거래·일정">
+          <dl className="space-y-1.5 text-xs">
+            <Row k="주문일" v={<span className="font-mono">{sale.ordered_on}</span>} />
+            <Row
+              k="납품일"
+              v={
+                sale.delivered_on ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="font-mono">{sale.delivered_on}</span>
+                    {(() => {
+                      const d = deliveryDayBadge(sale.delivered_on, sale.status);
+                      return d ? (
+                        <span className={`inline-flex h-4 items-center rounded px-1 text-[10px] font-medium ${d.className}`}>
+                          {d.label}
+                        </span>
+                      ) : null;
+                    })()}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">미정</span>
+                )
+              }
+            />
+            {sale.payment_due_on ? <Row k="수금예정" v={<span className="font-mono">{sale.payment_due_on}</span>} /> : null}
+            {sale.settled_on ? <Row k="수금완료" v={<span className="font-mono">{sale.settled_on}</span>} /> : null}
+            <Row
+              k="자료"
+              v={`${TAX_DOC_KO[sale.tax_doc_type] ?? sale.tax_doc_type}${sale.tax_doc_no ? ` · ${sale.tax_doc_no}` : ""}`}
+            />
+            {receiveBank ? <Row k="입금통장" v={`${receiveBank.code} · ${receiveBank.bank_name}`} /> : null}
+          </dl>
+        </InfoCard>
+
+        <InfoCard label="금액">
+          <dl className="space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <dt className="text-muted-foreground">공급가</dt>
+              <dd className="tabular-nums">{fmtKrw(Number(sale.subtotal_krw))}</dd>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-8 text-muted-foreground">납품</span>
-              {sale.delivered_on ? (
-                <>
-                  <span className="font-mono">{sale.delivered_on}</span>
-                  {(() => {
-                    const d = deliveryDayBadge(sale.delivered_on, sale.status);
-                    if (!d) return null;
-                    return (
-                      <span
-                        className={`inline-flex h-4 items-center rounded px-1.5 text-[10px] font-medium ${d.className}`}
-                      >
-                        {d.label}
-                      </span>
-                    );
-                  })()}
-                </>
-              ) : (
-                <span className="text-muted-foreground">미정</span>
-              )}
+            <div className="flex justify-between">
+              <dt className="text-muted-foreground">부가세</dt>
+              <dd className="tabular-nums">{fmtKrw(Number(sale.vat_krw))}</dd>
             </div>
-            {sale.payment_due_on || sale.settled_on ? (
-              <div className="text-muted-foreground">
-                {sale.payment_due_on ? `수금예정 ${sale.payment_due_on}` : ""}
-                {sale.settled_on ? ` · 완료 ${sale.settled_on}` : ""}
-              </div>
-            ) : null}
-          </div>
-        </MetaCard>
-        <MetaCard label="금액">
-          <div className="text-sm tabular-nums">
-            공급 {fmtKrw(Number(sale.subtotal_krw))}
-          </div>
-          <div className="text-xs text-muted-foreground tabular-nums">
-            VAT {fmtKrw(Number(sale.vat_krw))} · 합계{" "}
-            <span className="font-medium text-foreground">{fmtKrw(Number(sale.total_krw))}</span>
-          </div>
-        </MetaCard>
+            <div className="flex justify-between border-t pt-1.5 text-base font-semibold">
+              <dt>합계</dt>
+              <dd className="tabular-nums">{fmtKrw(Number(sale.total_krw))}</dd>
+            </div>
+          </dl>
+        </InfoCard>
       </section>
 
-      {/* 첨부 사진 — 인쇄 시 숨김. 클릭 시 라이트박스 (←/→ 키보드 네비) */}
-      {attachments.length > 0 ? (
-        <section className="px-6 pb-4 print:hidden">
-          <h2 className="mb-2 text-sm font-medium text-muted-foreground">
-            첨부 사진 ({attachments.length}장)
-          </h2>
-          <AttachmentGallery attachments={attachments} variant="square" />
+      {/* 품목 테이블 (멀티라인) */}
+      <section className="overflow-hidden rounded-lg border bg-card">
+        <div className="border-b px-4 py-2 text-sm font-medium">품목 ({statementData.lines.length}건)</div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground">
+              <tr className="border-b">
+                <th className="px-4 py-2 text-left font-medium">품목</th>
+                <th className="px-2 py-2 text-left font-medium">규격</th>
+                <th className="px-2 py-2 text-right font-medium">수량</th>
+                <th className="px-2 py-2 text-right font-medium">단가</th>
+                <th className="px-2 py-2 text-right font-medium">공급가</th>
+                <th className="px-2 py-2 text-right font-medium">세액</th>
+                <th className="px-4 py-2 text-right font-medium">중량</th>
+              </tr>
+            </thead>
+            <tbody>
+              {statementData.lines.map((l, i) => (
+                <tr key={i} className="border-b last:border-0">
+                  <td className="px-4 py-2 font-medium">{l.item_name}</td>
+                  <td className="px-2 py-2 text-xs text-muted-foreground">{l.spec}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">
+                    {l.qty.toLocaleString()} {l.unit}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums">{fmtKrw(l.unit_price_krw)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{fmtKrw(l.subtotal_krw)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{fmtKrw(l.vat_krw)}</td>
+                  <td className="px-4 py-2 text-right text-xs tabular-nums text-muted-foreground">
+                    {l.weight_kg ? `${fmtNum(l.weight_kg)}kg` : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t bg-muted/30 font-medium">
+                <td className="px-4 py-2" colSpan={4}>합계</td>
+                <td className="px-2 py-2 text-right tabular-nums">{fmtKrw(Number(sale.subtotal_krw))}</td>
+                <td className="px-2 py-2 text-right tabular-nums">{fmtKrw(Number(sale.vat_krw))}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{fmtKrw(Number(sale.total_krw))}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+
+      {/* 메모 */}
+      {sale.notes ? (
+        <section className="rounded-lg border bg-card p-4">
+          <div className="text-xs font-medium text-muted-foreground">메모</div>
+          <p className="mt-1 whitespace-pre-wrap text-sm">{sale.notes}</p>
         </section>
       ) : null}
 
-      {/* 거래명세표 본체 — A4 폭(약 800px)으로 제한, 종이 느낌. 인쇄 시 풀-블리드 */}
-      <section className="bg-zinc-100 px-4 py-6 dark:bg-zinc-900 print:bg-white print:p-0">
-        <div className="mx-auto max-w-[800px] rounded-md bg-white p-6 text-zinc-900 shadow-md print:max-w-none print:rounded-none print:p-0 print:shadow-none">
-          <TradingStatement data={statementData} company={company} />
-        </div>
-      </section>
+      {/* 첨부 사진 — 클릭 시 라이트박스 */}
+      {attachments.length > 0 ? (
+        <section>
+          <h2 className="mb-2 text-sm font-medium text-muted-foreground">첨부 사진 ({attachments.length}장)</h2>
+          <AttachmentGallery attachments={attachments} variant="square" />
+        </section>
+      ) : null}
     </div>
   );
 }
 
-function MetaCard({ label, children }: { label: string; children: React.ReactNode }) {
+function InfoCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border bg-card p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1">{children}</div>
+    <div className="rounded-lg border bg-card p-4">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="mt-2">{children}</div>
+    </div>
+  );
+}
+
+function Row({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="w-14 shrink-0 text-muted-foreground">{k}</dt>
+      <dd className="min-w-0 flex-1">{v}</dd>
     </div>
   );
 }
