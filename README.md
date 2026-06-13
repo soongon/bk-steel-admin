@@ -29,8 +29,8 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+## 배포 (Deploy)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+이 프로젝트는 기존 신라철강 홈페이지와 **별도 Vercel 프로젝트 + `admin` 서브도메인**으로 배포한다.
+환경변수(`NEXT_PUBLIC_SUPABASE_*` 는 Vercel에 직접 등록 + redeploy 필수), Supabase, 도메인 설정
+절차는 **[`docs/배포_가이드.md`](docs/배포_가이드.md)** 를 따른다.
