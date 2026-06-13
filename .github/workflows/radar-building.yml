@@ -1,0 +1,35 @@
+name: 발주 레이더 · 건축HUB(주1회)
+
+# 민간(건축인허가) 수집 — 날짜필터가 없어 법정동 전체를 페이징(경주 1권역 ≈360콜).
+# 비용이 커서 주 1회 풀싱크로 제한한다. (docs/발주_레이더.md 권장)
+on:
+  schedule:
+    - cron: '30 21 * * 6'   # 매주 일 06:30 KST (토 21:30 UTC)
+  workflow_dispatch:
+
+concurrency:
+  group: radar-building
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60       # 무거운 풀싱크 — 넉넉히
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: 건축HUB 수집·upsert (경주·포항·울산 풀싱크)
+        run: npm run radar:collect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATA_GO_KR_BUILDING_KEY: ${{ secrets.DATA_GO_KR_BUILDING_KEY }}
+          DATA_GO_KR_NARA_KEY: ${{ secrets.DATA_GO_KR_NARA_KEY || secrets.DATA_GO_KR_BUILDING_KEY }}
+          # 건축HUB만 (notice·nara 제외)
+          RADAR_SOURCES: building_permit
+          # 건축HUB active 윈도(일) — buildingPermit 가 실제로 읽는 키. 730=최근 2년 준공제외분
+          RADAR_ACTIVE_DAYS: '730'

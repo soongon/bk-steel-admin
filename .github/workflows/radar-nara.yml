@@ -1,0 +1,36 @@
+name: 발주 레이더 · 나라장터(매일)
+
+# 관급(나라장터) 입찰공고+낙찰 수집 — 날짜필터가 있어 가볍고 준실시간.
+# "낙찰사에 바로 전화" 가치가 높아 매일 돌린다.
+on:
+  schedule:
+    - cron: '10 21 * * *'   # 매일 06:10 KST (21:10 UTC, 전날)
+  workflow_dispatch:         # 수동 실행(측정·재시도)
+
+concurrency:
+  group: radar-nara
+  cancel-in-progress: false  # 이전 수집이 끝나기 전 새 실행이 겹치지 않게
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: 나라장터 수집·upsert
+        run: npm run radar:collect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATA_GO_KR_BUILDING_KEY: ${{ secrets.DATA_GO_KR_BUILDING_KEY }}
+          # NARA 키 별도 미발급 시 BUILDING 키로 fallback (동일 data.go.kr 계정). 빈 문자열 방지 위해 Actions ||.
+          DATA_GO_KR_NARA_KEY: ${{ secrets.DATA_GO_KR_NARA_KEY || secrets.DATA_GO_KR_BUILDING_KEY }}
+          # notice·building_permit 제외하고 나라장터만 (기본 배열에 notice 포함됨)
+          RADAR_SOURCES: nara_bid
+          # 나라장터 수집 윈도(일) — naraBid 가 실제로 읽는 키
+          RADAR_NARA_DAYS: '14'
