@@ -19,15 +19,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { type Book, type BookView } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 import { NoteCell } from "@/components/admin/note-cell";
@@ -39,8 +30,10 @@ import {
   type PurchaseRow,
   type SiteOption,
 } from "./purchase-form-dialog";
-import { deletePurchase, markPurchasePaid, markPurchaseReceived } from "./actions";
+import { deletePurchase, markPurchaseReceived } from "./actions";
 import { fmtKrw } from "@/lib/format";
+import { purchaseLifecycleProgress } from "@/lib/purchase-lifecycle";
+import { PayDialog, type BankAccount } from "./pay-dialog";
 
 type PurchaseLine = {
   id: string;
@@ -67,6 +60,7 @@ export type PurchaseListRow = {
   is_documented: boolean;
   tax_doc_type: string;
   tax_doc_no: string | null;
+  tax_invoice_received_on: string | null;
   partner_id: string;
   site_id: string | null;
   site_name: string | null;
@@ -94,6 +88,19 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/** 거래 라이프사이클 진행률 — 4단계 중 완료 수(목록 배지). 상세 PurchaseLifecyclePanel 과 같은 기준. */
+function ProgressBadge({ p }: { p: PurchaseListRow }) {
+  const { done, total } = purchaseLifecycleProgress(p);
+  const full = done === total;
+  return (
+    <div
+      className={`mt-0.5 text-[10px] tabular-nums ${full ? "font-medium text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}
+    >
+      {done}/{total}단계
+    </div>
+  );
+}
+
 function PaidBadge({ paidOn, dueOn }: { paidOn: string | null; dueOn: string | null }) {
   if (paidOn) {
     return (
@@ -111,14 +118,6 @@ function PaidBadge({ paidOn, dueOn }: { paidOn: string | null; dueOn: string | n
   }
   return <span className="text-xs text-muted-foreground">—</span>;
 }
-
-export type BankAccount = {
-  id: string;
-  code: string;
-  bank_name: string;
-  book: string;
-  kind: string;
-};
 
 export function PurchaseTable({
   purchases,
@@ -271,6 +270,7 @@ export function PurchaseTable({
                     </TableCell>
                     <TableCell className="text-center">
                       <StatusBadge status={p.status} />
+                      <ProgressBadge p={p} />
                     </TableCell>
                     <TableCell className="text-center">
                       <PaidBadge paidOn={p.paid_on} dueOn={p.payment_due_on} />
@@ -338,86 +338,3 @@ export function PurchaseTable({
   );
 }
 
-/** 결제완료 다이얼로그 — 출금 통장(매입 책과 동일)·결제일 선택 → 통장 출금 기록까지 한 번에. */
-function PayDialog({
-  purchase,
-  bankAccounts,
-  onClose,
-}: {
-  purchase: PurchaseListRow;
-  bankAccounts: BankAccount[];
-  onClose: () => void;
-}) {
-  const accounts = bankAccounts.filter((a) => a.book === purchase.book);
-  const [bankId, setBankId] = useState(accounts[0]?.id ?? "");
-  const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10));
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-
-  function submit() {
-    setError(null);
-    if (!bankId) {
-      setError("결제 통장을 선택해주세요.");
-      return;
-    }
-    startTransition(async () => {
-      const r = await markPurchasePaid(purchase.id, bankId, paidOn);
-      if (r.ok) {
-        toast.success("결제완료 — 통장 출금 기록됨");
-        onClose();
-      } else {
-        setError(r.error);
-      }
-    });
-  }
-
-  return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>결제완료 처리</DialogTitle>
-          <DialogDescription>
-            [{purchase.doc_no}] {fmtKrw(purchase.total_krw)} — 출금 통장과 결제일을 확인하세요.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              출금 통장 * <BookBadge book={purchase.book} />
-            </span>
-            <select
-              value={bankId}
-              onChange={(e) => setBankId(e.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-            >
-              <option value="">— 선택 —</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.code} · {a.bank_name}
-                </option>
-              ))}
-            </select>
-            {accounts.length === 0 ? (
-              <span className="text-xs text-amber-600">
-                이 책의 활성 통장이 없습니다 — 통장 페이지에서 먼저 등록하세요
-              </span>
-            ) : null}
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">결제일 *</span>
-            <Input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
-          </label>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            취소
-          </Button>
-          <Button onClick={submit} disabled={pending || !bankId}>
-            {pending ? "처리 중..." : "결제완료"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}

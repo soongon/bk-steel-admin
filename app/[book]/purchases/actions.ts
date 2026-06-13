@@ -296,3 +296,15 @@ export async function deletePurchase(id: string): Promise<PurchaseActionResult> 
   revalidateTransactionPaths("purchases");
   return { ok: true };
 }
+
+/** 세금계산서 수취 토글 — done이면 오늘 날짜, 아니면 null(라이프사이클 단계 표시용 단순 플래그). */
+export async function togglePurchaseTaxInvoiceReceived(id: string, done: boolean): Promise<PurchaseActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("purchase")
+    .update({ tax_invoice_received_on: done ? new Date().toISOString().slice(0, 10) : null })
+    .eq("id", id);
+  if (error) return { ok: false, error: friendly(error.message) };
+  revalidateTransactionPaths("purchases");
+  return { ok: true };
+}

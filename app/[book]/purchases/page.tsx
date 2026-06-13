@@ -18,7 +18,7 @@ export default async function PurchasesPage({
       `
       id, book, doc_no, ordered_on, delivered_on, paid_on, payment_due_on, status,
       subtotal_krw, vat_krw, total_krw, is_documented,
-      tax_doc_type, tax_doc_no, partner_id, site_id, site_name, notes,
+      tax_doc_type, tax_doc_no, tax_invoice_received_on, partner_id, site_id, site_name, notes,
       partner:partner(id, name, code),
       site:site(id, name, code),
       purchase_line(id, acquired_qty, acquired_unit, unit_price_krw, actual_weight_kg, theoretical_weight_kg, item:item(id, name, code))

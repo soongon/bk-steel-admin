@@ -8,6 +8,8 @@ import { BookBadge } from "@/components/admin/book-badge";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { fmtKrw, formatBusinessNo } from "@/lib/format";
+import { PurchaseLifecyclePanel } from "./purchase-lifecycle-panel";
+import { type BankAccount } from "../pay-dialog";
 
 const fmtNum = (n: number, d = 0) =>
   n.toLocaleString("ko-KR", { maximumFractionDigits: d });
@@ -105,7 +107,7 @@ export default async function PurchaseDetailPage({
       `
       id, book, doc_no, ordered_on, delivered_on, paid_on, payment_due_on, status,
       subtotal_krw, vat_krw, total_krw, vat_rate, partner_id, is_documented,
-      tax_doc_type, tax_doc_no, notes,
+      tax_doc_type, tax_doc_no, tax_invoice_received_on, notes,
       partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email),
       purchase_line(
         id, acquired_qty, acquired_unit, unit_price_krw, line_subtotal_krw,
@@ -139,6 +141,15 @@ export default async function PurchaseDetailPage({
     .order("created_at", { ascending: true });
   const attachments = (attsData ?? []) as Attachment[];
 
+  // 결제 통장 (매입 책) — 라이프사이클 패널 결제 단계용
+  const { data: bankAccounts } = await supabase
+    .from("bank_account")
+    .select("id, code, bank_name, book, kind")
+    .eq("book", book)
+    .is("deleted_at", null)
+    .eq("is_active", true)
+    .order("is_primary", { ascending: false });
+
   return (
     <div className="flex flex-1 flex-col">
       {/* 상단 액션 바 */}
@@ -171,6 +182,25 @@ export default async function PurchaseDetailPage({
             </span>
           ) : null}
         </div>
+      </div>
+
+      {/* 거래 라이프사이클 (발주→입고→계산서 수취→결제) */}
+      <div className="px-6 pt-4">
+        <PurchaseLifecyclePanel
+          purchase={{
+            id: purchase.id,
+            doc_no: purchase.doc_no,
+            book,
+            status: purchase.status,
+            delivered_on: purchase.delivered_on,
+            paid_on: purchase.paid_on,
+            tax_invoice_received_on: (purchase as { tax_invoice_received_on: string | null }).tax_invoice_received_on ?? null,
+            is_documented: purchase.is_documented,
+            tax_doc_type: purchase.tax_doc_type,
+            total_krw: Number(purchase.total_krw),
+          }}
+          bankAccounts={(bankAccounts ?? []) as BankAccount[]}
+        />
       </div>
 
       {/* 메타 정보 */}
