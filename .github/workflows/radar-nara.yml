@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'   # 20은 native WebSocket 미지원 → supabase-js realtime 에러
           cache: 'npm'
       - run: npm ci
       - name: 나라장터 수집·upsert
