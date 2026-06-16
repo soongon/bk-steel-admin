@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { FileTextIcon, PlusIcon, PrinterIcon, XIcon } from "lucide-react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { FileTextIcon, PlusIcon, PrinterIcon, SaveIcon, XIcon } from "lucide-react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -13,9 +14,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { type CompanyProfile } from "@/lib/company-profile";
+import { type Book } from "@/lib/book";
 import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
 import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import { fmtKrw, fmtNum } from "@/lib/format";
+import { createQuote } from "@/app/[book]/quotes/actions";
 
 export type QuotePartner = {
   id: string;
@@ -70,32 +73,40 @@ type LineDraft = {
 
 /**
  * 견적서 작성 다이얼로그 (범용·재사용).
- * 거래처는 선택(현장명만으로도 작성 가능), 부가세 포함/제외 토글, 멀티라인 품목(매출 폼 동일 환산).
- * DB 저장 없음 — 작성→미리보기→프린트. open/onOpenChange 외부 제어.
+ * 거래처는 선택(현장명·잠재명만으로도 작성), 부가세 포함/제외 토글, 멀티라인 품목(매출 폼 동일 환산).
+ * book 을 주면 작성→미리보기→**저장**(quote 테이블). book 없으면 미리보기·프린트만(현장 진입 등).
  */
 export function QuoteDialog({
   open,
   onOpenChange,
   sources,
+  book,
+  onSaved,
   defaultSiteName = "",
   defaultPartnerName = "",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sources: QuoteSources;
+  book?: Book; // 있으면 저장 가능(목록 진입). 없으면 미리보기·프린트만.
+  onSaved?: (id: string) => void;
   defaultSiteName?: string;
   defaultPartnerName?: string;
 }) {
   const { partners, items, rebarSpecs, company } = sources;
   const [error, setError] = useState<string | null>(null);
   const [showStatement, setShowStatement] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  const [saving, startSaving] = useTransition();
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
 
   const [siteName, setSiteName] = useState(defaultSiteName);
   const [partnerInput, setPartnerInput] = useState(defaultPartnerName);
   const matchedPartner = partners.find((p) => p.name === partnerInput);
 
   const [vatExempt, setVatExempt] = useState(false); // 무자료(부가세 제외)
+  const [validUntil, setValidUntil] = useState(""); // 유효기간
+  const [deliveryTerms, setDeliveryTerms] = useState(""); // 납품조건
+  const [paymentTerms, setPaymentTerms] = useState(""); // 결제조건
 
   const [itemKind, setItemKind] = useState<"rebar" | "steel">("rebar");
   const itemOptions = useMemo(
@@ -153,6 +164,9 @@ export function QuoteDialog({
       setSiteName(defaultSiteName);
       setPartnerInput(defaultPartnerName);
       setVatExempt(false);
+      setValidUntil("");
+      setDeliveryTerms("");
+      setPaymentTerms("");
       setItemId("");
       setItemKind("rebar");
       setUnit("ea");
@@ -242,6 +256,47 @@ export function QuoteDialog({
     setShowStatement(true);
   }
 
+  // 저장(book 있을 때) — FormData 구성 후 createQuote.
+  function handleSave() {
+    if (!book) return;
+    const fd = new FormData();
+    fd.set("book", book);
+    fd.set("quote_date", today);
+    if (validUntil) fd.set("valid_until", validUntil);
+    if (matchedPartner) fd.set("partner_id", matchedPartner.id);
+    else if (partnerInput) fd.set("prospect_name", partnerInput);
+    if (siteName) fd.set("site_name", siteName);
+    fd.set("is_documented", vatExempt ? "false" : "true");
+    if (deliveryTerms) fd.set("delivery_terms", deliveryTerms);
+    if (paymentTerms) fd.set("payment_terms", paymentTerms);
+    if (notes) fd.set("notes", notes);
+    fd.set(
+      "lines",
+      JSON.stringify(
+        allLines.map((l) => {
+          const { calc: c } = calcLine(l);
+          return {
+            item_id: l.itemId,
+            unit: l.unit,
+            qty: l.qty,
+            unit_price_krw: l.unitPrice,
+            weight_kg: c?.weightKg ?? null,
+          };
+        }),
+      ),
+    );
+    startSaving(async () => {
+      const r = await createQuote(fd);
+      if (r.ok) {
+        toast.success("견적서 저장됨");
+        onOpenChange(false);
+        onSaved?.(r.id ?? "");
+      } else {
+        setError(r.error);
+      }
+    });
+  }
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -249,11 +304,12 @@ export function QuoteDialog({
           <DialogHeader>
             <DialogTitle>견적서 작성</DialogTitle>
             <DialogDescription>
-              거래처는 선택입니다(현장명만으로도 가능). 부가세 포함/제외를 고른 뒤 품목을 추가하세요. (저장 없음)
+              거래처는 선택입니다(현장명·잠재 고객명만으로도 가능). 부가세 포함/제외를 고른 뒤 품목을 추가하세요.
+              {book ? " 확인 후 저장됩니다." : " (저장 없음 — 미리보기·프린트)"}
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <form onSubmit={handleSubmit} className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto pr-1">
             {/* 현장 + 거래처(선택) */}
             <div className="grid grid-cols-2 gap-3">
               <Field label="현장명">
@@ -272,30 +328,34 @@ export function QuoteDialog({
                   ))}
                 </datalist>
                 {partnerInput && !matchedPartner ? (
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">마스터 미등록 — 이름만 견적서에 표기</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">마스터 미등록 — 잠재 고객명으로 저장·표기</p>
                 ) : null}
               </Field>
             </div>
 
-            {/* 부가세 토글 */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">부가세</span>
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => setVatExempt(false)}
-                  className={`rounded-md border px-2.5 py-1 text-xs ${!vatExempt ? "bg-foreground text-background" : "bg-background"}`}
-                >
-                  포함 (10%)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVatExempt(true)}
-                  className={`rounded-md border px-2.5 py-1 text-xs ${vatExempt ? "bg-foreground text-background" : "bg-background"}`}
-                >
-                  제외 (무자료)
-                </button>
-              </div>
+            {/* 유효기간 + 부가세 토글 */}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="유효기간 (선택)">
+                <Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+              </Field>
+              <Field label="부가세">
+                <div className="flex h-8 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setVatExempt(false)}
+                    className={`rounded-md border px-2.5 py-1 text-xs ${!vatExempt ? "bg-foreground text-background" : "bg-background"}`}
+                  >
+                    포함 (10%)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVatExempt(true)}
+                    className={`rounded-md border px-2.5 py-1 text-xs ${vatExempt ? "bg-foreground text-background" : "bg-background"}`}
+                  >
+                    제외 (무자료)
+                  </button>
+                </div>
+              </Field>
             </div>
 
             {/* 품목 입력 */}
@@ -417,12 +477,22 @@ export function QuoteDialog({
               </div>
             </div>
 
+            {/* 견적 조건 */}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="납품조건">
+                <Input value={deliveryTerms} onChange={(e) => setDeliveryTerms(e.target.value)} placeholder="예: 발주 후 3일 내" />
+              </Field>
+              <Field label="결제조건">
+                <Input value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="예: 월말 현금" />
+              </Field>
+            </div>
+
             <Field label="메모">
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                placeholder="견적 조건 / 유효기간 등"
+                placeholder="기타 견적 조건 등"
                 className="resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
             </Field>
@@ -457,6 +527,11 @@ export function QuoteDialog({
               <Button variant="secondary" onClick={() => window.print()}>
                 <PrinterIcon className="size-4" /> 프린트
               </Button>
+              {book ? (
+                <Button onClick={handleSave} disabled={saving}>
+                  <SaveIcon className="size-4" /> {saving ? "저장 중..." : "저장"}
+                </Button>
+              ) : null}
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -465,9 +540,11 @@ export function QuoteDialog({
   );
 }
 
-/** 트리거 버튼 + QuoteDialog. 버튼 하나로 끝낼 때 사용(현장 상세 등). */
+/** 트리거 버튼 + QuoteDialog. 버튼 하나로 끝낼 때 사용(현장 상세 등 — 저장 없이 미리보기). */
 export function QuoteButton({
   sources,
+  book,
+  onSaved,
   defaultSiteName,
   defaultPartnerName,
   label = "견적서 작성",
@@ -475,6 +552,8 @@ export function QuoteButton({
   size = "sm",
 }: {
   sources: QuoteSources;
+  book?: Book;
+  onSaved?: (id: string) => void;
   defaultSiteName?: string;
   defaultPartnerName?: string;
   label?: string;
@@ -492,6 +571,8 @@ export function QuoteButton({
         open={open}
         onOpenChange={setOpen}
         sources={sources}
+        book={book}
+        onSaved={onSaved}
         defaultSiteName={defaultSiteName}
         defaultPartnerName={defaultPartnerName}
       />
