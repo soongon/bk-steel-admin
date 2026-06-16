@@ -13,6 +13,7 @@ import {
   LandmarkIcon,
   LayoutDashboardIcon,
   MapPinIcon,
+  MessageSquareIcon,
   LightbulbIcon,
   PackageIcon,
   PhoneCallIcon,
@@ -111,6 +112,7 @@ function buildMenuGroups(): MenuGroup[] {
       label: "설정",
       items: [
         { label: "회사 정보", href: "/settings/company", icon: FactoryIcon },
+        { label: "문자 발송", href: "/settings/sms", icon: MessageSquareIcon },
       ],
     },
   ];

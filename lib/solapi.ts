@@ -77,3 +77,46 @@ export async function sendMms(params: {
     await unlink(tmp).catch(() => {});
   }
 }
+
+/** 잔액·포인트 조회(모니터링). 키 미설정/에러 시 null. */
+export async function getSolapiBalance(): Promise<{ balance: number; point: number } | null> {
+  try {
+    const svc = getService();
+    const b = (await svc.getBalance()) as { balance?: number | string; point?: number | string };
+    return { balance: Number(b.balance ?? 0), point: Number(b.point ?? 0) };
+  } catch {
+    return null;
+  }
+}
+
+export type SolapiMessage = {
+  type: string;
+  status: string;
+  statusCode: string;
+  reason: string;
+  from: string;
+  to: string;
+  dateCreated: string;
+};
+
+/** 최근 발송 내역 조회(모니터링). 키 미설정/에러 시 []. */
+export async function getSolapiMessages(limit = 50): Promise<SolapiMessage[]> {
+  try {
+    const svc = getService();
+    const r = (await svc.getMessages({ limit })) as {
+      messageList?: Record<string, Record<string, unknown>>;
+    };
+    const list = r.messageList ?? {};
+    return Object.values(list).map((m) => ({
+      type: String(m.type ?? ""),
+      status: String(m.status ?? ""),
+      statusCode: String(m.statusCode ?? ""),
+      reason: String(m.reason ?? ""),
+      from: String(m.from ?? ""),
+      to: String(m.to ?? ""),
+      dateCreated: String(m.dateCreated ?? ""),
+    }));
+  } catch {
+    return [];
+  }
+}
