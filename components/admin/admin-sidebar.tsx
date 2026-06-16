@@ -10,6 +10,7 @@ import {
   ContactIcon,
   FactoryIcon,
   FileDownIcon,
+  FileTextIcon,
   LandmarkIcon,
   LayoutDashboardIcon,
   MapPinIcon,
@@ -79,6 +80,7 @@ function buildMenuGroups(): MenuGroup[] {
     {
       label: "영업",
       items: [
+        { label: "견적서", href: "/quotes", icon: FileTextIcon },
         { label: "영업내역", href: "/sales-log", icon: PhoneCallIcon },
         { label: "명함", href: "/business-cards", icon: ContactIcon },
         { label: "정기업무", href: "/recurring-tasks", icon: ClipboardListIcon },
