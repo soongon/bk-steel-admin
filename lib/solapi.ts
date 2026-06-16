@@ -3,6 +3,7 @@ import { SolapiMessageService } from "solapi";
 import { writeFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { digitsOnly } from "@/lib/format";
 
 /**
@@ -53,8 +54,8 @@ export async function sendMms(params: {
     return { ok: false, error: e instanceof Error ? e.message : "솔라피 초기화 실패" };
   }
 
-  // Date.now() 는 서버 런타임이라 사용 가능(워크플로 스크립트 아님). 임시파일 충돌 방지용.
-  const tmp = join(tmpdir(), `statement-${Date.now()}-${to.slice(-4)}.jpg`);
+  // randomUUID 로 임시파일명 충돌 방지(동일 ms·동일 번호 동시 발송 대비). Node runtime 전용(fs/os/path).
+  const tmp = join(tmpdir(), `statement-${randomUUID()}.jpg`);
   try {
     await writeFile(tmp, params.imageJpeg);
     const uploaded = await svc.uploadFile(tmp, "MMS");
@@ -113,7 +114,8 @@ export async function getSolapiMessages(limit = 50): Promise<SolapiMessage[]> {
       statusCode: String(m.statusCode ?? ""),
       reason: String(m.reason ?? ""),
       from: String(m.from ?? ""),
-      to: String(m.to ?? ""),
+      // to 는 SDK 상 문자열 또는 배열 → 배열이면 첫 번호만(표시용)
+      to: Array.isArray(m.to) ? String(m.to[0] ?? "") : String(m.to ?? ""),
       dateCreated: String(m.dateCreated ?? ""),
     }));
   } catch {

@@ -14,6 +14,7 @@ import { getSolapiBalance, getSolapiMessages } from "@/lib/solapi";
 import { fmtKrw, formatPhone } from "@/lib/format";
 
 const TYPE_LABEL: Record<string, string> = { SMS: "SMS", LMS: "LMS", MMS: "MMS(이미지)" };
+const PENDING_STATUS = new Set(["PENDING", "SENDING", "PROCESSING"]);
 
 type SmsSale = {
   id: string;
@@ -26,31 +27,47 @@ type SmsSale = {
 
 /**
  * 문자 발송 관리 — 솔라피(CoolSMS) 잔액·발송내역·통계 + 매출 연결(명세서 전송 이력).
- * 솔라피 데이터는 계정 단위(book 무관), 매출 연결은 전체 book 의 sale.statement_sms_sent_on.
+ * 솔라피 데이터는 계정 단위(직원 전용 — proxy 인증). 매출 연결은 RLS + 현재 책(book) 범위.
+ * (향후 manager 전용 가드는 역할 정책 정립 후.)
  */
-export default async function SmsSettingsPage() {
+export default async function SmsSettingsPage({
+  params,
+}: {
+  params: Promise<{ book: string }>;
+}) {
+  const { book } = await params;
   const supabase = await createClient();
+
+  // 매출 연결: 현재 책 범위(all 이면 전체), 삭제건 제외. RLS 가 책별 권한도 강제.
+  let saleQuery = supabase
+    .from("sale")
+    .select("id, book, doc_no, statement_sms_sent_on, site_name, partner:partner(name)")
+    .not("statement_sms_sent_on", "is", null)
+    .is("deleted_at", null)
+    .order("statement_sms_sent_on", { ascending: false })
+    .limit(50);
+  if (book !== "all") saleQuery = saleQuery.eq("book", book);
+
   const [balance, messages, salesRes] = await Promise.all([
     getSolapiBalance(),
     getSolapiMessages(200),
-    supabase
-      .from("sale")
-      .select("id, book, doc_no, statement_sms_sent_on, site_name, partner:partner(name)")
-      .not("statement_sms_sent_on", "is", null)
-      .order("statement_sms_sent_on", { ascending: false })
-      .limit(50),
+    saleQuery,
   ]);
 
   const smsSales = (salesRes.data as unknown as SmsSale[]) ?? [];
-  const recent = messages.slice(0, 50);
+  // API 반환 순서를 믿지 않고 발송일 기준 정렬
+  const sorted = [...messages].sort((a, b) => b.dateCreated.localeCompare(a.dateCreated));
+  const recent = sorted.slice(0, 50);
 
-  // 통계 집계 (최근 200건 기준)
-  const total = messages.length;
-  const ok = messages.filter((m) => m.status === "COMPLETE").length;
+  // 통계 (최근 200건 기준) — 성공/대기/실패 분리
+  const total = sorted.length;
+  const ok = sorted.filter((m) => m.status === "COMPLETE").length;
+  const pending = sorted.filter((m) => PENDING_STATUS.has(m.status)).length;
+  const fail = total - ok - pending;
   const byType: Record<string, number> = { SMS: 0, LMS: 0, MMS: 0 };
-  for (const m of messages) if (m.type in byType) byType[m.type]++;
+  for (const m of sorted) if (m.type in byType) byType[m.type]++;
   const byDay = new Map<string, number>();
-  for (const m of messages) {
+  for (const m of sorted) {
     const d = m.dateCreated.slice(0, 10);
     if (d) byDay.set(d, (byDay.get(d) ?? 0) + 1);
   }
@@ -77,9 +94,9 @@ export default async function SmsSettingsPage() {
           <StatCard label="포인트" value={fmtKrw(balance.point)} />
           <StatCard label="발송 가능액" value={fmtKrw(balance.balance + balance.point)} hint="캐시 + 포인트" />
           <StatCard
-            label="성공률"
+            label="발송 상태"
             value={total ? `${Math.round((ok / total) * 100)}%` : "—"}
-            hint={`최근 ${total}건 · 성공 ${ok} / 실패 ${total - ok}`}
+            hint={`성공 ${ok} · 대기 ${pending} · 실패 ${fail} (최근 ${total}건)`}
           />
         </section>
       )}
@@ -96,7 +113,7 @@ export default async function SmsSettingsPage() {
             </div>
           </div>
           <div className="rounded-lg border bg-card p-4">
-            <h2 className="mb-3 text-sm font-semibold">일별 발송 (최근 7일)</h2>
+            <h2 className="mb-3 text-sm font-semibold">일별 발송 (내역 내 최신 7일)</h2>
             {days.length === 0 ? (
               <p className="text-xs text-muted-foreground">데이터 없음</p>
             ) : (
@@ -208,19 +225,20 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
 }
 
 function StatusBadge({ status, reason }: { status: string; reason: string }) {
-  const ok = status === "COMPLETE";
+  const style =
+    status === "COMPLETE"
+      ? { cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300", label: "성공" }
+      : PENDING_STATUS.has(status)
+        ? { cls: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300", label: "대기" }
+        : { cls: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300", label: "실패" };
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span
-        className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${
-          ok
-            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-            : "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300"
-        }`}
-      >
-        {ok ? "성공" : "실패"}
+      <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${style.cls}`}>
+        {style.label}
       </span>
-      {!ok && reason ? <span className="text-xs text-muted-foreground">{reason}</span> : null}
+      {style.label === "실패" && reason ? (
+        <span className="text-xs text-muted-foreground">{reason}</span>
+      ) : null}
     </span>
   );
 }
