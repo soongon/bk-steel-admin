@@ -63,9 +63,12 @@ export function SaleLifecyclePanel({
   const [pending, startTransition] = useTransition();
   const [settleOpen, setSettleOpen] = useState(false);
 
-  // 납품 done 은 status(상태머신) 기준만. delivered_on 은 '납품 예정일'로 입력될 수 있어
-  // (미납품 reserved 인데 예정일이 들어간 경우) done 판정에서 제외한다.
-  const delivered = ["delivered", "settled", "overdue"].includes(sale.status);
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }); // KST 'YYYY-MM-DD'
+  // 납품 done: status(상태머신) 또는 delivered_on 이 오늘 이하(=실제 납품).
+  // 미래 delivered_on 은 '납품 예정일'이라 done 이 아니라 대기(예정)로 본다.
+  const delivered =
+    ["delivered", "settled", "overdue"].includes(sale.status) ||
+    (!!sale.delivered_on && sale.delivered_on <= today);
   const settled = sale.status === "settled" || !!sale.settled_on;
   const invoiceNA = !sale.is_documented || sale.tax_doc_type === "none"; // 무자료=계산서 해당없음
 
@@ -138,6 +141,8 @@ export function SaleLifecyclePanel({
                   <span className="text-muted-foreground">해당없음 (무자료)</span>
                 ) : isDone ? (
                   <span className="font-mono text-emerald-700 dark:text-emerald-300">{s.date ?? "완료"}</span>
+                ) : s.key === "deliver" && sale.delivered_on ? (
+                  <span className="font-mono text-amber-600 dark:text-amber-400">예정 {sale.delivered_on}</span>
                 ) : (
                   <span className="text-muted-foreground">대기</span>
                 )}

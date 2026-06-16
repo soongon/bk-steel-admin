@@ -17,8 +17,11 @@ export type SaleLifecycleInput = {
  * 계산서 단계를 자동 완료(해당없음) 처리.
  */
 export function saleLifecycleProgress(s: SaleLifecycleInput): { done: number; total: number } {
-  // 납품 done 은 status 기준만 (delivered_on 은 예정일일 수 있어 제외 — panel 과 동일 기준).
-  const delivered = ["delivered", "settled", "overdue"].includes(s.status);
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }); // KST 'YYYY-MM-DD'
+  // 납품 done: status 또는 delivered_on 이 오늘 이하(실제 납품). 미래 delivered_on 은 예정일 → 대기 (panel 동일).
+  const delivered =
+    ["delivered", "settled", "overdue"].includes(s.status) ||
+    (!!s.delivered_on && s.delivered_on <= today);
   const settled = s.status === "settled" || !!s.settled_on;
   const invoiceNA = !s.is_documented || s.tax_doc_type === "none";
   let done = 1; // 주문
