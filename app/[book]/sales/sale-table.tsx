@@ -162,6 +162,7 @@ export function SaleTable({
   const [editing, setEditing] = useState<SaleRow | null>(null);
   const [settleTarget, setSettleTarget] = useState<SaleListRow | null>(null);
   const [, startTransition] = useTransition();
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }); // KST 'YYYY-MM-DD'
 
   function openCreate() {
     setEditing(null);
@@ -300,6 +301,13 @@ export function SaleTable({
                     </TableCell>
                     <TableCell className="text-xs">
                       <div>{s.ordered_on}</div>
+                      {s.delivered_on ? (
+                        s.delivered_on > today ? (
+                          <div className="text-amber-600 dark:text-amber-400">예정 {s.delivered_on}</div>
+                        ) : (
+                          <div className="text-emerald-700 dark:text-emerald-400">납품 {s.delivered_on}</div>
+                        )
+                      ) : null}
                       {s.settled_on ? (
                         <div className="text-muted-foreground">수금 {s.settled_on}</div>
                       ) : null}
