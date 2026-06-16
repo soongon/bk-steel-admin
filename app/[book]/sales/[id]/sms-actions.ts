@@ -15,12 +15,13 @@ export async function sendStatementSms(
   imageDataUrl: string,
   toPhone: string,
   siteName?: string,
+  companyName?: string,
 ): Promise<SmsActionResult> {
   const base64 = imageDataUrl.split(",")[1] ?? "";
   if (!base64) return { ok: false, error: "명세서 이미지가 비어 있습니다." };
 
   const imageJpeg = Buffer.from(base64, "base64");
-  const text = `[SL철강] ${siteName ? siteName + " " : ""}거래명세서를 보내드립니다.`;
+  const text = `[${companyName || "신라철강"}] ${siteName ? siteName + " " : ""}거래명세서를 보내드립니다.`;
 
   const r = await sendMms({ to: toPhone, text, subject: "거래명세서", imageJpeg });
   if (!r.ok) return { ok: false, error: r.error };
