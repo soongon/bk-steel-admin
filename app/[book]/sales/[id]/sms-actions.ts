@@ -28,10 +28,16 @@ export async function sendStatementSms(
 
   // 전송 기록 — statement_sms_sent_on 컬럼이 있으면 기록(없어도 발송은 성공).
   const supabase = await createClient();
+  const today = new Date().toISOString().slice(0, 10);
+  // 문자 전송 = 실제 '명세표 송부' → 라이프사이클 statement_sent_on 을 최초 1회 기록
+  // (재전송이 날짜를 덮지 않도록 statement_sent_on 이 null 일 때만).
   await supabase
     .from("sale")
-    .update({ statement_sms_sent_on: new Date().toISOString().slice(0, 10) })
-    .eq("id", saleId);
+    .update({ statement_sent_on: today })
+    .eq("id", saleId)
+    .is("statement_sent_on", null);
+  // 문자 전송일 별도 기록(best-effort — 컬럼 없어도 발송은 성공).
+  await supabase.from("sale").update({ statement_sms_sent_on: today }).eq("id", saleId);
 
   return { ok: true };
 }

@@ -18,7 +18,6 @@ import { type StatementData } from "@/components/admin/trading-statement";
 import { type DeliveryCertificate } from "@/lib/delivery-certificate";
 import { type DeliveryCertData } from "@/components/admin/delivery-cert-form";
 import { StatementButton } from "./statement-button";
-import { SmsButton } from "./sms-button";
 import { DeliveryCertButton } from "./delivery-cert-button";
 import { SettleDialog, type BankAccount } from "../settle-dialog";
 import { markSaleDelivered, toggleSaleStatementSent, toggleSaleTaxInvoiceIssued } from "../actions";
@@ -152,13 +151,7 @@ export function SaleLifecyclePanel({
 
                 {s.key === "statement" ? (
                   <>
-                    <StatementButton data={statementData} company={company} />
-                    <SmsButton
-                      saleId={sale.id}
-                      data={statementData}
-                      company={company}
-                      defaultPhone={statementData.partner?.phone ?? null}
-                    />
+                    <StatementButton data={statementData} company={company} sms={{ saleId: sale.id }} />
                     <Button size="xs" variant={s.done ? "secondary" : "outline"} onClick={toggleStatement} disabled={pending}>
                       {s.done ? "송부 해제" : "송부 완료"}
                     </Button>
