@@ -63,7 +63,9 @@ export function SaleLifecyclePanel({
   const [pending, startTransition] = useTransition();
   const [settleOpen, setSettleOpen] = useState(false);
 
-  const delivered = ["delivered", "settled", "overdue"].includes(sale.status) || !!sale.delivered_on;
+  // 납품 done 은 status(상태머신) 기준만. delivered_on 은 '납품 예정일'로 입력될 수 있어
+  // (미납품 reserved 인데 예정일이 들어간 경우) done 판정에서 제외한다.
+  const delivered = ["delivered", "settled", "overdue"].includes(sale.status);
   const settled = sale.status === "settled" || !!sale.settled_on;
   const invoiceNA = !sale.is_documented || sale.tax_doc_type === "none"; // 무자료=계산서 해당없음
 

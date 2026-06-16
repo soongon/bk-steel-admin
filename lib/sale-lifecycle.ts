@@ -17,7 +17,8 @@ export type SaleLifecycleInput = {
  * 계산서 단계를 자동 완료(해당없음) 처리.
  */
 export function saleLifecycleProgress(s: SaleLifecycleInput): { done: number; total: number } {
-  const delivered = ["delivered", "settled", "overdue"].includes(s.status) || !!s.delivered_on;
+  // 납품 done 은 status 기준만 (delivered_on 은 예정일일 수 있어 제외 — panel 과 동일 기준).
+  const delivered = ["delivered", "settled", "overdue"].includes(s.status);
   const settled = s.status === "settled" || !!s.settled_on;
   const invoiceNA = !s.is_documented || s.tax_doc_type === "none";
   let done = 1; // 주문
