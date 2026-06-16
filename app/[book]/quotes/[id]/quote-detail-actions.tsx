@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
+import { QuoteDocument, type QuoteDocumentData } from "@/components/admin/quote-document";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { type Book } from "@/lib/book";
 import { markQuoteSent, deleteQuote } from "../actions";
@@ -28,7 +28,7 @@ export function QuoteDetailActions({
   quoteId: string;
   book: Book;
   status: string;
-  statementData: StatementData;
+  statementData: QuoteDocumentData;
   company: CompanyProfile | null;
 }) {
   const router = useRouter();
@@ -89,7 +89,7 @@ export function QuoteDetailActions({
             </DialogHeader>
             <div className="bg-zinc-100 p-3 print:bg-white print:p-0 dark:bg-zinc-900">
               <div className="mx-auto max-w-[800px] rounded bg-white p-6 text-zinc-900 shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
-                <TradingStatement data={statementData} company={company} mode="quote" />
+                <QuoteDocument data={statementData} company={company} />
               </div>
             </div>
             <DialogFooter className="print:hidden">

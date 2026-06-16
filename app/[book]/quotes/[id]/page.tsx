@@ -4,7 +4,7 @@ import { ArrowLeftIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { BookBadge } from "@/components/admin/book-badge";
 import { fmtKrw, fmtNum } from "@/lib/format";
-import { type StatementData } from "@/components/admin/trading-statement";
+import { type QuoteDocumentData } from "@/components/admin/quote-document";
 import { type CompanyProfile } from "@/lib/company-profile";
 import {
   Table,
@@ -65,7 +65,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
     };
   });
 
-  const statementData: StatementData = {
+  const statementData: QuoteDocumentData = {
     doc_no: q.doc_no,
     ordered_on: q.quote_date,
     tax_doc_no: null,
@@ -85,6 +85,9 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
     vat_krw: Number(q.vat_krw),
     total_krw: Number(q.total_krw),
     notes: q.notes,
+    valid_until: q.valid_until,
+    delivery_terms: q.delivery_terms,
+    payment_terms: q.payment_terms,
   };
 
   const st = STATUS_LABEL[q.status] ?? { label: q.status, cls: "" };

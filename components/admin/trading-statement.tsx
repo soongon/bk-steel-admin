@@ -39,8 +39,8 @@ export type StatementData = {
 const fmtKrw = (n: number) => Math.round(n).toLocaleString("ko-KR");
 const fmtKrwSym = (n: number) => `₩${fmtKrw(n)}`;
 
-/** 숫자 → 한글 금액 (예: 1956240 → 일백구십오만육천이백사십). 거래명세표 격식 표기. */
-function toKoreanAmount(n: number): string {
+/** 숫자 → 한글 금액 (예: 1956240 → 일백구십오만육천이백사십). 거래명세표·견적서 격식 표기. */
+export function toKoreanAmount(n: number): string {
   const num = Math.floor(Math.abs(n));
   if (num === 0) return "영";
   const digits = ["", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"];

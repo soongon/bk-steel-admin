@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { type Book } from "@/lib/book";
-import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
+import { QuoteDocument, type QuoteDocumentData } from "@/components/admin/quote-document";
 import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import { fmtKrw, fmtNum } from "@/lib/format";
 import { createQuote } from "@/app/[book]/quotes/actions";
@@ -178,7 +178,7 @@ export function QuoteDialog({
     }
   }, [open, defaultSiteName, defaultPartnerName]);
 
-  const statementData: StatementData | null = (() => {
+  const statementData: QuoteDocumentData | null = (() => {
     if (allLines.length === 0) return null;
     const stLines = allLines
       .map((l) => {
@@ -225,6 +225,9 @@ export function QuoteDialog({
       vat_krw: lineVatSum,
       total_krw: lineSubtotal + lineVatSum,
       notes: notes || null,
+      valid_until: validUntil || null,
+      delivery_terms: deliveryTerms || null,
+      payment_terms: paymentTerms || null,
     };
   })();
 
@@ -517,7 +520,7 @@ export function QuoteDialog({
             </DialogHeader>
             <div className="bg-zinc-100 p-3 print:bg-white print:p-0 dark:bg-zinc-900">
               <div className="mx-auto max-w-[800px] rounded bg-white p-6 text-zinc-900 shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
-                <TradingStatement data={statementData} company={company} mode="quote" />
+                <QuoteDocument data={statementData} company={company} />
               </div>
             </div>
             <DialogFooter className="print:hidden">
