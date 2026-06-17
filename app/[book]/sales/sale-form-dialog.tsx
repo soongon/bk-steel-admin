@@ -440,8 +440,8 @@ export function SaleFormDialog({
           {/* 신규일 때만: 품목 + 단위 + 수량 + 단가 */}
           {!editing ? (
             <>
-              <div className="grid grid-cols-[7rem_1fr] gap-3">
-                <Field label="구분 *">
+              <div className="grid grid-cols-[8.5rem_1fr] gap-3">
+                <Field label="품목 종류 *">
                   <div className="flex gap-1">
                     {(["rebar", "steel"] as const).map((k) => (
                       <button
