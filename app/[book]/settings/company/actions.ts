@@ -49,8 +49,8 @@ export async function updateCompanyProfile(
   const stampFile = formData.get("stamp_file");
   const stampClear = formData.get("stamp_clear") === "true";
   if (stampFile instanceof File && stampFile.size > 0) {
-    if (stampFile.size > 1024 * 1024) {
-      return { ok: false, error: "인감 이미지는 1MB 이하여야 합니다." };
+    if (stampFile.size > 4 * 1024 * 1024) {
+      return { ok: false, error: "인감 이미지는 4MB 이하여야 합니다." };
     }
     const ext = (stampFile.name.split(".").pop() ?? "png").toLowerCase();
     const rand = Math.random().toString(36).slice(2, 8);

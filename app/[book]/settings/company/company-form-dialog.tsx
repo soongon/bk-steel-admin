@@ -102,7 +102,7 @@ export function CompanyFormDialog({
           {/* 인감(직인) 이미지 — 거래명세표·납품확인서에 표시 */}
           <div className="rounded-md border-dashed border-2 border-zinc-300 p-3 dark:border-zinc-700">
             <p className="mb-2 text-xs font-medium text-muted-foreground">
-              인감(직인) 이미지 — 1MB 이하, PNG/JPG/WebP (배경 투명 PNG 권장)
+              인감(직인) 이미지 — 4MB 이하, PNG/JPG/WebP (배경 투명 PNG 권장)
             </p>
             <div className="flex items-center gap-3">
               {profile?.stamp_url ? (
