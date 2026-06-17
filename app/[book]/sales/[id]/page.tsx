@@ -11,10 +11,9 @@ import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
+import { SaleLineNameButton, type NameLine } from "./sale-line-name-button";
 import { type BankAccount } from "../settle-dialog";
 import { fmtKrw, fmtNum, formatBusinessNo, formatPhone } from "@/lib/format";
-import { type LineDraft, type DraftItem, type DraftRebarSpec } from "@/lib/transaction-draft";
-import { SaleLinesEditButton } from "./sale-lines-edit-button";
 
 const STATUS_KO: Record<string, string> = {
   reserved: "주문",
@@ -112,7 +111,7 @@ export default async function SaleDetailPage({
       site:site(id, code, name),
       receive_bank_account_id, receive_bank:bank_account!sale_receive_bank_account_id_fkey(code, bank_name),
       sale_line(
-        id, qty, unit, unit_price_krw, weight_kg, theoretical_weight_kg, line_subtotal_krw, notes,
+        id, qty, unit, unit_price_krw, weight_kg, theoretical_weight_kg, line_subtotal_krw, notes, display_name,
         item:item(id, name, code, rebar_spec_code, rebar_grade_code, length_m, category)
       )
     `,
@@ -150,31 +149,6 @@ export default async function SaleDetailPage({
     .is("deleted_at", null)
     .eq("is_active", true)
     .order("is_primary", { ascending: false });
-
-  // 품목 수정 모달용 — 마스터(품목·규격)와 기존 라인을 LineDraft 로 변환.
-  const [{ data: itemsData }, { data: rebarSpecsData }] = await Promise.all([
-    supabase
-      .from("item")
-      .select("id, name, category, rebar_spec_code, rebar_grade_code, length_m, bars_per_tonne")
-      .is("deleted_at", null)
-      .eq("is_active", true),
-    supabase.from("rebar_spec").select("spec_code, unit_weight_kg_per_m, standard_length_m"),
-  ]);
-  const editItems = (itemsData ?? []) as DraftItem[];
-  const editRebarSpecs = (rebarSpecsData ?? []) as DraftRebarSpec[];
-  const editLines: LineDraft[] = lines.map((line) => {
-    const it = line.item as { id: string; category?: string; rebar_spec_code?: string | null } | null;
-    const isReb = it?.category === "rebar" || !!it?.rebar_spec_code;
-    const u = line.unit;
-    return {
-      itemKind: isReb ? "rebar" : "steel",
-      itemId: it?.id ?? "",
-      unit: u === "ton" || u === "kg" ? u : "ea",
-      qty: Number(line.qty),
-      unitPrice: Number(line.unit_price_krw),
-      tonMetric: false,
-    };
-  });
 
   // 첨부 사진 fetch
   const { data: attsData } = await supabase
@@ -241,6 +215,7 @@ export default async function SaleDetailPage({
         vat_krw: vat,
         weight_kg: line.theoretical_weight_kg ?? line.weight_kg,
         note: line.notes ?? undefined,
+        display_name: (line.display_name ?? null) as string | null,
       };
     }),
     subtotal_krw: Number(sale.subtotal_krw),
@@ -248,6 +223,18 @@ export default async function SaleDetailPage({
     total_krw: Number(sale.total_krw),
     notes: sale.notes,
   };
+
+  // 거래명세표 품목명 라벨(보통 '철근') 수정용 — 철근 라인은 명세표에서 한 줄로 묶여 표기된다.
+  const nameLines: NameLine[] = lines.map((line) => {
+    const item = line.item;
+    const isRebar = item?.category === "rebar" && !!item?.rebar_spec_code;
+    return {
+      id: line.id as string,
+      isRebar,
+      defaultName: isRebar ? "철근" : (item?.name ?? "—"),
+      currentName: (line.display_name ?? null) as string | null,
+    };
+  });
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
@@ -289,14 +276,6 @@ export default async function SaleDetailPage({
             </Link>
           ) : null}
         </div>
-        {sale.status !== "settled" && sale.status !== "cancelled" ? (
-          <SaleLinesEditButton
-            saleId={sale.id}
-            initialLines={editLines}
-            items={editItems}
-            rebarSpecs={editRebarSpecs}
-          />
-        ) : null}
       </div>
 
       {/* 거래 라이프사이클 (주문→납품→명세표→계산서→수금→확인서) */}
@@ -404,7 +383,12 @@ export default async function SaleDetailPage({
 
       {/* 품목 테이블 (멀티라인) */}
       <section className="overflow-hidden rounded-lg border bg-card">
-        <div className="border-b px-4 py-2 text-sm font-medium">품목 ({statementData.lines.length}건)</div>
+        <div className="flex items-center justify-between border-b px-4 py-2">
+          <span className="text-sm font-medium">품목 ({statementData.lines.length}건)</span>
+          {sale.status !== "cancelled" ? (
+            <SaleLineNameButton saleId={sale.id} lines={nameLines} />
+          ) : null}
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-xs text-muted-foreground">

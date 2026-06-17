@@ -213,7 +213,7 @@ export async function updateSaleHeader(
   // 현재 상태·공급가 — 전이 검증 + 부가세 재계산 기준
   const { data: cur } = await supabase
     .from("sale")
-    .select("status, subtotal_krw, book")
+    .select("status, subtotal_krw")
     .eq("id", id)
     .single();
 
@@ -232,60 +232,6 @@ export async function updateSaleHeader(
 
   const isDocumented = str("is_documented") === "true";
   const taxDocType = str("tax_doc_type");
-  // 품목 라인 편집이 함께 오면(편집 폼에서 라인 수정) 헤더+라인 교체, 아니면 헤더만(기존 호환).
-  const linesRaw = str("lines");
-  if (linesRaw && cur) {
-    let parsed: Array<{ item_id: string; unit: string; qty: number; unit_price_krw: number; weight_kg: number | null }>;
-    try {
-      const raw = JSON.parse(linesRaw) as unknown[];
-      parsed = raw.map((l) => {
-        const o = l as Record<string, unknown>;
-        const w = o.weight_kg;
-        return {
-          item_id: String(o.item_id ?? ""),
-          unit: String(o.unit ?? ""),
-          qty: Number(o.qty) || 0,
-          unit_price_krw: Number(o.unit_price_krw) || 0,
-          weight_kg: w != null && w !== "" ? Number(w) : null,
-        };
-      });
-    } catch {
-      return { ok: false, error: "품목 데이터를 읽지 못했습니다." };
-    }
-    if (parsed.length === 0) return { ok: false, error: "품목을 1개 이상 추가해주세요." };
-    const rpcLines = parsed.map((l) => ({
-      ...l,
-      line_subtotal_krw: l.weight_kg
-        ? Math.round(l.unit_price_krw * l.weight_kg)
-        : Math.round(l.unit_price_krw * l.qty),
-    }));
-    const subtotalL = rpcLines.reduce((s, l) => s + l.line_subtotal_krw, 0);
-    const cv = computeVat(isDocumented, taxDocType, subtotalL);
-    const { error: rpcErr } = await supabase.rpc("update_sale_with_lines", {
-      p_sale_id: id,
-      p_sale: {
-        book: cur.book,
-        site_id: resolvedSiteId ?? "",
-        site_name: siteName ?? "",
-        delivered_on: str("delivered_on") || "",
-        is_documented: isDocumented,
-        tax_doc_type: taxDocType,
-        vat_type: cv.vatType,
-        vat_rate: cv.vatRate,
-        subtotal_krw: subtotalL,
-        vat_krw: cv.vat,
-        total_krw: cv.total,
-        payment_due_on: str("payment_due_on") || "",
-        status: newStatus,
-        notes: str("notes") || "",
-      },
-      p_lines: rpcLines,
-    });
-    if (rpcErr) return { ok: false, error: friendly(rpcErr.message) };
-    revalidateTransactionPaths("sales");
-    return { ok: true };
-  }
-
   const { vatType, vatRate, vat, total } = computeVat(
     isDocumented,
     taxDocType,
@@ -414,79 +360,20 @@ export async function toggleSaleTaxInvoiceIssued(id: string, done: boolean): Pro
 }
 
 /**
- * 품목 라인만 수정(매출 상세 '품목 수정' 모달) — 헤더는 유지하고 합계만 재계산해
- * update_sale_with_lines 로 라인 교체. 편집 폼은 건드리지 않아 회귀 위험이 낮음.
+ * 거래명세표 '품목명' 라벨 오버라이드 — 라인별 display_name 갱신(표시 전용).
+ * 보통 '철근'이지만 거래처가 '철근(현대철강)' 식 표기를 원할 때 사용. 빈 값이면 기본으로 복귀(null).
+ * 수량·단가·금액·상태 불변이라 표시명만 다루는 set_sale_line_display_names RPC 경유.
  */
-export async function updateSaleLines(formData: FormData): Promise<SaleActionResult> {
-  const str = (k: string) => {
-    const v = formData.get(k);
-    return typeof v === "string" ? v.trim() : "";
-  };
-  const saleId = str("sale_id");
-  if (!saleId) return { ok: false, error: "매출을 찾을 수 없습니다." };
-
-  let parsed: Array<{ item_id: string; unit: string; qty: number; unit_price_krw: number; weight_kg: number | null }>;
-  try {
-    const raw = JSON.parse(str("lines") || "[]") as unknown[];
-    parsed = raw.map((l) => {
-      const o = l as Record<string, unknown>;
-      const w = o.weight_kg;
-      return {
-        item_id: String(o.item_id ?? ""),
-        unit: String(o.unit ?? ""),
-        qty: Number(o.qty) || 0,
-        unit_price_krw: Number(o.unit_price_krw) || 0,
-        weight_kg: w != null && w !== "" ? Number(w) : null,
-      };
-    });
-  } catch {
-    return { ok: false, error: "품목 데이터를 읽지 못했습니다." };
-  }
-  if (parsed.length === 0) return { ok: false, error: "품목을 1개 이상 남겨주세요." };
-  for (const l of parsed) {
-    if (l.qty <= 0) return { ok: false, error: "수량을 입력해주세요." };
-    if (l.unit_price_krw <= 0) return { ok: false, error: "단가를 입력해주세요." };
-  }
-
+export async function updateSaleLineDisplayNames(
+  saleId: string,
+  updates: { id: string; display_name: string | null }[],
+): Promise<SaleActionResult> {
   const supabase = await createClient();
-  const { data: sale } = await supabase
-    .from("sale")
-    .select("book, site_id, site_name, delivered_on, is_documented, tax_doc_type, payment_due_on, status, notes")
-    .eq("id", saleId)
-    .is("deleted_at", null)
-    .single();
-  if (!sale) return { ok: false, error: "매출을 찾을 수 없습니다." };
-
-  const rpcLines = parsed.map((l) => ({
-    ...l,
-    line_subtotal_krw: l.weight_kg
-      ? Math.round(l.unit_price_krw * l.weight_kg)
-      : Math.round(l.unit_price_krw * l.qty),
-  }));
-  const subtotal = rpcLines.reduce((s, l) => s + l.line_subtotal_krw, 0);
-  const { vatType, vatRate, vat, total } = computeVat(sale.is_documented, sale.tax_doc_type, subtotal);
-
-  const { error: rpcErr } = await supabase.rpc("update_sale_with_lines", {
+  const { error } = await supabase.rpc("set_sale_line_display_names", {
     p_sale_id: saleId,
-    p_sale: {
-      book: sale.book,
-      site_id: sale.site_id ?? "",
-      site_name: sale.site_name ?? "",
-      delivered_on: sale.delivered_on ?? "",
-      is_documented: sale.is_documented,
-      tax_doc_type: sale.tax_doc_type,
-      vat_type: vatType,
-      vat_rate: vatRate,
-      subtotal_krw: subtotal,
-      vat_krw: vat,
-      total_krw: total,
-      payment_due_on: sale.payment_due_on ?? "",
-      status: sale.status,
-      notes: sale.notes ?? "",
-    },
-    p_lines: rpcLines,
+    p_updates: updates,
   });
-  if (rpcErr) return { ok: false, error: friendly(rpcErr.message) };
+  if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("sales");
   return { ok: true };
 }

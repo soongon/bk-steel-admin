@@ -12,6 +12,7 @@ export type StatementLine = {
   weight_kg?: number | null;
   note?: string;
   ordered_on?: string;  // 누적 명세표에서 라인별 날짜 표시용 (단건은 헤더의 ordered_on 사용)
+  display_name?: string | null;  // 품목명 라벨 오버라이드(예: 철근→철근(현대철강)). 없으면 기본(철근/품목명).
 };
 
 export type StatementData = {
@@ -284,7 +285,11 @@ function StatementCopy({
                     : ""}
                 </td>
                 <td className={`border ${baseClass} px-1 py-0.5`}>
-                  {line.spec ? (i === firstRebarIdx ? "철근" : "") : line.item_name}
+                  {line.spec
+                    ? i === firstRebarIdx
+                      ? line.display_name ?? "철근"
+                      : ""
+                    : line.display_name ?? line.item_name}
                 </td>
                 <td className={`border ${baseClass} px-1 py-0.5 text-center text-xs`}>
                   {line.spec}
