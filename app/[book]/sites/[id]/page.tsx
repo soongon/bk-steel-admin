@@ -230,6 +230,7 @@ export default async function SiteDetailPage({
               rebarSpecs: (rebarSpecsRes.data ?? []) as QuoteRebarSpec[],
               company: quoteCompany,
             }}
+            book={view}
             defaultSiteName={site.name}
           />
           <BookBadge book={view} size="md" />
