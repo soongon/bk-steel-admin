@@ -88,7 +88,7 @@ export function QuoteDialog({
 }) {
   const { partners, items, rebarSpecs } = sources;
   const saveMode = book !== undefined; // 저장 모드(견적 메뉴) vs 미리보기(현장 진입)
-  const [selectedBook, setSelectedBook] = useState<Book | "">(book && book !== "all" ? book : "");
+  const [selectedBook, setSelectedBook] = useState<Book | "">(book && book !== "all" ? book : "sl");
   // 미리보기·출력 공급자: 선택 책 우선, 없으면 단일 진입 company.
   const company = sources.companies?.[selectedBook as Book] ?? sources.company ?? null;
   const [error, setError] = useState<string | null>(null);
@@ -154,7 +154,7 @@ export function QuoteDialog({
       setSiteName(defaultSiteName);
       setPartnerInput(defaultPartnerName);
       setVatExempt(false);
-      setSelectedBook(book && book !== "all" ? book : "");
+      setSelectedBook(book && book !== "all" ? book : "sl");
       setValidUntil("");
       setDeliveryTerms("");
       setPaymentTerms("");
