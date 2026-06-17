@@ -19,7 +19,8 @@ export default async function CompanySettingsPage() {
       <CompanyCards profiles={profiles} />
 
       <div className="rounded-md border-dashed border-2 border-zinc-300 p-3 text-xs text-muted-foreground dark:border-zinc-700">
-        💡 인감 이미지 업로드 기능은 v1.1에서 추가 예정. 현재는 텍스트 정보만 관리.
+        💡 각 책 카드의 <strong>편집</strong>에서 인감(직인) 이미지(1MB 이하 PNG/JPG/WebP, 배경 투명 PNG 권장)를
+        업로드하면 거래명세표·견적서·납품확인서의 공급자 직인에 자동 적용됩니다. 법인·사업자는 각각 별도 등록.
       </div>
     </div>
   );
