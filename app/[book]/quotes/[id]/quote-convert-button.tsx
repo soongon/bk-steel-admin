@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRightLeftIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -27,6 +28,8 @@ export function QuoteConvertButton({
   quoteId,
   book,
   status,
+  saleId,
+  saleDocNo,
   partnerName,
   partners,
   isDocumented,
@@ -34,6 +37,8 @@ export function QuoteConvertButton({
   quoteId: string;
   book: Book;
   status: string;
+  saleId: string | null; // 수주 전환된 매출(있으면) — won 상태에서 매출 링크 표기
+  saleDocNo: string | null;
   partnerName: string | null; // 견적의 거래처(있으면 고정)
   partners: { id: string; name: string }[]; // 없을 때 선택 후보
   isDocumented: boolean;
@@ -52,7 +57,17 @@ export function QuoteConvertButton({
   const [error, setError] = useState<string | null>(null);
 
   if (status === "won") {
-    return <span className="text-xs font-medium text-emerald-600">수주 전환됨</span>;
+    return saleId ? (
+      <Link
+        href={`/${book}/sales/${saleId}`}
+        className="inline-flex h-8 items-center gap-1 rounded-md bg-emerald-50 px-2.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300"
+        title="이 견적이 전환된 매출"
+      >
+        <ArrowRightLeftIcon className="size-3.5" /> 매출 {saleDocNo}
+      </Link>
+    ) : (
+      <span className="text-xs font-medium text-emerald-600">수주 전환됨</span>
+    );
   }
 
   // 세금 옵션 — 매출 폼과 동일 책별 정책.

@@ -45,6 +45,18 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
   const company = (companyRes.data ?? null) as CompanyProfile | null;
   const partners = (partnersRes.data ?? []) as { id: string; name: string }[];
 
+  // 수주 전환된 매출(있으면) — 견적→매출 정방향 링크.
+  let convertedSale: { id: string; doc_no: string } | null = null;
+  if (q.status === "won") {
+    const { data: cs } = await supabase
+      .from("sale")
+      .select("id, doc_no")
+      .eq("source_quote_id", id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    convertedSale = cs;
+  }
+
   const lines = (q.lines ?? []) as Record<string, any>[];
   const vatRate = Number(q.vat_rate);
 
@@ -122,6 +134,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
             quoteId={q.id}
             book={q.book}
             status={q.status}
+            saleId={convertedSale?.id ?? null}
+            saleDocNo={convertedSale?.doc_no ?? null}
             partnerName={q.partner?.name ?? null}
             partners={partners}
             isDocumented={q.is_documented}
