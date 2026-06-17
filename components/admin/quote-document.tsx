@@ -97,11 +97,11 @@ export function QuoteDocument({
             <SupplyRow
               label="대표자"
               value={
-                <span className="inline-flex items-center gap-1">
+                <span className="relative inline-flex items-center gap-1 pr-1">
                   {company.representative}
                   {company.stamp_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={company.stamp_url} alt="인" className="inline-block h-9 w-9 object-contain" />
+                    <img src={company.stamp_url} alt="인" className="pointer-events-none absolute left-full top-1/2 -ml-2 size-9 -translate-y-1/2 object-contain" />
                   ) : (
                     <span className="text-[10px] text-zinc-400">(인)</span>
                   )}
