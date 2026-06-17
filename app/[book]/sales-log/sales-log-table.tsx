@@ -20,6 +20,7 @@ import {
   type SalesLogPrefill,
   type PartnerOption,
 } from "./sales-log-form-dialog";
+import { QuoteButton, type QuoteSources } from "@/components/admin/quote-dialog";
 import { deleteSalesLog } from "./actions";
 
 type Row = SalesLogRow & {
@@ -30,10 +31,12 @@ export function SalesLogTable({
   rows,
   partners,
   prefill,
+  quoteSources,
 }: {
   rows: Row[];
   partners: PartnerOption[];
   prefill?: SalesLogPrefill | null;
+  quoteSources: QuoteSources;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -119,7 +122,7 @@ export function SalesLogTable({
               <TableHead className="w-20">채널</TableHead>
               <TableHead>결과</TableHead>
               <TableHead className="w-32">후속 조치</TableHead>
-              <TableHead className="w-20 text-right">액션</TableHead>
+              <TableHead className="w-36 text-right">액션</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -167,6 +170,13 @@ export function SalesLogTable({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
+                      <QuoteButton
+                        sources={quoteSources}
+                        book="all"
+                        defaultPartnerName={r.partner?.name ?? r.prospect_name ?? ""}
+                        label="견적"
+                        variant="outline"
+                      />
                       <Button size="icon-xs" variant="ghost" onClick={() => openEdit(r)} aria-label="수정">
                         <PencilIcon />
                       </Button>
