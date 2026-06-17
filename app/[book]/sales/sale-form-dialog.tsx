@@ -254,7 +254,9 @@ export function SaleFormDialog({
   // 거래명세표 공급자(우리) — B 책은 SL 정보로 발행.
   const company = companies.find((c) => c.book === (book === "b" ? "sl" : book)) ?? null;
   const statementData: StatementData | null = (() => {
-    if (!matchedPartner || allLines.length === 0) return null;
+    // 거래처가 미등록(자동 생성 예정)이어도 이름만 있으면 미리보기 가능.
+    const partnerNameForView = matchedPartner?.name ?? partnerInput.trim();
+    if (!partnerNameForView || allLines.length === 0) return null;
     const stLines = buildStatementLines(items, rebarSpecs, allLines, vatRate);
     const lineVatSum = stLines.reduce((s, ln) => s + ln.vat_krw, 0);
     return {
@@ -262,13 +264,13 @@ export function SaleFormDialog({
       ordered_on: orderedOn,
       tax_doc_no: null,
       partner: {
-        name: matchedPartner.name,
-        business_no: matchedPartner.business_no ?? null,
-        representative: matchedPartner.representative ?? null,
-        address: matchedPartner.address ?? null,
-        phone: matchedPartner.phone ?? null,
-        fax: matchedPartner.fax ?? null,
-        industry: matchedPartner.industry ?? null,
+        name: partnerNameForView,
+        business_no: matchedPartner?.business_no ?? null,
+        representative: matchedPartner?.representative ?? null,
+        address: matchedPartner?.address ?? null,
+        phone: matchedPartner?.phone ?? null,
+        fax: matchedPartner?.fax ?? null,
+        industry: matchedPartner?.industry ?? null,
       },
       site_name: siteName || null,
       is_documented: isDocumented,
@@ -307,7 +309,9 @@ export function SaleFormDialog({
     if (matchedSite) fd.set("site_id", matchedSite.id);
     fd.set("notes", notes);
     if (!editing) {
-      fd.set("partner_id", matchedPartner!.id);
+      // 거래처: 마스터 매칭되면 id, 아니면 이름만 — 서버(resolvePartnerId)가 없으면 자동 생성.
+      if (matchedPartner) fd.set("partner_id", matchedPartner.id);
+      fd.set("partner_name", partnerInput.trim());
       // 모든 라인(추가분 + 현재 입력) — 철근은 환산 중량 동봉.
       fd.set("lines", serializeLines(items, rebarSpecs, allLines));
     }
@@ -335,8 +339,8 @@ export function SaleFormDialog({
     e.preventDefault();
     setError(null);
     if (!editing) {
-      if (!matchedPartner) {
-        setError("거래처는 마스터에 등록된 이름을 정확히 선택해주세요.");
+      if (!partnerInput.trim()) {
+        setError("거래처를 입력해주세요.");
         return;
       }
       if (allLines.length === 0) {
@@ -395,8 +399,8 @@ export function SaleFormDialog({
                 ))}
               </datalist>
               {!editing && partnerInput && !matchedPartner ? (
-                <p className="mt-0.5 text-xs text-amber-600">
-                  마스터에 없는 거래처입니다 — 먼저 거래처 페이지에서 등록하세요
+                <p className="mt-0.5 text-[10px] text-amber-600">
+                  미등록 거래처 — 저장 시 자동 생성됩니다
                 </p>
               ) : null}
             </Field>
