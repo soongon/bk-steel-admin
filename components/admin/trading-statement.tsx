@@ -225,7 +225,7 @@ function StatementCopy({
                       <img
                         src={company.stamp_url}
                         alt="인"
-                        className="inline-block h-6 w-6 object-contain"
+                        className="inline-block h-9 w-9 object-contain"
                       />
                     ) : (
                       <span className="text-[10px]">(인)</span>

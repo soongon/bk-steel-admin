@@ -101,7 +101,7 @@ export function QuoteDocument({
                   {company.representative}
                   {company.stamp_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={company.stamp_url} alt="인" className="inline-block h-6 w-6 object-contain" />
+                    <img src={company.stamp_url} alt="인" className="inline-block h-9 w-9 object-contain" />
                   ) : (
                     <span className="text-[10px] text-zinc-400">(인)</span>
                   )}
@@ -220,7 +220,7 @@ export function QuoteDocument({
           <span className="font-semibold">{company.name}</span>
           {company.stamp_url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={company.stamp_url} alt="인" className="inline-block h-8 w-8 object-contain" />
+            <img src={company.stamp_url} alt="인" className="inline-block h-12 w-12 object-contain" />
           ) : (
             <span className="text-xs text-zinc-400">(직인)</span>
           )}
