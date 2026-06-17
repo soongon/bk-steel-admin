@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { QuoteDetailActions } from "./quote-detail-actions";
+import { QuoteConvertButton } from "./quote-convert-button";
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   draft: { label: "작성", cls: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300" },
@@ -37,8 +38,12 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
   // 단일 FK 조인은 런타임에 object — 타입 추론(배열) 우회.
   const q = data as unknown as Record<string, any>;
 
-  const companyRes = await supabase.from("company_profile").select("*").eq("book", q.book).maybeSingle();
+  const [companyRes, partnersRes] = await Promise.all([
+    supabase.from("company_profile").select("*").eq("book", q.book).maybeSingle(),
+    supabase.from("partner").select("id, name").is("deleted_at", null).eq("is_active", true).order("name"),
+  ]);
   const company = (companyRes.data ?? null) as CompanyProfile | null;
+  const partners = (partnersRes.data ?? []) as { id: string; name: string }[];
 
   const lines = (q.lines ?? []) as Record<string, any>[];
   const vatRate = Number(q.vat_rate);
@@ -111,8 +116,16 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
             {q.site_name ? ` · ${q.site_name}` : ""}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <BookBadge book={q.book} size="md" />
+          <QuoteConvertButton
+            quoteId={q.id}
+            book={q.book}
+            status={q.status}
+            partnerName={q.partner?.name ?? null}
+            partners={partners}
+            isDocumented={q.is_documented}
+          />
           <QuoteDetailActions
             quoteId={q.id}
             book={q.book}

@@ -163,3 +163,50 @@ export async function deleteQuote(id: string, book: string): Promise<QuoteAction
   revalidatePath(`/${book}/quotes`);
   return { ok: true };
 }
+
+/** sale 문서번호 — {YYYYMMDD}-NNN. race 는 UNIQUE 로 catch. */
+async function generateSaleDocNo(orderedOn: string): Promise<string> {
+  const supabase = await createClient();
+  const datePart = orderedOn.replace(/-/g, "");
+  const { count } = await supabase
+    .from("sale")
+    .select("id", { count: "exact", head: true })
+    .like("doc_no", `${datePart}-%`);
+  return `${datePart}-${String((count ?? 0) + 1).padStart(3, "0")}`;
+}
+
+/**
+ * 견적 → 수주(매출) 전환. convert_quote_to_sale RPC(원자적) — sale 생성·라인 복사·quote.status='won'.
+ * 거래처는 견적에 있으면 그대로, 없으면 overrides.partner_id 필수. 금액·자료성(is_documented·vat)은 견적 복사.
+ */
+export async function convertQuoteToSale(
+  formData: FormData,
+): Promise<{ ok: true; saleId: string } | { ok: false; error: string }> {
+  const str = (k: string) => (formData.get(k) as string | null)?.trim() ?? "";
+  const quoteId = str("quote_id");
+  if (!quoteId) return { ok: false, error: "견적을 찾을 수 없습니다." };
+  const book = str("book");
+  const orderedOn =
+    str("ordered_on") || new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+  const docNo = await generateSaleDocNo(orderedOn);
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("convert_quote_to_sale", {
+    p_quote_id: quoteId,
+    p_overrides: {
+      doc_no: docNo,
+      partner_id: str("partner_id") || "",
+      tax_doc_type: str("tax_doc_type") || "tax_invoice_electronic",
+      ordered_on: orderedOn,
+      delivered_on: str("delivered_on") || "",
+      payment_due_on: str("payment_due_on") || "",
+      status: str("status") || "reserved",
+    },
+  });
+  if (error) return { ok: false, error: friendly(error.message) };
+  if (book) {
+    revalidatePath(`/${book}/quotes`);
+    revalidatePath(`/${book}/sales`);
+  }
+  return { ok: true, saleId: data as string };
+}
