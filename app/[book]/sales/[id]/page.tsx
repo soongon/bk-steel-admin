@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, FileTextIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { type Book } from "@/lib/book";
 import { buttonVariants } from "@/components/ui/button";
@@ -105,7 +105,7 @@ export default async function SaleDetailPage({
       id, book, doc_no, ordered_on, delivered_on, status,
       subtotal_krw, vat_krw, total_krw, vat_rate, site_name, site_id, partner_id, is_documented,
       tax_doc_type, tax_doc_no, payment_due_on, settled_on, notes, delivery_cert_id,
-      statement_sent_on, tax_invoice_issued_on,
+      statement_sent_on, tax_invoice_issued_on, source_quote_id,
       partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email),
       site:site(id, code, name),
       receive_bank_account_id, receive_bank:bank_account!sale_receive_bank_account_id_fkey(code, bank_name),
@@ -122,6 +122,16 @@ export default async function SaleDetailPage({
   if (error || !sale) notFound();
 
   const book = sale.book as Book;
+  // 견적 출처(수주 전환) — source_quote_id 있으면 견적 doc_no 역참조해 링크 표기.
+  let sourceQuote: { id: string; doc_no: string } | null = null;
+  if ((sale as any).source_quote_id) {
+    const { data: sq } = await supabase
+      .from("quote")
+      .select("id, doc_no")
+      .eq("id", (sale as any).source_quote_id)
+      .maybeSingle();
+    sourceQuote = sq;
+  }
   const partner = sale.partner as any;
   const site = (sale as any).site as { id: string; code: string; name: string } | null;
   const lines = (sale.sale_line ?? []) as any[];
@@ -241,6 +251,15 @@ export default async function SaleDetailPage({
             <span className="inline-flex h-5 items-center rounded-full bg-amber-100 px-2 text-xs text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
               무자료
             </span>
+          ) : null}
+          {sourceQuote ? (
+            <Link
+              href={`/${book}/quotes/${sourceQuote.id}`}
+              className="inline-flex h-5 items-center gap-1 rounded-full bg-blue-50 px-2 text-xs text-blue-700 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300"
+              title="이 매출의 견적 출처"
+            >
+              <FileTextIcon className="size-3" /> 견적 {sourceQuote.doc_no}
+            </Link>
           ) : null}
         </div>
       </div>
