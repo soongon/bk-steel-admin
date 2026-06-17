@@ -18,6 +18,13 @@ import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
 import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
 import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
+import {
+  type LineDraft,
+  UNIT_OPTIONS,
+  calcLineDraft,
+  buildStatementLines,
+  serializeLines,
+} from "@/lib/transaction-draft";
 import { fmtKrw, fmtNum } from "@/lib/format";
 import { TAX_DOC_OPTIONS } from "@/lib/tax-doc";
 import { createSale, updateSaleHeader } from "./actions";
@@ -85,23 +92,7 @@ const STATUS_NEXT: Record<string, string[]> = {
   cancelled: [],
 };
 
-const UNIT_OPTIONS = [
-  { value: "ea", label: "가닥/EA" },
-  { value: "kg", label: "kg" },
-  { value: "ton", label: "톤 (이론중량)" },
-  { value: "ton_metric", label: "톤 (1,000kg)" },
-] as const;
-
 export type SiteOption = { id: string; name: string };
-
-type LineDraft = {
-  itemKind: "rebar" | "steel";
-  itemId: string;
-  unit: "ea" | "kg" | "ton";
-  qty: number;
-  unitPrice: number;
-  tonMetric: boolean;
-};
 
 export function SaleFormDialog({
   open,
@@ -193,15 +184,8 @@ export function SaleFormDialog({
     [rebarSpec, selectedItem, unit, qty, unitPrice, tonMetric],
   );
 
-  // 라인 → 품목·환산·공급가 (목록·명세서·합계 공용)
-  const calcLine = (l: LineDraft) => {
-    const lineItem = items.find((i) => i.id === l.itemId) ?? null;
-    const lineSpec = lineItem?.rebar_spec_code
-      ? rebarSpecs.find((s) => s.spec_code === lineItem.rebar_spec_code) ?? null
-      : null;
-    const c = lineItem && lineSpec ? calculateRebarWeight(lineItem, lineSpec, l.unit, l.qty, l.unitPrice, l.tonMetric, true) : null;
-    return { item: lineItem, calc: c, subtotal: c ? c.subtotal : Math.round(l.unitPrice * l.qty) };
-  };
+  // 라인 → 품목·환산·공급가 (공통 코어). 목록·명세서·합계 공용.
+  const calcLine = (l: LineDraft) => calcLineDraft(items, rebarSpecs, l);
 
   // 현재 입력이 유효하면 임시 라인으로 포함(추가 버튼 안 눌러도 마지막 1건 반영)
   const pendingLine: LineDraft | null =
@@ -271,32 +255,7 @@ export function SaleFormDialog({
   const company = companies.find((c) => c.book === (book === "b" ? "sl" : book)) ?? null;
   const statementData: StatementData | null = (() => {
     if (!matchedPartner || allLines.length === 0) return null;
-    const stLines = allLines
-      .map((l) => {
-        const { item: lineItem, calc: c } = calcLine(l);
-        if (!lineItem) return null;
-        const isReb = !!lineItem.rebar_spec_code && !!c;
-        const spec = isReb
-          ? [lineItem.rebar_spec_code, lineItem.rebar_grade_code, lineItem.length_m ? `${lineItem.length_m}M` : null]
-              .filter(Boolean)
-              .join(" ")
-          : "";
-        // 수량·단위는 입력 그대로(톤이면 '톤'). 단가는 입력단위당으로 환산해 수량×단가=공급가 정합 유지.
-        // 철근 실제 이론중량(kg)은 비고란에 보조 표기.
-        const sub = c ? c.subtotal : Math.round(l.unitPrice * l.qty);
-        const unitLabel = l.unit === "ton" ? "톤" : l.unit === "kg" ? "kg" : "EA";
-        return {
-          item_name: lineItem.name,
-          spec,
-          qty: l.qty,
-          unit: unitLabel,
-          unit_price_krw: l.qty > 0 ? Math.round(sub / l.qty) : l.unitPrice,
-          subtotal_krw: sub,
-          vat_krw: vatRate > 0 ? Math.round((sub * vatRate) / 100) : 0,
-          weight_kg: isReb && c ? c.weightKg : null,
-        };
-      })
-      .filter((x): x is NonNullable<typeof x> => x !== null);
+    const stLines = buildStatementLines(items, rebarSpecs, allLines, vatRate);
     const lineVatSum = stLines.reduce((s, ln) => s + ln.vat_krw, 0);
     return {
       doc_no: "(미발급)",
@@ -350,21 +309,7 @@ export function SaleFormDialog({
     if (!editing) {
       fd.set("partner_id", matchedPartner!.id);
       // 모든 라인(추가분 + 현재 입력) — 철근은 환산 중량 동봉.
-      fd.set(
-        "lines",
-        JSON.stringify(
-          allLines.map((l) => {
-            const { calc: c } = calcLine(l);
-            return {
-              item_id: l.itemId,
-              unit: l.unit,
-              qty: l.qty,
-              unit_price_krw: l.unitPrice,
-              weight_kg: c ? c.weightKg : null,
-            };
-          }),
-        ),
-      );
+      fd.set("lines", serializeLines(items, rebarSpecs, allLines));
     }
     return fd;
   }

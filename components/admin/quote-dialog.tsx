@@ -17,6 +17,13 @@ import { type CompanyProfile } from "@/lib/company-profile";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { QuoteDocument, type QuoteDocumentData } from "@/components/admin/quote-document";
 import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
+import {
+  type LineDraft,
+  UNIT_OPTIONS,
+  calcLineDraft,
+  buildStatementLines,
+  serializeLines,
+} from "@/lib/transaction-draft";
 import { fmtKrw, fmtNum } from "@/lib/format";
 import { createQuote } from "@/app/[book]/quotes/actions";
 
@@ -54,22 +61,6 @@ export type QuoteSources = {
   rebarSpecs: QuoteRebarSpec[];
   company?: CompanyProfile | null; // 단일 책 진입(현장 등) 공급자
   companies?: Partial<Record<Book, CompanyProfile>>; // 책 선택 진입(견적 메뉴) — 선택 책별 공급자
-};
-
-const UNIT_OPTIONS = [
-  { value: "ea", label: "가닥/EA" },
-  { value: "kg", label: "kg" },
-  { value: "ton", label: "톤 (이론중량)" },
-  { value: "ton_metric", label: "톤 (1,000kg)" },
-] as const;
-
-type LineDraft = {
-  itemKind: "rebar" | "steel";
-  itemId: string;
-  unit: "ea" | "kg" | "ton";
-  qty: number;
-  unitPrice: number;
-  tonMetric: boolean;
 };
 
 /**
@@ -144,14 +135,7 @@ export function QuoteDialog({
     [rebarSpec, selectedItem, unit, qty, unitPrice, tonMetric],
   );
 
-  const calcLine = (l: LineDraft) => {
-    const lineItem = items.find((i) => i.id === l.itemId) ?? null;
-    const lineSpec = lineItem?.rebar_spec_code
-      ? rebarSpecs.find((s) => s.spec_code === lineItem.rebar_spec_code) ?? null
-      : null;
-    const c = lineItem && lineSpec ? calculateRebarWeight(lineItem, lineSpec, l.unit, l.qty, l.unitPrice, l.tonMetric, true) : null;
-    return { item: lineItem, calc: c, subtotal: c ? c.subtotal : Math.round(l.unitPrice * l.qty) };
-  };
+  const calcLine = (l: LineDraft) => calcLineDraft(items, rebarSpecs, l);
 
   const pendingLine: LineDraft | null =
     itemId && qty > 0 && unitPrice > 0 ? { itemKind, itemId, unit, qty, unitPrice, tonMetric } : null;
@@ -186,30 +170,7 @@ export function QuoteDialog({
 
   const statementData: QuoteDocumentData | null = (() => {
     if (allLines.length === 0) return null;
-    const stLines = allLines
-      .map((l) => {
-        const { item: lineItem, calc: c } = calcLine(l);
-        if (!lineItem) return null;
-        const isReb = !!lineItem.rebar_spec_code && !!c;
-        const spec = isReb
-          ? [lineItem.rebar_spec_code, lineItem.rebar_grade_code, lineItem.length_m ? `${lineItem.length_m}M` : null]
-              .filter(Boolean)
-              .join(" ")
-          : "";
-        const sub = c ? c.subtotal : Math.round(l.unitPrice * l.qty);
-        const unitLabel = l.unit === "ton" ? "톤" : l.unit === "kg" ? "kg" : "EA";
-        return {
-          item_name: lineItem.name,
-          spec,
-          qty: l.qty,
-          unit: unitLabel,
-          unit_price_krw: l.qty > 0 ? Math.round(sub / l.qty) : l.unitPrice,
-          subtotal_krw: sub,
-          vat_krw: Math.round((sub * vatRate) / 100),
-          weight_kg: isReb && c ? c.weightKg : null,
-        };
-      })
-      .filter((x): x is NonNullable<typeof x> => x !== null);
+    const stLines = buildStatementLines(items, rebarSpecs, allLines, vatRate);
     const lineVatSum = stLines.reduce((s, ln) => s + ln.vat_krw, 0);
     return {
       doc_no: `견적-${today.replace(/-/g, "")}`,
@@ -282,21 +243,7 @@ export function QuoteDialog({
     if (deliveryTerms) fd.set("delivery_terms", deliveryTerms);
     if (paymentTerms) fd.set("payment_terms", paymentTerms);
     if (notes) fd.set("notes", notes);
-    fd.set(
-      "lines",
-      JSON.stringify(
-        allLines.map((l) => {
-          const { calc: c } = calcLine(l);
-          return {
-            item_id: l.itemId,
-            unit: l.unit,
-            qty: l.qty,
-            unit_price_krw: l.unitPrice,
-            weight_kg: c?.weightKg ?? null,
-          };
-        }),
-      ),
-    );
+    fd.set("lines", serializeLines(items, rebarSpecs, allLines));
     startSaving(async () => {
       const r = await createQuote(fd);
       if (r.ok) {
