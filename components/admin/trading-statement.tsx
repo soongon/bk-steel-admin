@@ -225,7 +225,7 @@ function StatementCopy({
                       <img
                         src={company.stamp_url}
                         alt="인"
-                        className="pointer-events-none absolute left-full top-1/2 -ml-2 size-9 -translate-y-1/2 object-contain"
+                        className="pointer-events-none absolute left-full top-1/2 ml-1 size-9 -translate-y-1/2 object-contain"
                       />
                     ) : (
                       <span className="text-[10px]">(인)</span>

@@ -101,7 +101,7 @@ export function QuoteDocument({
                   {company.representative}
                   {company.stamp_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={company.stamp_url} alt="인" className="pointer-events-none absolute left-full top-1/2 -ml-2 size-9 -translate-y-1/2 object-contain" />
+                    <img src={company.stamp_url} alt="인" className="pointer-events-none absolute left-full top-1/2 ml-1 size-9 -translate-y-1/2 object-contain" />
                   ) : (
                     <span className="text-[10px] text-zinc-400">(인)</span>
                   )}
