@@ -13,6 +13,8 @@ import { AttachmentGallery } from "@/components/admin/attachments/attachment-gal
 import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
 import { type BankAccount } from "../settle-dialog";
 import { fmtKrw, fmtNum, formatBusinessNo, formatPhone } from "@/lib/format";
+import { type LineDraft, type DraftItem, type DraftRebarSpec } from "@/lib/transaction-draft";
+import { SaleLinesEditButton } from "./sale-lines-edit-button";
 
 const STATUS_KO: Record<string, string> = {
   reserved: "주문",
@@ -149,6 +151,31 @@ export default async function SaleDetailPage({
     .eq("is_active", true)
     .order("is_primary", { ascending: false });
 
+  // 품목 수정 모달용 — 마스터(품목·규격)와 기존 라인을 LineDraft 로 변환.
+  const [{ data: itemsData }, { data: rebarSpecsData }] = await Promise.all([
+    supabase
+      .from("item")
+      .select("id, name, category, rebar_spec_code, rebar_grade_code, length_m, bars_per_tonne")
+      .is("deleted_at", null)
+      .eq("is_active", true),
+    supabase.from("rebar_spec").select("spec_code, unit_weight_kg_per_m, standard_length_m"),
+  ]);
+  const editItems = (itemsData ?? []) as DraftItem[];
+  const editRebarSpecs = (rebarSpecsData ?? []) as DraftRebarSpec[];
+  const editLines: LineDraft[] = lines.map((line) => {
+    const it = line.item as { id: string; category?: string; rebar_spec_code?: string | null } | null;
+    const isReb = it?.category === "rebar" || !!it?.rebar_spec_code;
+    const u = line.unit;
+    return {
+      itemKind: isReb ? "rebar" : "steel",
+      itemId: it?.id ?? "",
+      unit: u === "ton" || u === "kg" ? u : "ea",
+      qty: Number(line.qty),
+      unitPrice: Number(line.unit_price_krw),
+      tonMetric: false,
+    };
+  });
+
   // 첨부 사진 fetch
   const { data: attsData } = await supabase
     .from("attachment")
@@ -262,6 +289,14 @@ export default async function SaleDetailPage({
             </Link>
           ) : null}
         </div>
+        {sale.status !== "settled" && sale.status !== "cancelled" ? (
+          <SaleLinesEditButton
+            saleId={sale.id}
+            initialLines={editLines}
+            items={editItems}
+            rebarSpecs={editRebarSpecs}
+          />
+        ) : null}
       </div>
 
       {/* 거래 라이프사이클 (주문→납품→명세표→계산서→수금→확인서) */}
