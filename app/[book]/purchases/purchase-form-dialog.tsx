@@ -247,8 +247,8 @@ export function PurchaseFormDialog({
     setError(null);
 
     if (!editing) {
-      if (!matchedPartner) {
-        setError("매입처는 거래처 마스터에 등록된 이름을 정확히 선택해주세요.");
+      if (!partnerInput.trim()) {
+        setError("매입처를 입력해주세요.");
         return;
       }
       if (allLines.length === 0) {
@@ -269,7 +269,9 @@ export function PurchaseFormDialog({
     fd.set("notes", notes);
 
     if (!editing) {
-      fd.set("partner_id", matchedPartner!.id);
+      // 매입처: 마스터 매칭되면 id, 아니면 이름만 — 서버(resolvePartnerId)가 없으면 자동 생성.
+      if (matchedPartner) fd.set("partner_id", matchedPartner.id);
+      fd.set("partner_name", partnerInput.trim());
       // 모든 라인(추가분 + 현재 입력) — 철근 환산중량·가닥수·실중량 동봉.
       fd.set(
         "lines",
@@ -350,8 +352,8 @@ export function PurchaseFormDialog({
                 ))}
               </datalist>
               {!editing && partnerInput && !matchedPartner ? (
-                <p className="mt-0.5 text-xs text-amber-600">
-                  마스터에 없는 거래처 — 거래처 페이지에서 먼저 등록하세요
+                <p className="mt-0.5 text-[10px] text-amber-600">
+                  미등록 매입처 — 저장 시 자동 생성됩니다
                 </p>
               ) : null}
             </Field>

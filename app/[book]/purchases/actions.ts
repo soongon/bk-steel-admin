@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { type Book } from "@/lib/book";
 import { resolveSiteId } from "@/lib/site";
+import { resolvePartnerId } from "@/lib/partner";
 import { computeVat, revalidateTransactionPaths } from "@/lib/transaction";
 
 export type PurchaseActionResult = { ok: true } | { ok: false; error: string };
@@ -39,7 +40,8 @@ type PurchaseLineInput = {
 type CreateInput = {
   book: Book;
   doc_no?: string;
-  partner_id: string;
+  partner_id?: string; // 미등록 매입처면 partner_name 으로 자동 생성(resolvePartnerId)
+  partner_name?: string | null;
   site_id?: string | null;
   site_name?: string | null;
   ordered_on: string;
@@ -63,7 +65,8 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
   const book = str("book") as Book;
   if (!book || !["bk", "sl", "b"].includes(book)) return { error: "책을 선택해주세요." };
   const partner_id = str("partner_id");
-  if (!partner_id) return { error: "매입처를 선택해주세요." };
+  const partner_name = str("partner_name");
+  if (!partner_id && !partner_name) return { error: "매입처를 입력해주세요." };
   const ordered_on = str("ordered_on");
   if (!ordered_on) return { error: "발주일을 입력해주세요." };
 
@@ -104,7 +107,8 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
   return {
     book,
     doc_no: str("doc_no") || undefined,
-    partner_id,
+    partner_id: partner_id || undefined,
+    partner_name: partner_name || null,
     site_id: str("site_id") || null,
     site_name: str("site_name") || null,
     ordered_on,
@@ -128,6 +132,9 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
 
   const docNo = parsed.doc_no ?? (await generateDocNo(parsed.ordered_on));
   const resolvedSiteId = await resolveSiteId(supabase, parsed.site_id ?? null, parsed.site_name ?? null);
+  // 매입처: id 없으면 이름으로 자동 생성/조회(매출과 동일).
+  const resolvedPartnerId = await resolvePartnerId(supabase, parsed.partner_id ?? null, parsed.partner_name ?? null);
+  if (!resolvedPartnerId) return { ok: false, error: "매입처를 확인해주세요." };
 
   // 기본 창고/존 해석 (본 야적장) — 모든 라인 공통.
   const { data: warehouse } = await supabase
@@ -176,7 +183,7 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
     p_purchase: {
       book: parsed.book,
       doc_no: docNo,
-      partner_id: parsed.partner_id,
+      partner_id: resolvedPartnerId,
       site_id: resolvedSiteId,
       site_name: parsed.site_name,
       ordered_on: parsed.ordered_on,
