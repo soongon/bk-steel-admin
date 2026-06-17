@@ -213,7 +213,7 @@ export async function updateSaleHeader(
   // 현재 상태·공급가 — 전이 검증 + 부가세 재계산 기준
   const { data: cur } = await supabase
     .from("sale")
-    .select("status, subtotal_krw")
+    .select("status, subtotal_krw, book")
     .eq("id", id)
     .single();
 
@@ -232,6 +232,60 @@ export async function updateSaleHeader(
 
   const isDocumented = str("is_documented") === "true";
   const taxDocType = str("tax_doc_type");
+  // 품목 라인 편집이 함께 오면(편집 폼에서 라인 수정) 헤더+라인 교체, 아니면 헤더만(기존 호환).
+  const linesRaw = str("lines");
+  if (linesRaw && cur) {
+    let parsed: Array<{ item_id: string; unit: string; qty: number; unit_price_krw: number; weight_kg: number | null }>;
+    try {
+      const raw = JSON.parse(linesRaw) as unknown[];
+      parsed = raw.map((l) => {
+        const o = l as Record<string, unknown>;
+        const w = o.weight_kg;
+        return {
+          item_id: String(o.item_id ?? ""),
+          unit: String(o.unit ?? ""),
+          qty: Number(o.qty) || 0,
+          unit_price_krw: Number(o.unit_price_krw) || 0,
+          weight_kg: w != null && w !== "" ? Number(w) : null,
+        };
+      });
+    } catch {
+      return { ok: false, error: "품목 데이터를 읽지 못했습니다." };
+    }
+    if (parsed.length === 0) return { ok: false, error: "품목을 1개 이상 추가해주세요." };
+    const rpcLines = parsed.map((l) => ({
+      ...l,
+      line_subtotal_krw: l.weight_kg
+        ? Math.round(l.unit_price_krw * l.weight_kg)
+        : Math.round(l.unit_price_krw * l.qty),
+    }));
+    const subtotalL = rpcLines.reduce((s, l) => s + l.line_subtotal_krw, 0);
+    const cv = computeVat(isDocumented, taxDocType, subtotalL);
+    const { error: rpcErr } = await supabase.rpc("update_sale_with_lines", {
+      p_sale_id: id,
+      p_sale: {
+        book: cur.book,
+        site_id: resolvedSiteId ?? "",
+        site_name: siteName ?? "",
+        delivered_on: str("delivered_on") || "",
+        is_documented: isDocumented,
+        tax_doc_type: taxDocType,
+        vat_type: cv.vatType,
+        vat_rate: cv.vatRate,
+        subtotal_krw: subtotalL,
+        vat_krw: cv.vat,
+        total_krw: cv.total,
+        payment_due_on: str("payment_due_on") || "",
+        status: newStatus,
+        notes: str("notes") || "",
+      },
+      p_lines: rpcLines,
+    });
+    if (rpcErr) return { ok: false, error: friendly(rpcErr.message) };
+    revalidateTransactionPaths("sales");
+    return { ok: true };
+  }
+
   const { vatType, vatRate, vat, total } = computeVat(
     isDocumented,
     taxDocType,
