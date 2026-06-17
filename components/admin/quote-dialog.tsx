@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
+import { BookBadge } from "@/components/admin/book-badge";
 import { QuoteDocument, type QuoteDocumentData } from "@/components/admin/quote-document";
 import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import {
@@ -272,18 +273,24 @@ export function QuoteDialog({
             {/* 책 선택 (저장 모드 — 견적은 어느 책 소유인지 지정). 전체보기에서도 작성 가능. */}
             {saveMode ? (
               <Field label="책 *">
-                <select
-                  value={selectedBook}
-                  onChange={(e) => setSelectedBook(e.target.value as Book)}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  <option value="">— 책 선택 (법인 / 사업자 / B계좌) —</option>
-                  {BOOKS.map((b) => (
-                    <option key={b} value={b}>
-                      {BOOK_LABEL[b]}
-                    </option>
-                  ))}
-                </select>
+                {book === "all" ? (
+                  <div className="flex gap-2">
+                    {BOOKS.map((b) => (
+                      <button
+                        type="button"
+                        key={b}
+                        onClick={() => setSelectedBook(b)}
+                        className={`flex-1 rounded-md border px-2 py-1 text-xs ${selectedBook === b ? "bg-foreground text-background" : "bg-background"}`}
+                      >
+                        {BOOK_LABEL[b]}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-8 items-center px-2">
+                    <BookBadge book={selectedBook as Book} />
+                  </div>
+                )}
               </Field>
             ) : null}
             {/* 현장 + 거래처(선택) */}
