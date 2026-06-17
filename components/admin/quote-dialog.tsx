@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { type CompanyProfile } from "@/lib/company-profile";
-import { type Book } from "@/lib/book";
+import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { QuoteDocument, type QuoteDocumentData } from "@/components/admin/quote-document";
 import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import { fmtKrw, fmtNum } from "@/lib/format";
@@ -52,7 +52,8 @@ export type QuoteSources = {
   partners: QuotePartner[];
   items: QuoteItem[];
   rebarSpecs: QuoteRebarSpec[];
-  company: CompanyProfile | null;
+  company?: CompanyProfile | null; // 단일 책 진입(현장 등) 공급자
+  companies?: Partial<Record<Book, CompanyProfile>>; // 책 선택 진입(견적 메뉴) — 선택 책별 공급자
 };
 
 const UNIT_OPTIONS = [
@@ -88,12 +89,16 @@ export function QuoteDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sources: QuoteSources;
-  book?: Book; // 있으면 저장 가능(목록 진입). 없으면 미리보기·프린트만.
+  book?: BookView; // 'bk'/'sl'/'b'/'all' 이면 저장 모드(폼에서 책 선택). undefined면 미리보기·프린트만.
   onSaved?: (id: string) => void;
   defaultSiteName?: string;
   defaultPartnerName?: string;
 }) {
-  const { partners, items, rebarSpecs, company } = sources;
+  const { partners, items, rebarSpecs } = sources;
+  const saveMode = book !== undefined; // 저장 모드(견적 메뉴) vs 미리보기(현장 진입)
+  const [selectedBook, setSelectedBook] = useState<Book | "">(book && book !== "all" ? book : "");
+  // 미리보기·출력 공급자: 선택 책 우선, 없으면 단일 진입 company.
+  const company = sources.companies?.[selectedBook as Book] ?? sources.company ?? null;
   const [error, setError] = useState<string | null>(null);
   const [showStatement, setShowStatement] = useState(false);
   const [saving, startSaving] = useTransition();
@@ -164,6 +169,7 @@ export function QuoteDialog({
       setSiteName(defaultSiteName);
       setPartnerInput(defaultPartnerName);
       setVatExempt(false);
+      setSelectedBook(book && book !== "all" ? book : "");
       setValidUntil("");
       setDeliveryTerms("");
       setPaymentTerms("");
@@ -176,7 +182,7 @@ export function QuoteDialog({
       setLines([]);
       setNotes("");
     }
-  }, [open, defaultSiteName, defaultPartnerName]);
+  }, [open, defaultSiteName, defaultPartnerName, book]);
 
   const statementData: QuoteDocumentData | null = (() => {
     if (allLines.length === 0) return null;
@@ -261,9 +267,12 @@ export function QuoteDialog({
 
   // 저장(book 있을 때) — FormData 구성 후 createQuote.
   function handleSave() {
-    if (!book) return;
+    if (!selectedBook) {
+      setError("책(법인/사업자/B계좌)을 선택해주세요.");
+      return;
+    }
     const fd = new FormData();
-    fd.set("book", book);
+    fd.set("book", selectedBook);
     fd.set("quote_date", today);
     if (validUntil) fd.set("valid_until", validUntil);
     if (matchedPartner) fd.set("partner_id", matchedPartner.id);
@@ -308,11 +317,28 @@ export function QuoteDialog({
             <DialogTitle>견적서 작성</DialogTitle>
             <DialogDescription>
               거래처는 선택입니다(현장명·잠재 고객명만으로도 가능). 부가세 포함/제외를 고른 뒤 품목을 추가하세요.
-              {book ? " 확인 후 저장됩니다." : " (저장 없음 — 미리보기·프린트)"}
+              {saveMode ? " 책을 고르고 확인 후 저장됩니다." : " (저장 없음 — 미리보기·프린트)"}
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto pr-1">
+            {/* 책 선택 (저장 모드 — 견적은 어느 책 소유인지 지정). 전체보기에서도 작성 가능. */}
+            {saveMode ? (
+              <Field label="책 *">
+                <select
+                  value={selectedBook}
+                  onChange={(e) => setSelectedBook(e.target.value as Book)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="">— 책 선택 (법인 / 사업자 / B계좌) —</option>
+                  {BOOKS.map((b) => (
+                    <option key={b} value={b}>
+                      {BOOK_LABEL[b]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
             {/* 현장 + 거래처(선택) */}
             <div className="grid grid-cols-2 gap-3">
               <Field label="현장명">
@@ -530,7 +556,7 @@ export function QuoteDialog({
               <Button variant="secondary" onClick={() => window.print()}>
                 <PrinterIcon className="size-4" /> 프린트
               </Button>
-              {book ? (
+              {saveMode ? (
                 <Button onClick={handleSave} disabled={saving}>
                   <SaveIcon className="size-4" /> {saving ? "저장 중..." : "저장"}
                 </Button>
@@ -555,7 +581,7 @@ export function QuoteButton({
   size = "sm",
 }: {
   sources: QuoteSources;
-  book?: Book;
+  book?: BookView;
   onSaved?: (id: string) => void;
   defaultSiteName?: string;
   defaultPartnerName?: string;

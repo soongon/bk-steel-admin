@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { type BookView, BOOK_VIEW_LABEL } from "@/lib/book";
+import { type Book, type BookView, BOOK_VIEW_LABEL } from "@/lib/book";
+import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
 import { fmtKrw } from "@/lib/format";
 import {
@@ -55,8 +56,8 @@ export default async function QuotesPage({ params }: { params: Promise<{ book: s
       .order("name"),
     supabase.from("rebar_spec").select("spec_code, unit_weight_kg_per_m, standard_length_m").order("display_order"),
     view !== "all"
-      ? supabase.from("company_profile").select("*").eq("book", view).maybeSingle()
-      : Promise.resolve({ data: null }),
+      ? supabase.from("company_profile").select("*").eq("book", view)
+      : supabase.from("company_profile").select("*"),
   ]);
 
   const quotes = (quotesRes.data ?? []) as unknown as Array<{
@@ -72,11 +73,17 @@ export default async function QuotesPage({ params }: { params: Promise<{ book: s
     partner: { name: string } | null;
   }>;
 
+  // 전체보기(/all)에서도 작성 가능 — 책별 공급자를 모두 로드해 폼의 책 선택에 매핑.
+  const companies: Partial<Record<Book, CompanyProfile>> = {};
+  for (const c of (companyRes.data ?? []) as CompanyProfile[]) {
+    if (c.book) companies[c.book as Book] = c;
+  }
+
   const sources: QuoteSources = {
     partners: (partnersRes.data ?? []) as QuotePartner[],
     items: (itemsRes.data ?? []) as QuoteItem[],
     rebarSpecs: (rebarSpecsRes.data ?? []) as QuoteRebarSpec[],
-    company: companyRes.data ?? null,
+    companies,
   };
 
   return (
@@ -85,20 +92,14 @@ export default async function QuotesPage({ params }: { params: Promise<{ book: s
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">견적서</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {BOOK_VIEW_LABEL[view]} · 최근 100건 · 거래처 없이 현장명·잠재 고객만으로도 작성
+            {BOOK_VIEW_LABEL[view]} · 최근 100건 · 작성 시 책 선택 · 거래처 없이 현장명·잠재 고객만으로도 가능
           </p>
         </div>
         <div className="flex items-center gap-2">
           <BookBadge book={view} size="md" />
-          {view !== "all" ? <QuoteButton sources={sources} book={view} label="견적서 작성" /> : null}
+          <QuoteButton sources={sources} book={view} label="견적서 작성" />
         </div>
       </header>
-
-      {view === "all" ? (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
-          견적서를 작성하려면 책(법인/사업자/B계좌)을 먼저 선택하세요.
-        </div>
-      ) : null}
 
       <div className="overflow-x-auto rounded-lg border bg-card">
         <Table>
