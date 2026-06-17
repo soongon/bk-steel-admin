@@ -191,7 +191,7 @@ function StatementCopy({
               value2={data.partner.representative}
               variant={variant}
             />
-            <PartyRow label="사업장주소" value={data.partner.address ?? ""} variant={variant} />
+            <PartyRow label="현장주소" value={data.site_name ?? ""} variant={variant} />
             <PartyDoubleRow
               label1="전화"
               value1={formatPhone(data.partner.phone)}
