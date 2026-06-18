@@ -183,6 +183,7 @@ export default async function SaleDetailPage({
       phone: partner?.phone ?? null,
       fax: partner?.fax ?? null,
       industry: partner?.industry ?? null,
+      email: partner?.email ?? null,
     },
     site_name: sale.site_name,
     is_documented: sale.is_documented,

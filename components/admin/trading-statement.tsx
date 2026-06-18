@@ -27,6 +27,7 @@ export type StatementData = {
     phone: string | null;
     fax: string | null;
     industry: string | null;
+    email?: string | null;  // 전자세금계산서 공급받는자 담당자 이메일(발행·양식용)
   };
   site_name: string | null;
   is_documented: boolean;
