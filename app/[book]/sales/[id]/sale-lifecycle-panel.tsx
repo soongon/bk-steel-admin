@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { type Book } from "@/lib/book";
+import { deliveryDday } from "@/lib/sale-lifecycle";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { type StatementData } from "@/components/admin/trading-statement";
 import { type DeliveryCertificate } from "@/lib/delivery-certificate";
@@ -68,11 +69,9 @@ export function SaleLifecyclePanel({
   const [settleOpen, setSettleOpen] = useState(false);
 
   const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }); // KST 'YYYY-MM-DD'
-  // 납품 done: status(상태머신) 또는 delivered_on 이 오늘 이하(=실제 납품).
-  // 미래 delivered_on 은 '납품 예정일'이라 done 이 아니라 대기(예정)로 본다.
-  const delivered =
-    ["delivered", "settled", "overdue"].includes(sale.status) ||
-    (!!sale.delivered_on && sale.delivered_on <= today);
+  // 납품 done: 상태머신만(delivered/settled/overdue). 납품일이 도래·지남해도 자동완료 아님 —
+  // '납품완료' 버튼으로만 완료. 납품일은 D-day(D-0/D+n) 표시로만 쓴다.
+  const delivered = ["delivered", "settled", "overdue"].includes(sale.status);
   const settled = sale.status === "settled" || !!sale.settled_on;
   const invoiceMode = taxDocMode(sale.book, sale.is_documented, sale.tax_doc_type);
   const invoiceNA = invoiceMode === "none"; // 세금계산서 비대상(무자료·B·현금영수증·간이)
@@ -140,7 +139,20 @@ export function SaleLifecyclePanel({
                 ) : isDone ? (
                   <span className="font-mono text-emerald-700 dark:text-emerald-300">{s.date ?? "완료"}</span>
                 ) : s.key === "deliver" && sale.delivered_on ? (
-                  <span className="font-mono text-amber-600 dark:text-amber-400">예정 {sale.delivered_on}</span>
+                  (() => {
+                    const { dday, label } = deliveryDday(sale.delivered_on, today);
+                    const tone =
+                      dday > 0
+                        ? "text-amber-600 dark:text-amber-400"
+                        : dday === 0
+                          ? "text-blue-600 dark:text-blue-400"
+                          : "text-red-600 dark:text-red-400";
+                    return (
+                      <span className={`font-mono ${tone}`}>
+                        {dday > 0 ? `예정 ${sale.delivered_on}` : `${label} · ${sale.delivered_on}`}
+                      </span>
+                    );
+                  })()
                 ) : (
                   <span className="text-muted-foreground">대기</span>
                 )}

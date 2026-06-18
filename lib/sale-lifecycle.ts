@@ -17,11 +17,9 @@ export type SaleLifecycleInput = {
  * 계산서 단계를 자동 완료(해당없음) 처리.
  */
 export function saleLifecycleProgress(s: SaleLifecycleInput): { done: number; total: number } {
-  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }); // KST 'YYYY-MM-DD'
-  // 납품 done: status 또는 delivered_on 이 오늘 이하(실제 납품). 미래 delivered_on 은 예정일 → 대기 (panel 동일).
-  const delivered =
-    ["delivered", "settled", "overdue"].includes(s.status) ||
-    (!!s.delivered_on && s.delivered_on <= today);
+  // 납품 done: 상태머신만(delivered/settled/overdue). 납품일 도래·지남은 자동완료가 아니다 —
+  // '납품완료' 버튼으로만 완료되고, 날짜는 D-day 표시(deliveryDday)로만 쓴다.
+  const delivered = ["delivered", "settled", "overdue"].includes(s.status);
   const settled = s.status === "settled" || !!s.settled_on;
   const invoiceNA = !s.is_documented || s.tax_doc_type === "none";
   let done = 1; // 주문
@@ -31,4 +29,14 @@ export function saleLifecycleProgress(s: SaleLifecycleInput): { done: number; to
   if (settled) done++;
   if (s.delivery_cert_id) done++;
   return { done, total: 6 };
+}
+
+/**
+ * 납품일 기준 D-day — 미래 'D-n'(예정)/당일 'D-0'/지남 'D+n'.
+ * deliveredOn·today 는 'YYYY-MM-DD'(KST). 실제 납품 완료 여부와 무관한 '표시용'이다.
+ */
+export function deliveryDday(deliveredOn: string, today: string): { dday: number; label: string } {
+  const dday = Math.round((new Date(deliveredOn).getTime() - new Date(today).getTime()) / 86_400_000);
+  const label = dday > 0 ? `D-${dday}` : dday === 0 ? "D-0" : `D+${-dday}`;
+  return { dday, label };
 }

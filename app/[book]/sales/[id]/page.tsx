@@ -49,7 +49,7 @@ function deliveryDayBadge(deliveredOn: string, status: string) {
   }
   if (dDay === 0) {
     return {
-      label: "오늘",
+      label: "D-0",
       className: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
     };
   }

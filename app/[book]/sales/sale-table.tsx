@@ -36,7 +36,7 @@ import {
 } from "./sale-form-dialog";
 import { cancelSale, deleteSale, markSaleDelivered } from "./actions";
 import { fmtKrw } from "@/lib/format";
-import { saleLifecycleProgress } from "@/lib/sale-lifecycle";
+import { saleLifecycleProgress, deliveryDday } from "@/lib/sale-lifecycle";
 import { SettleDialog, type BankAccount } from "./settle-dialog";
 
 type SaleLine = {
@@ -302,10 +302,20 @@ export function SaleTable({
                     <TableCell className="text-xs">
                       <div>{s.ordered_on}</div>
                       {s.delivered_on ? (
-                        s.delivered_on > today ? (
+                        ["delivered", "settled", "overdue"].includes(s.status) ? (
+                          <div className="text-emerald-700 dark:text-emerald-400">납품 {s.delivered_on}</div>
+                        ) : s.delivered_on > today ? (
                           <div className="text-amber-600 dark:text-amber-400">예정 {s.delivered_on}</div>
                         ) : (
-                          <div className="text-emerald-700 dark:text-emerald-400">납품 {s.delivered_on}</div>
+                          <div
+                            className={
+                              s.delivered_on === today
+                                ? "text-blue-600 dark:text-blue-400"
+                                : "text-red-600 dark:text-red-400"
+                            }
+                          >
+                            {deliveryDday(s.delivered_on, today).label} 예정 {s.delivered_on}
+                          </div>
                         )
                       ) : null}
                       {s.settled_on ? (
