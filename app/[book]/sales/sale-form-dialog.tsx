@@ -81,7 +81,8 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "취소",
 };
 // 신규 매출에서 고를 수 있는 상태. 수금완료는 '수금' 버튼(통장 입금)으로만 처리.
-const NEW_STATUSES = ["reserved", "confirmed", "delivered"];
+// 등록은 '납품 전'만(주문/확정). 납품완료는 납품일이 오늘이어도 라이프사이클 '납품완료' 버튼으로만.
+const NEW_STATUSES = ["reserved", "confirmed"];
 // 편집 시 전이 — 서버 규칙과 동일. delivered→settled 는 폼이 아닌 수금 다이얼로그.
 const STATUS_NEXT: Record<string, string[]> = {
   reserved: ["confirmed", "delivered"],
@@ -208,7 +209,7 @@ export function SaleFormDialog({
   const matchedSite = sites.find((s) => s.name === siteName);
   const [notes, setNotes] = useState(editing?.notes ?? "");
 
-  // 상태 옵션 — 신규는 주문/확정/납품완료, 편집은 현재+다음 단계만(수금완료는 수금 다이얼로그).
+  // 상태 옵션 — 신규는 납품 전(주문/확정)만, 편집은 현재+다음 단계만(납품완료·수금완료는 버튼/다이얼로그).
   const statusOptions = useMemo(() => {
     const values = editing
       ? Array.from(new Set<string>([editing.status, ...(STATUS_NEXT[editing.status] ?? [])]))

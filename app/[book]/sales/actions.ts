@@ -123,7 +123,9 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
 
   const is_documented = str("is_documented") === "true";
   const tax_doc_type = (str("tax_doc_type") || (book === "b" ? "none" : "tax_invoice_electronic")) as CreateInput["tax_doc_type"];
-  const status = (str("status") || "reserved") as CreateInput["status"];
+  // 등록은 '납품 전'(주문/확정)만 — 납품완료·수금완료는 라이프사이클 버튼/다이얼로그로만 진행.
+  const statusRaw = str("status") || "reserved";
+  const status = (["reserved", "confirmed"].includes(statusRaw) ? statusRaw : "reserved") as CreateInput["status"];
 
   return {
     book,
