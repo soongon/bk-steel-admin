@@ -19,8 +19,10 @@ import { type DeliveryCertificate } from "@/lib/delivery-certificate";
 import { type DeliveryCertData } from "@/components/admin/delivery-cert-form";
 import { StatementButton } from "./statement-button";
 import { DeliveryCertButton } from "./delivery-cert-button";
+import { TaxInvoiceButton, type SaleTaxInvoice } from "./tax-invoice-button";
 import { SettleDialog, type BankAccount } from "../settle-dialog";
-import { markSaleDelivered, toggleSaleStatementSent, toggleSaleTaxInvoiceIssued } from "../actions";
+import { taxDocMode } from "@/lib/tax-invoice";
+import { markSaleDelivered, toggleSaleStatementSent } from "../actions";
 
 export type LifecycleSale = {
   id: string;
@@ -52,6 +54,7 @@ export function SaleLifecyclePanel({
   statementData,
   cert,
   certFormData,
+  taxInvoice,
 }: {
   sale: LifecycleSale;
   bankAccounts: BankAccount[];
@@ -59,6 +62,7 @@ export function SaleLifecyclePanel({
   statementData: StatementData;
   cert: DeliveryCertificate | null;
   certFormData: DeliveryCertData | null;
+  taxInvoice: SaleTaxInvoice | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [settleOpen, setSettleOpen] = useState(false);
@@ -70,7 +74,8 @@ export function SaleLifecyclePanel({
     ["delivered", "settled", "overdue"].includes(sale.status) ||
     (!!sale.delivered_on && sale.delivered_on <= today);
   const settled = sale.status === "settled" || !!sale.settled_on;
-  const invoiceNA = !sale.is_documented || sale.tax_doc_type === "none"; // 무자료=계산서 해당없음
+  const invoiceMode = taxDocMode(sale.book, sale.is_documented, sale.tax_doc_type);
+  const invoiceNA = invoiceMode === "none"; // 세금계산서 비대상(무자료·B·현금영수증·간이)
 
   const steps = [
     { key: "order", label: "주문", Icon: ClipboardListIcon, done: true, date: sale.ordered_on, na: false },
@@ -99,13 +104,6 @@ export function SaleLifecyclePanel({
       if (!r.ok) toast.error(r.error);
     });
   }
-  function toggleInvoice() {
-    startTransition(async () => {
-      const r = await toggleSaleTaxInvoiceIssued(sale.id, !sale.tax_invoice_issued_on);
-      if (!r.ok) toast.error(r.error);
-    });
-  }
-
   return (
     <section className="rounded-lg border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -166,9 +164,13 @@ export function SaleLifecyclePanel({
                 ) : null}
 
                 {s.key === "invoice" && !s.na ? (
-                  <Button size="xs" variant={s.done ? "secondary" : "outline"} onClick={toggleInvoice} disabled={pending}>
-                    {s.done ? "발행 해제" : "발행 완료"}
-                  </Button>
+                  <TaxInvoiceButton
+                    saleId={sale.id}
+                    mode={invoiceMode}
+                    taxInvoice={taxInvoice}
+                    statementData={statementData}
+                    company={company}
+                  />
                 ) : null}
 
                 {s.key === "settle" && !s.done ? (

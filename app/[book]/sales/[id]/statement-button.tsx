@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { FileSpreadsheetIcon, FileTextIcon, PrinterIcon, SendIcon } from "lucide-react";
+import { FileSpreadsheetIcon, PrinterIcon, SendIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -161,9 +161,6 @@ export function StatementButton({
                   <SendIcon className="size-4" /> 문자 전송
                 </Button>
               ) : null}
-              <Button variant="secondary" disabled title="세금계산서 발급은 준비 중입니다">
-                <FileTextIcon className="size-4" /> 계산서 발급
-              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

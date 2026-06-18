@@ -11,6 +11,7 @@ import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
+import { type SaleTaxInvoice } from "./tax-invoice-button";
 import { SaleLineNameButton, type NameLine } from "./sale-line-name-button";
 import { type BankAccount } from "../settle-dialog";
 import { fmtKrw, fmtNum, formatBusinessNo, formatPhone } from "@/lib/format";
@@ -163,6 +164,16 @@ export default async function SaleDetailPage({
     .order("created_at", { ascending: true });
   const attachments = (attsData ?? []) as Attachment[];
 
+  // 활성 세금계산서(미취소) — 라이프사이클 계산서 단계 실상태 표시용
+  const { data: taxInvoiceRow } = await supabase
+    .from("tax_invoice")
+    .select("state, nts_confirm_num, provider, write_date")
+    .eq("sale_id", id)
+    .is("deleted_at", null)
+    .neq("state", "cancelled")
+    .maybeSingle();
+  const taxInvoice = (taxInvoiceRow ?? null) as SaleTaxInvoice | null;
+
   // 납품확인서 양식 데이터 — site_id 가 있을 때만 누적 빌드 (동일 (book, partner, site) 의 모든 매출)
   const certFormData =
     sale.site_id && sale.partner_id
@@ -304,6 +315,7 @@ export default async function SaleDetailPage({
         statementData={statementData}
         cert={cert}
         certFormData={certFormData}
+        taxInvoice={taxInvoice}
       />
 
       {/* 정보 카드 그리드 */}
