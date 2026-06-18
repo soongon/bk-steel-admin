@@ -6,13 +6,15 @@ import { type Book } from "@/lib/book";
 import { buttonVariants } from "@/components/ui/button";
 import { BookBadge } from "@/components/admin/book-badge";
 import { type StatementData } from "@/components/admin/trading-statement";
-import { fetchCompanyProfile } from "@/lib/company-profile";
+import { fetchCompanyProfile, fetchAllCompanyProfiles } from "@/lib/company-profile";
 import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
 import { type SaleTaxInvoice } from "./tax-invoice-button";
 import { SaleLineNameButton, type NameLine } from "./sale-line-name-button";
+import { SaleEditButton } from "./sale-edit-button";
+import { type SaleRow } from "../sale-form-dialog";
 import { type BankAccount } from "../settle-dialog";
 import { fmtKrw, fmtNum, formatBusinessNo, formatPhone } from "@/lib/format";
 
@@ -248,6 +250,40 @@ export default async function SaleDetailPage({
     };
   });
 
+  // 헤더 수정 다이얼로그(SaleFormDialog 편집 모드)용 폼 데이터 + SaleRow 매핑
+  const [editPartnersRes, editItemsRes, editRebarRes, editSitesRes, editCompanies] = await Promise.all([
+    supabase
+      .from("partner")
+      .select("id, code, name, business_no, representative, address, phone, fax, industry")
+      .is("deleted_at", null)
+      .eq("is_active", true)
+      .order("name"),
+    supabase
+      .from("item")
+      .select("id, code, name, category, rebar_spec_code, rebar_grade_code, length_m, bars_per_tonne")
+      .is("deleted_at", null)
+      .eq("is_active", true)
+      .order("name"),
+    supabase.from("rebar_spec").select("spec_code, unit_weight_kg_per_m, standard_length_m").order("display_order"),
+    supabase.from("site").select("id, name").is("deleted_at", null).eq("is_active", true).order("name"),
+    fetchAllCompanyProfiles(supabase),
+  ]);
+  const saleRow: SaleRow = {
+    id: sale.id,
+    book,
+    doc_no: sale.doc_no,
+    partner_id: sale.partner_id,
+    site_id: sale.site_id,
+    site_name: site?.name ?? sale.site_name,
+    ordered_on: sale.ordered_on,
+    delivered_on: sale.delivered_on,
+    status: sale.status,
+    is_documented: sale.is_documented,
+    tax_doc_type: sale.tax_doc_type,
+    payment_due_on: sale.payment_due_on,
+    notes: sale.notes,
+  };
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
       {/* 액션 바 */}
@@ -288,6 +324,15 @@ export default async function SaleDetailPage({
             </Link>
           ) : null}
         </div>
+        <SaleEditButton
+          sale={saleRow}
+          view={book}
+          partners={editPartnersRes.data ?? []}
+          items={editItemsRes.data ?? []}
+          rebarSpecs={editRebarRes.data ?? []}
+          sites={editSitesRes.data ?? []}
+          companies={editCompanies}
+        />
       </div>
 
       {/* 거래 라이프사이클 (주문→납품→명세표→계산서→수금→확인서) */}

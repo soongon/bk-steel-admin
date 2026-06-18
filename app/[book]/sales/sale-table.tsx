@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   CheckCircleIcon,
   FileSignatureIcon,
-  PencilIcon,
   PlusIcon,
   Trash2Icon,
   TruckIcon,
@@ -166,24 +165,6 @@ export function SaleTable({
 
   function openCreate() {
     setEditing(null);
-    setOpen(true);
-  }
-  function openEdit(s: SaleListRow) {
-    setEditing({
-      id: s.id,
-      book: s.book,
-      doc_no: s.doc_no,
-      partner_id: s.partner_id,
-      site_id: s.site_id,
-      site_name: s.site?.name ?? s.site_name,
-      ordered_on: s.ordered_on,
-      delivered_on: s.delivered_on,
-      status: s.status,
-      is_documented: s.is_documented,
-      tax_doc_type: s.tax_doc_type,
-      payment_due_on: s.payment_due_on,
-      notes: s.notes,
-    });
     setOpen(true);
   }
   function handleDeliver(s: SaleListRow) {
@@ -378,9 +359,6 @@ export function SaleTable({
                             <CheckCircleIcon className="text-emerald-600" />
                           </Button>
                         ) : null}
-                        <Button size="icon-xs" variant="ghost" onClick={() => openEdit(s)} aria-label="수정">
-                          <PencilIcon />
-                        </Button>
                         {s.status !== "cancelled" && s.status !== "settled" ? (
                           <Button
                             size="icon-xs"
