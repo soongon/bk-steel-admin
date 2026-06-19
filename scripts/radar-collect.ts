@@ -24,6 +24,7 @@ loadEnv({ path: ".env.development" });
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { runCollectors, scoreProjects, upsertProjects } from "../lib/radar/collectors";
+import { notifyKakaoWork, adminUrl } from "../lib/kakaowork";
 import type { RadarRegion, RadarSource } from "../lib/radar/types";
 
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -88,6 +89,18 @@ async function main() {
 
   const { upserted } = await upsertProjects(supabase, scored);
   console.log(`[radar] upsert 완료: ${upserted}건`);
+
+  // 카카오워크 알림 — 수집 요약(등급 분포). KAKAOWORK_WEBHOOK_URL 미설정이면 무동작.
+  if (upserted > 0) {
+    const gradeStr = Object.entries(byGrade)
+      .map(([g, n]) => `${g} ${n}`)
+      .join(" · ");
+    await notifyKakaoWork(
+      `🚧 발주 레이더 수집 — ${upserted}건 반영 (점수 ${scored.length}건)\n` +
+        `등급: ${gradeStr || "—"}\n` +
+        adminUrl("/radar"),
+    );
+  }
 }
 
 main().catch((e) => {

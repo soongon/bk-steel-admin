@@ -34,3 +34,5 @@ jobs:
           RADAR_SOURCES: nara_bid
           # 나라장터 수집 윈도(일) — naraBid 가 실제로 읽는 키
           RADAR_NARA_DAYS: '14'
+          KAKAOWORK_WEBHOOK_URL: ${{ secrets.KAKAOWORK_WEBHOOK_URL }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}

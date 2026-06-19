@@ -1,0 +1,30 @@
+name: 연체 알림 · 매일
+
+# 미수(매출)·미지급(매입) 연체 현황을 매일 아침 카카오워크로. 연체 0건이면 전송 안 함.
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 매일 09:00 KST (00:00 UTC)
+  workflow_dispatch:
+
+concurrency:
+  group: notify-overdue
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: 연체 현황 카카오워크 알림
+        run: npm run notify:overdue
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          KAKAOWORK_WEBHOOK_URL: ${{ secrets.KAKAOWORK_WEBHOOK_URL }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}

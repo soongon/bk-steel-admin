@@ -33,3 +33,5 @@ jobs:
           RADAR_SOURCES: building_permit
           # 건축HUB active 윈도(일) — buildingPermit 가 실제로 읽는 키. 730=최근 2년 준공제외분
           RADAR_ACTIVE_DAYS: '730'
+          KAKAOWORK_WEBHOOK_URL: ${{ secrets.KAKAOWORK_WEBHOOK_URL }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
