@@ -14,7 +14,6 @@ import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
 import { type SaleTaxInvoice } from "./tax-invoice-button";
 import { SaleLineNameButton, type NameLine } from "./sale-line-name-button";
 import { SaleEditButton } from "./sale-edit-button";
-import { SaleDeliverButton } from "./sale-deliver-button";
 import { type SaleRow } from "../sale-form-dialog";
 import { type BankAccount } from "../settle-dialog";
 import { fmtKrw, fmtNum, formatBusinessNo, formatPhone } from "@/lib/format";
@@ -325,20 +324,15 @@ export default async function SaleDetailPage({
             </Link>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
-          {sale.status === "reserved" || sale.status === "confirmed" ? (
-            <SaleDeliverButton saleId={sale.id} docNo={sale.doc_no} />
-          ) : null}
-          <SaleEditButton
-            sale={saleRow}
-            view={book}
-            partners={editPartnersRes.data ?? []}
-            items={editItemsRes.data ?? []}
-            rebarSpecs={editRebarRes.data ?? []}
-            sites={editSitesRes.data ?? []}
-            companies={editCompanies}
-          />
-        </div>
+        <SaleEditButton
+          sale={saleRow}
+          view={book}
+          partners={editPartnersRes.data ?? []}
+          items={editItemsRes.data ?? []}
+          rebarSpecs={editRebarRes.data ?? []}
+          sites={editSitesRes.data ?? []}
+          companies={editCompanies}
+        />
       </div>
 
       {/* 거래 라이프사이클 (주문→납품→명세표→계산서→수금→확인서) */}
