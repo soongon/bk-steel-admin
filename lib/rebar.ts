@@ -68,8 +68,12 @@ export function calculateRebarWeight(
     // ton — '1톤'은 명목. 실제는 규격×길이별 표준본수 × 1본중량(이론중량). 1000kg 아님.
     const bpt = item.bars_per_tonne ?? null;
     if (bpt) {
+      // '1톤' 이론중량(정수 kg)을 먼저 산출 → 톤수만큼 곱한다. 가닥을 모두 합친 뒤 곱하면
+      // 1톤당 소수(예: D13 955.2kg)가 톤수만큼 누적돼 '1톤 금액 × N' 과 어긋난다.
+      // (예: D13 5톤 = round(955.2)=955 × 5 = 4775kg, 940원/kg → 4,488,500)
+      const perTonWeightKg = Math.round(bpt * kgPerBar);
+      weightKg = perTonWeightKg * qty;
       bars = Math.round(qty * bpt);
-      weightKg = bars * kgPerBar;
     } else {
       weightKg = qty * 1000; // 표준본수 없는 비표준 길이 → 명목 1000kg fallback
       bars = Math.ceil(weightKg / kgPerBar);
