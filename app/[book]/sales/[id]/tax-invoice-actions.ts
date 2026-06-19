@@ -2,7 +2,8 @@
 
 import { type SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { type Book } from "@/lib/book";
+import { type Book, BOOK_LABEL } from "@/lib/book";
+import { notifyKakaoWork, adminUrl, fmtWon } from "@/lib/kakaowork";
 import { fetchCompanyProfile } from "@/lib/company-profile";
 import { revalidateTransactionPaths } from "@/lib/transaction";
 import { digitsOnly } from "@/lib/format";
@@ -201,6 +202,13 @@ export async function issueSaleTaxInvoice(
   });
   if (error) return { ok: false, error: error.message };
   revalidateTransactionPaths("sales");
+  await notifyKakaoWork(
+    `🧾 세금계산서 발행 · ${BOOK_LABEL[book]}\n` +
+      `거래처: ${partner?.name ?? "—"}\n` +
+      `금액: ${fmtWon(input.totalAmount)}\n` +
+      `승인번호: ${result.ntsConfirmNum ?? "(국세청 전송 대기)"}\n` +
+      adminUrl(`/${book}/sales/${saleId}`),
+  );
   return { ok: true, state: result.state, ntsConfirmNum: result.ntsConfirmNum };
 }
 
@@ -305,5 +313,12 @@ export async function recordManualTaxInvoice(
   });
   if (error) return { ok: false, error: error.message };
   revalidateTransactionPaths("sales");
+  await notifyKakaoWork(
+    `🧾 세금계산서 기록(수기) · ${BOOK_LABEL[book]}\n` +
+      `거래처: ${partner?.name ?? "—"}\n` +
+      `금액: ${fmtWon(Number(sale.total_krw))}\n` +
+      `번호: ${opts.taxDocNo.trim()}\n` +
+      adminUrl(`/${book}/sales/${saleId}`),
+  );
   return { ok: true, state: "issued", ntsConfirmNum: opts.taxDocNo.trim() };
 }

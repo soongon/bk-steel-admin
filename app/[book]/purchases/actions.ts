@@ -1,7 +1,8 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { type Book } from "@/lib/book";
+import { type Book, BOOK_LABEL } from "@/lib/book";
+import { notifyKakaoWork, adminUrl, fmtWon } from "@/lib/kakaowork";
 import { resolveSiteId } from "@/lib/site";
 import { resolvePartnerId } from "@/lib/partner";
 import { computeVat, revalidateTransactionPaths } from "@/lib/transaction";
@@ -206,6 +207,13 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
   if (rpcErr) return { ok: false, error: friendly(rpcErr.message) };
 
   revalidateTransactionPaths("purchases");
+  await notifyKakaoWork(
+    `🔵 신규 매입 · ${BOOK_LABEL[parsed.book as Book]}\n` +
+      `매입처: ${parsed.partner_name ?? "—"}\n` +
+      `금액: ${fmtWon(total)} ${parsed.is_documented ? "(자료)" : "(무자료)"}\n` +
+      `문서: ${docNo}\n` +
+      adminUrl(`/${parsed.book}/purchases?doc=${docNo}`),
+  );
   return { ok: true };
 }
 
