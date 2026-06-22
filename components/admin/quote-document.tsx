@@ -75,7 +75,7 @@ export function QuoteDocument({
         {/* 수신처 */}
         <div className="border border-zinc-400 p-2 text-xs">
           <div className="mb-1 text-[10px] font-medium text-zinc-500">받는 분</div>
-          <div className="text-sm font-semibold">{data.partner.name || "—"} 귀하</div>
+          <div className="text-sm font-semibold">{data.partner.name || "고객님"} 귀하</div>
           {data.site_name ? <div className="mt-1 text-zinc-600">현장: {data.site_name}</div> : null}
           {data.partner.representative ? (
             <div className="text-zinc-600">담당: {data.partner.representative}</div>
