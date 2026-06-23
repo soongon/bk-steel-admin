@@ -24,6 +24,7 @@ import { type Book, type BookView } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
 import { NoteCell } from "@/components/admin/note-cell";
+import { LinkSpinner } from "@/components/admin/link-spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   SaleFormDialog,
@@ -259,6 +260,7 @@ export function SaleTable({
                         className="hover:underline"
                       >
                         {s.doc_no}
+                        <LinkSpinner />
                       </Link>
                       {!s.is_documented ? (
                         <div className="text-[10px] text-amber-600">무자료</div>

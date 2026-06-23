@@ -7,6 +7,7 @@ import {
   ClipboardListIcon,
   FileSignatureIcon,
   FileSpreadsheetIcon,
+  Loader2Icon,
   ReceiptTextIcon,
   TruckIcon,
 } from "lucide-react";
@@ -66,6 +67,7 @@ export function SaleLifecyclePanel({
   taxInvoice: SaleTaxInvoice | null;
 }) {
   const [pending, startTransition] = useTransition();
+  const [delivering, startDeliver] = useTransition();
   const [settleOpen, setSettleOpen] = useState(false);
 
   const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }); // KST 'YYYY-MM-DD'
@@ -90,8 +92,7 @@ export function SaleLifecyclePanel({
   const invoiceBeforeStatement = !!sale.tax_invoice_issued_on && !sale.statement_sent_on && !invoiceNA;
 
   function deliver() {
-    if (!window.confirm(`[${sale.doc_no}] 납품완료로 처리하시겠습니까?`)) return;
-    startTransition(async () => {
+    startDeliver(async () => {
       const r = await markSaleDelivered(sale.id);
       if (r.ok) toast.success("납품완료 처리됨");
       else toast.error(r.error);
@@ -161,7 +162,8 @@ export function SaleLifecyclePanel({
               {/* 단계별 액션 */}
               <div className="mt-auto flex flex-wrap gap-1">
                 {s.key === "deliver" && !s.done ? (
-                  <Button size="xs" variant="outline" onClick={deliver} disabled={pending}>
+                  <Button size="xs" variant="outline" onClick={deliver} disabled={delivering}>
+                    {delivering ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
                     납품완료
                   </Button>
                 ) : null}
