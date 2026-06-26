@@ -76,6 +76,8 @@ export function serializeLines(
         qty: l.qty,
         unit_price_krw: l.unitPrice,
         weight_kg: c ? c.weightKg : null,
+        // 톤(1,000kg) 여부를 영구 저장 — weight_kg 만으론 이론중량 톤과 구분 불가(수정 시 손실).
+        ton_metric: l.tonMetric,
       };
     }),
   );

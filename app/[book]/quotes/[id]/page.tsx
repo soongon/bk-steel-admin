@@ -105,8 +105,10 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
       const isReb = !!it?.rebar_spec_code;
       const u = String(l.unit);
       const w = l.weight_kg != null ? Number(l.weight_kg) : null;
-      // 톤(1,000kg) 라인은 저장 중량이 qty×1000 — 이론중량 톤과 구분해 tonMetric 복원.
-      const isMetricTon = u === "ton" && w != null && Math.round(w) === Math.round(Number(l.qty) * 1000);
+      // 영구 저장된 ton_metric(0060) 우선, 없으면(구 데이터) weight_kg=qty×1000 추론 fallback.
+      const isMetricTon =
+        l.ton_metric === true ||
+        (u === "ton" && w != null && Math.round(w) === Math.round(Number(l.qty) * 1000));
       return {
         itemKind: isReb ? "rebar" : "steel",
         itemId: String(l.item_id),
