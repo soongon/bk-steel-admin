@@ -58,8 +58,10 @@ export type QuoteRebarSpec = {
 /** 견적 수정 진입 — 저장된 견적을 폼에 프리필(book 은 별도 prop, status·doc_no 보존). */
 export type EditingQuote = {
   id: string;
+  doc_no: string; // 미리보기·프린트에 원본 견적번호 표시(수정 시 today 로 덮지 않기)
   quote_date: string;
   valid_until: string | null;
+  partner_id: string | null; // 원본 거래처 id — 수정 시 거래처/잠재 구분 보존(이름 우연일치 승격/강등 방지)
   partner_name: string; // 표시명(거래처명 또는 잠재 고객명)
   site_name: string | null;
   is_documented: boolean;
@@ -201,8 +203,8 @@ export function QuoteDialog({
     const stLines = buildStatementLines(items, rebarSpecs, allLines, vatRate);
     const lineVatSum = stLines.reduce((s, ln) => s + ln.vat_krw, 0);
     return {
-      doc_no: `견적-${today.replace(/-/g, "")}`,
-      ordered_on: today,
+      doc_no: editing ? editing.doc_no : `견적-${today.replace(/-/g, "")}`,
+      ordered_on: editing ? editing.quote_date : today,
       tax_doc_no: null,
       partner: {
         name: matchedPartner?.name ?? partnerInput ?? "",
@@ -264,8 +266,15 @@ export function QuoteDialog({
     fd.set("book", selectedBook);
     fd.set("quote_date", editing ? editing.quote_date : today);
     if (validUntil) fd.set("valid_until", validUntil);
-    if (matchedPartner) fd.set("partner_id", matchedPartner.id);
-    else if (partnerInput) fd.set("prospect_name", partnerInput);
+    // 수정 시 거래처 입력이 원본과 같으면 원본 거래처/잠재 구분을 보존(이름 우연일치 승격/강등 방지).
+    if (editing && partnerInput === editing.partner_name) {
+      if (editing.partner_id) fd.set("partner_id", editing.partner_id);
+      else if (partnerInput) fd.set("prospect_name", partnerInput);
+    } else if (matchedPartner) {
+      fd.set("partner_id", matchedPartner.id);
+    } else if (partnerInput) {
+      fd.set("prospect_name", partnerInput);
+    }
     if (siteName) fd.set("site_name", siteName);
     fd.set("is_documented", vatExempt ? "false" : "true");
     if (deliveryTerms) fd.set("delivery_terms", deliveryTerms);

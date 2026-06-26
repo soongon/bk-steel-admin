@@ -90,8 +90,10 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
   };
   const editingQuote: EditingQuote = {
     id: q.id,
+    doc_no: q.doc_no,
     quote_date: q.quote_date,
     valid_until: q.valid_until ?? null,
+    partner_id: q.partner_id ?? null,
     partner_name: q.partner?.name ?? q.prospect_name ?? "",
     site_name: q.site_name ?? null,
     is_documented: q.is_documented,
@@ -102,13 +104,16 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
       const it = l.item as Record<string, any> | null;
       const isReb = !!it?.rebar_spec_code;
       const u = String(l.unit);
+      const w = l.weight_kg != null ? Number(l.weight_kg) : null;
+      // 톤(1,000kg) 라인은 저장 중량이 qty×1000 — 이론중량 톤과 구분해 tonMetric 복원.
+      const isMetricTon = u === "ton" && w != null && Math.round(w) === Math.round(Number(l.qty) * 1000);
       return {
         itemKind: isReb ? "rebar" : "steel",
         itemId: String(l.item_id),
         unit: u === "ton" || u === "kg" ? u : "ea",
         qty: Number(l.qty),
         unitPrice: Number(l.unit_price_krw),
-        tonMetric: false,
+        tonMetric: isMetricTon,
       } as LineDraft;
     }),
   };
