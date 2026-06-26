@@ -123,16 +123,16 @@ export function QuoteDocument({
       </div>
 
       {/* 라인 표 */}
-      <table className="mt-2 w-full border-collapse border border-zinc-400 text-xs">
+      <table className="mt-2 w-full table-fixed border-collapse border border-zinc-400 text-xs">
         <thead className="bg-zinc-100">
           <tr>
-            <th className="border border-zinc-400 px-1 py-1 w-8">No</th>
-            <th className="border border-zinc-400 px-1 py-1">품 목</th>
+            <th className="border border-zinc-400 px-1 py-1 w-7">No</th>
+            <th className="border border-zinc-400 px-1 py-1 w-20">품 목</th>
             <th className="border border-zinc-400 px-1 py-1 w-28">규 격</th>
-            <th className="border border-zinc-400 px-1 py-1 w-20">수 량</th>
+            <th className="border border-zinc-400 px-1 py-1 w-24">수 량</th>
             <th className="border border-zinc-400 px-1 py-1 w-20">단 가</th>
             <th className="border border-zinc-400 px-1 py-1 w-24">공급가액</th>
-            {data.is_documented ? <th className="border border-zinc-400 px-1 py-1 w-20">세 액</th> : null}
+            {data.is_documented ? <th className="border border-zinc-400 px-1 py-1 w-16">세 액</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -145,9 +145,11 @@ export function QuoteDocument({
                 </td>
                 <td className="border border-zinc-400 px-1 py-0.5 text-center text-[11px]">{line.spec}</td>
                 <td className="border border-zinc-400 px-1 py-0.5 text-right tabular-nums">
-                  {line.qty} {line.unit}
+                  <div className="whitespace-nowrap">
+                    {line.qty} {line.unit}
+                  </div>
                   {line.weight_kg != null ? (
-                    <span className="ml-1 text-[10px] text-zinc-500">({fmtKrw(line.weight_kg)}kg)</span>
+                    <div className="whitespace-nowrap text-[10px] text-zinc-500">{fmtKrw(line.weight_kg)}kg</div>
                   ) : null}
                 </td>
                 <td className="border border-zinc-400 px-1 py-0.5 text-right tabular-nums">
