@@ -30,6 +30,7 @@ type QuoteLineInput = {
   qty: number;
   unit_price_krw: number;
   weight_kg: number | null;
+  ton_metric: boolean;
 };
 
 function readQuoteInput(formData: FormData) {
@@ -52,6 +53,7 @@ function readQuoteInput(formData: FormData) {
         qty: Number(o.qty) || 0,
         unit_price_krw: Number(o.unit_price_krw) || 0,
         weight_kg: w != null && w !== "" ? Number(w) : null,
+        ton_metric: Boolean(o.ton_metric),
       };
     });
   } catch {
@@ -97,6 +99,7 @@ export async function createQuote(formData: FormData): Promise<QuoteActionResult
     qty: l.qty,
     unit_price_krw: l.unit_price_krw,
     weight_kg: l.weight_kg,
+    ton_metric: l.ton_metric,
     line_subtotal_krw: l.weight_kg
       ? Math.round(l.unit_price_krw * l.weight_kg)
       : Math.round(l.unit_price_krw * l.qty),
@@ -149,6 +152,7 @@ export async function updateQuote(quoteId: string, formData: FormData): Promise<
     qty: l.qty,
     unit_price_krw: l.unit_price_krw,
     weight_kg: l.weight_kg,
+    ton_metric: l.ton_metric,
     line_subtotal_krw: l.weight_kg
       ? Math.round(l.unit_price_krw * l.weight_kg)
       : Math.round(l.unit_price_krw * l.qty),
