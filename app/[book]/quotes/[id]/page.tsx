@@ -16,6 +16,15 @@ import {
 } from "@/components/ui/table";
 import { QuoteDetailActions } from "./quote-detail-actions";
 import { QuoteConvertButton } from "./quote-convert-button";
+import { QuoteEditButton } from "./quote-edit-button";
+import {
+  type QuoteSources,
+  type EditingQuote,
+  type QuotePartner,
+  type QuoteItem,
+  type QuoteRebarSpec,
+} from "@/components/admin/quote-dialog";
+import { type LineDraft } from "@/lib/transaction-draft";
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   draft: { label: "작성", cls: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300" },
@@ -38,12 +47,24 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
   // 단일 FK 조인은 런타임에 object — 타입 추론(배열) 우회.
   const q = data as unknown as Record<string, any>;
 
-  const [companyRes, partnersRes] = await Promise.all([
+  const [companyRes, partnersRes, itemsRes, rebarSpecsRes] = await Promise.all([
     supabase.from("company_profile").select("*").eq("book", q.book).maybeSingle(),
-    supabase.from("partner").select("id, name").is("deleted_at", null).eq("is_active", true).order("name"),
+    supabase
+      .from("partner")
+      .select("id, code, name, business_no, representative, address, phone, fax, industry")
+      .is("deleted_at", null)
+      .eq("is_active", true)
+      .order("name"),
+    supabase
+      .from("item")
+      .select("id, code, name, category, rebar_spec_code, rebar_grade_code, length_m, bars_per_tonne")
+      .is("deleted_at", null)
+      .eq("is_active", true)
+      .order("name"),
+    supabase.from("rebar_spec").select("spec_code, unit_weight_kg_per_m, standard_length_m").order("display_order"),
   ]);
   const company = (companyRes.data ?? null) as CompanyProfile | null;
-  const partners = (partnersRes.data ?? []) as { id: string; name: string }[];
+  const partners = (partnersRes.data ?? []) as QuotePartner[];
 
   // 수주 전환된 매출(있으면) — 견적→매출 정방향 링크.
   let convertedSale: { id: string; doc_no: string } | null = null;
@@ -59,6 +80,38 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
 
   const lines = (q.lines ?? []) as Record<string, any>[];
   const vatRate = Number(q.vat_rate);
+
+  // 견적 수정(QuoteDialog 편집 모드)용 소스 + 프리필
+  const editSources: QuoteSources = {
+    partners,
+    items: (itemsRes.data ?? []) as QuoteItem[],
+    rebarSpecs: (rebarSpecsRes.data ?? []) as QuoteRebarSpec[],
+    company,
+  };
+  const editingQuote: EditingQuote = {
+    id: q.id,
+    quote_date: q.quote_date,
+    valid_until: q.valid_until ?? null,
+    partner_name: q.partner?.name ?? q.prospect_name ?? "",
+    site_name: q.site_name ?? null,
+    is_documented: q.is_documented,
+    delivery_terms: q.delivery_terms ?? null,
+    payment_terms: q.payment_terms ?? null,
+    notes: q.notes ?? null,
+    lines: lines.map((l) => {
+      const it = l.item as Record<string, any> | null;
+      const isReb = !!it?.rebar_spec_code;
+      const u = String(l.unit);
+      return {
+        itemKind: isReb ? "rebar" : "steel",
+        itemId: String(l.item_id),
+        unit: u === "ton" || u === "kg" ? u : "ea",
+        qty: Number(l.qty),
+        unitPrice: Number(l.unit_price_krw),
+        tonMetric: false,
+      } as LineDraft;
+    }),
+  };
 
   const stLines = lines.map((l) => {
     const item = l.item as Record<string, any> | null;
@@ -130,6 +183,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <BookBadge book={q.book} size="md" />
+          <QuoteEditButton book={q.book} sources={editSources} editing={editingQuote} />
           <QuoteConvertButton
             quoteId={q.id}
             book={q.book}

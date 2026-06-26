@@ -138,6 +138,57 @@ export async function createQuote(formData: FormData): Promise<QuoteActionResult
   return { ok: true, id: data as string };
 }
 
+export async function updateQuote(quoteId: string, formData: FormData): Promise<QuoteActionResult> {
+  const parsed = readQuoteInput(formData);
+  if ("error" in parsed) return { ok: false, error: parsed.error ?? "입력 오류" };
+
+  const supabase = await createClient();
+  const lines = parsed.lines.map((l) => ({
+    item_id: l.item_id,
+    unit: l.unit,
+    qty: l.qty,
+    unit_price_krw: l.unit_price_krw,
+    weight_kg: l.weight_kg,
+    line_subtotal_krw: l.weight_kg
+      ? Math.round(l.unit_price_krw * l.weight_kg)
+      : Math.round(l.unit_price_krw * l.qty),
+  }));
+  const subtotal = lines.reduce((s, l) => s + l.line_subtotal_krw, 0);
+  const { vatType, vatRate, vat, total } = computeVat(
+    parsed.is_documented,
+    parsed.is_documented ? "tax_invoice_electronic" : "none",
+    subtotal,
+  );
+
+  const { error } = await supabase.rpc("update_quote_with_lines", {
+    p_quote_id: quoteId,
+    p_quote: {
+      book: parsed.book,
+      partner_id: parsed.partner_id,
+      prospect_name: parsed.prospect_name,
+      site_id: parsed.site_id,
+      site_name: parsed.site_name,
+      quote_date: parsed.quote_date,
+      valid_until: parsed.valid_until,
+      is_documented: parsed.is_documented,
+      vat_type: vatType,
+      vat_rate: vatRate,
+      subtotal_krw: subtotal,
+      vat_krw: vat,
+      total_krw: total,
+      delivery_terms: parsed.delivery_terms,
+      payment_terms: parsed.payment_terms,
+      notes: parsed.notes,
+    },
+    p_lines: lines,
+  });
+  if (error) return { ok: false, error: friendly(error.message) };
+
+  revalidatePath(`/${parsed.book}/quotes`);
+  revalidatePath(`/${parsed.book}/quotes/${quoteId}`);
+  return { ok: true, id: quoteId };
+}
+
 /** 발송 표시 — status='sent', sent_on(최초 1회). */
 export async function markQuoteSent(id: string, book: string): Promise<QuoteActionResult> {
   const supabase = await createClient();

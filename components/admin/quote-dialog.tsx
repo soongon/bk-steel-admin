@@ -26,7 +26,7 @@ import {
   serializeLines,
 } from "@/lib/transaction-draft";
 import { fmtKrw, fmtNum } from "@/lib/format";
-import { createQuote } from "@/app/[book]/quotes/actions";
+import { createQuote, updateQuote } from "@/app/[book]/quotes/actions";
 
 export type QuotePartner = {
   id: string;
@@ -55,6 +55,20 @@ export type QuoteRebarSpec = {
   standard_length_m: number;
 };
 
+/** 견적 수정 진입 — 저장된 견적을 폼에 프리필(book 은 별도 prop, status·doc_no 보존). */
+export type EditingQuote = {
+  id: string;
+  quote_date: string;
+  valid_until: string | null;
+  partner_name: string; // 표시명(거래처명 또는 잠재 고객명)
+  site_name: string | null;
+  is_documented: boolean;
+  delivery_terms: string | null;
+  payment_terms: string | null;
+  notes: string | null;
+  lines: LineDraft[];
+};
+
 /** 견적 폼이 필요로 하는 마스터·공급자 데이터. 어느 진입점이든 이 묶음만 넘기면 재사용 가능. */
 export type QuoteSources = {
   partners: QuotePartner[];
@@ -77,6 +91,7 @@ export function QuoteDialog({
   onSaved,
   defaultSiteName = "",
   defaultPartnerName = "",
+  editing,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -85,6 +100,7 @@ export function QuoteDialog({
   onSaved?: (id: string) => void;
   defaultSiteName?: string;
   defaultPartnerName?: string;
+  editing?: EditingQuote | null; // 있으면 수정 모드(프리필 + updateQuote)
 }) {
   const { partners, items, rebarSpecs } = sources;
   const saveMode = book !== undefined; // 저장 모드(견적 메뉴) vs 미리보기(현장 진입)
@@ -148,26 +164,37 @@ export function QuoteDialog({
   const total = lineSubtotal + vat;
 
   useEffect(() => {
-    if (open) {
-      setError(null);
-      setShowStatement(false);
+    if (!open) return;
+    setError(null);
+    setShowStatement(false);
+    // 입력 중 라인 영역은 항상 초기화
+    setItemId("");
+    setItemKind("rebar");
+    setUnit("ea");
+    setTonMetric(false);
+    setQtyStr("");
+    setUnitPriceStr("");
+    setSelectedBook(book && book !== "all" ? book : "sl");
+    if (editing) {
+      setSiteName(editing.site_name ?? "");
+      setPartnerInput(editing.partner_name ?? "");
+      setVatExempt(!editing.is_documented);
+      setValidUntil(editing.valid_until ?? "");
+      setDeliveryTerms(editing.delivery_terms ?? "");
+      setPaymentTerms(editing.payment_terms ?? "");
+      setLines(editing.lines);
+      setNotes(editing.notes ?? "");
+    } else {
       setSiteName(defaultSiteName);
       setPartnerInput(defaultPartnerName);
       setVatExempt(false);
-      setSelectedBook(book && book !== "all" ? book : "sl");
       setValidUntil("");
       setDeliveryTerms("");
       setPaymentTerms("");
-      setItemId("");
-      setItemKind("rebar");
-      setUnit("ea");
-      setTonMetric(false);
-      setQtyStr("");
-      setUnitPriceStr("");
       setLines([]);
       setNotes("");
     }
-  }, [open, defaultSiteName, defaultPartnerName, book]);
+  }, [open, defaultSiteName, defaultPartnerName, book, editing]);
 
   const statementData: QuoteDocumentData | null = (() => {
     if (allLines.length === 0) return null;
@@ -235,7 +262,7 @@ export function QuoteDialog({
     }
     const fd = new FormData();
     fd.set("book", selectedBook);
-    fd.set("quote_date", today);
+    fd.set("quote_date", editing ? editing.quote_date : today);
     if (validUntil) fd.set("valid_until", validUntil);
     if (matchedPartner) fd.set("partner_id", matchedPartner.id);
     else if (partnerInput) fd.set("prospect_name", partnerInput);
@@ -246,11 +273,11 @@ export function QuoteDialog({
     if (notes) fd.set("notes", notes);
     fd.set("lines", serializeLines(items, rebarSpecs, allLines));
     startSaving(async () => {
-      const r = await createQuote(fd);
+      const r = editing ? await updateQuote(editing.id, fd) : await createQuote(fd);
       if (r.ok) {
-        toast.success("견적서 저장됨");
+        toast.success(editing ? "견적서 수정됨" : "견적서 저장됨");
         onOpenChange(false);
-        onSaved?.(r.id ?? "");
+        onSaved?.(r.id ?? editing?.id ?? "");
       } else {
         setError(r.error);
       }
@@ -262,10 +289,14 @@ export function QuoteDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl print:hidden">
           <DialogHeader>
-            <DialogTitle>견적서 작성</DialogTitle>
+            <DialogTitle>{editing ? "견적서 수정" : "견적서 작성"}</DialogTitle>
             <DialogDescription>
               거래처는 선택입니다(현장명·잠재 고객명만으로도 가능). 부가세 포함/제외를 고른 뒤 품목을 추가하세요.
-              {saveMode ? " 책을 고르고 확인 후 저장됩니다." : " (저장 없음 — 미리보기·프린트)"}
+              {editing
+                ? " 수정 후 확인하면 반영됩니다."
+                : saveMode
+                  ? " 책을 고르고 확인 후 저장됩니다."
+                  : " (저장 없음 — 미리보기·프린트)"}
             </DialogDescription>
           </DialogHeader>
 
@@ -512,7 +543,7 @@ export function QuoteDialog({
               </Button>
               {saveMode ? (
                 <Button onClick={handleSave} disabled={saving}>
-                  <SaveIcon className="size-4" /> {saving ? "저장 중..." : "저장"}
+                  <SaveIcon className="size-4" /> {saving ? "저장 중..." : editing ? "수정 저장" : "저장"}
                 </Button>
               ) : null}
             </DialogFooter>
