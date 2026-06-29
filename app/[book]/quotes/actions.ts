@@ -31,6 +31,7 @@ type QuoteLineInput = {
   unit_price_krw: number;
   weight_kg: number | null;
   ton_metric: boolean;
+  manual_amount: number | null; // 금액 직접입력(운송비 포함 등) 시 라인 총액
 };
 
 function readQuoteInput(formData: FormData) {
@@ -54,6 +55,7 @@ function readQuoteInput(formData: FormData) {
         unit_price_krw: Number(o.unit_price_krw) || 0,
         weight_kg: w != null && w !== "" ? Number(w) : null,
         ton_metric: Boolean(o.ton_metric),
+        manual_amount: o.manual_amount != null && o.manual_amount !== "" ? Number(o.manual_amount) : null,
       };
     });
   } catch {
@@ -93,17 +95,26 @@ export async function createQuote(formData: FormData): Promise<QuoteActionResult
   const supabase = await createClient();
   const docNo = parsed.doc_no ?? (await generateQuoteDocNo(parsed.quote_date));
 
-  const lines = parsed.lines.map((l) => ({
-    item_id: l.item_id,
-    unit: l.unit,
-    qty: l.qty,
-    unit_price_krw: l.unit_price_krw,
-    weight_kg: l.weight_kg,
-    ton_metric: l.ton_metric,
-    line_subtotal_krw: l.weight_kg
-      ? Math.round(l.unit_price_krw * l.weight_kg)
-      : Math.round(l.unit_price_krw * l.qty),
-  }));
+  const lines = parsed.lines.map((l) => {
+    const manual = l.manual_amount != null && l.manual_amount > 0;
+    const lineSubtotal = manual
+      ? Math.round(l.manual_amount!)
+      : l.weight_kg
+        ? Math.round(l.unit_price_krw * l.weight_kg)
+        : Math.round(l.unit_price_krw * l.qty);
+    const denom = l.weight_kg ?? l.qty;
+    const unitPrice = manual && denom > 0 ? Math.round(lineSubtotal / denom) : l.unit_price_krw;
+    return {
+      item_id: l.item_id,
+      unit: l.unit,
+      qty: l.qty,
+      unit_price_krw: unitPrice,
+      weight_kg: l.weight_kg,
+      ton_metric: l.ton_metric,
+      line_subtotal_krw: lineSubtotal,
+      manual_amount: manual ? Math.round(l.manual_amount!) : null,
+    };
+  });
   const subtotal = lines.reduce((s, l) => s + l.line_subtotal_krw, 0);
   // 무자료면 부가세 제외, 자료면 표준 10%
   const { vatType, vatRate, vat, total } = computeVat(
@@ -146,17 +157,26 @@ export async function updateQuote(quoteId: string, formData: FormData): Promise<
   if ("error" in parsed) return { ok: false, error: parsed.error ?? "입력 오류" };
 
   const supabase = await createClient();
-  const lines = parsed.lines.map((l) => ({
-    item_id: l.item_id,
-    unit: l.unit,
-    qty: l.qty,
-    unit_price_krw: l.unit_price_krw,
-    weight_kg: l.weight_kg,
-    ton_metric: l.ton_metric,
-    line_subtotal_krw: l.weight_kg
-      ? Math.round(l.unit_price_krw * l.weight_kg)
-      : Math.round(l.unit_price_krw * l.qty),
-  }));
+  const lines = parsed.lines.map((l) => {
+    const manual = l.manual_amount != null && l.manual_amount > 0;
+    const lineSubtotal = manual
+      ? Math.round(l.manual_amount!)
+      : l.weight_kg
+        ? Math.round(l.unit_price_krw * l.weight_kg)
+        : Math.round(l.unit_price_krw * l.qty);
+    const denom = l.weight_kg ?? l.qty;
+    const unitPrice = manual && denom > 0 ? Math.round(lineSubtotal / denom) : l.unit_price_krw;
+    return {
+      item_id: l.item_id,
+      unit: l.unit,
+      qty: l.qty,
+      unit_price_krw: unitPrice,
+      weight_kg: l.weight_kg,
+      ton_metric: l.ton_metric,
+      line_subtotal_krw: lineSubtotal,
+      manual_amount: manual ? Math.round(l.manual_amount!) : null,
+    };
+  });
   const subtotal = lines.reduce((s, l) => s + l.line_subtotal_krw, 0);
   const { vatType, vatRate, vat, total } = computeVat(
     parsed.is_documented,

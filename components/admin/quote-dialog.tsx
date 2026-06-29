@@ -144,6 +144,10 @@ export function QuoteDialog({
   const [unitPriceStr, setUnitPriceStr] = useState("");
   const qty = Number(qtyStr) || 0;
   const unitPrice = Number(unitPriceStr) || 0;
+  // 금액 직접입력(운송비 포함 등) — 단가 대신 라인 총액
+  const [manualMode, setManualMode] = useState(false);
+  const [manualAmountStr, setManualAmountStr] = useState("");
+  const manualAmount = manualMode ? Number(manualAmountStr) || 0 : 0;
 
   const [lines, setLines] = useState<LineDraft[]>([]);
   const [notes, setNotes] = useState("");
@@ -157,7 +161,9 @@ export function QuoteDialog({
   const calcLine = (l: LineDraft) => calcLineDraft(items, rebarSpecs, l);
 
   const pendingLine: LineDraft | null =
-    itemId && qty > 0 && unitPrice > 0 ? { itemKind, itemId, unit, qty, unitPrice, tonMetric } : null;
+    itemId && qty > 0 && (manualMode ? manualAmount > 0 : unitPrice > 0)
+      ? { itemKind, itemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null }
+      : null;
   const allLines = pendingLine ? [...lines, pendingLine] : lines;
 
   const lineSubtotal = allLines.reduce((s, l) => s + calcLine(l).subtotal, 0);
@@ -176,6 +182,8 @@ export function QuoteDialog({
     setTonMetric(false);
     setQtyStr("");
     setUnitPriceStr("");
+    setManualMode(false);
+    setManualAmountStr("");
     setSelectedBook(book && book !== "all" ? book : "sl");
     if (editing) {
       setSiteName(editing.site_name ?? "");
@@ -231,11 +239,19 @@ export function QuoteDialog({
   function addLine() {
     if (!itemId) { setError("품목을 선택해주세요."); return; }
     if (qty <= 0) { setError("수량을 입력해주세요."); return; }
-    if (unitPrice <= 0) { setError("단가를 입력해주세요."); return; }
-    setLines((prev) => [...prev, { itemKind, itemId, unit, qty, unitPrice, tonMetric }]);
+    if (manualMode ? manualAmount <= 0 : unitPrice <= 0) {
+      setError(manualMode ? "금액을 입력해주세요." : "단가를 입력해주세요.");
+      return;
+    }
+    setLines((prev) => [
+      ...prev,
+      { itemKind, itemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null },
+    ]);
     setItemId("");
     setQtyStr("");
     setUnitPriceStr("");
+    setManualMode(false);
+    setManualAmountStr("");
     setError(null);
   }
   function removeLine(idx: number) {
@@ -436,10 +452,30 @@ export function QuoteDialog({
               <Field label="수량 *">
                 <Input type="number" step="1" min="0" value={qtyStr} onChange={(e) => setQtyStr(e.target.value)} placeholder="0" />
               </Field>
-              <Field label={itemKind === "rebar" ? "단가(원/kg) *" : "단가(원) *"}>
-                <Input type="number" step="1" value={unitPriceStr} onChange={(e) => setUnitPriceStr(e.target.value)} placeholder="0" />
+              <Field label={manualMode ? "금액(원) *" : itemKind === "rebar" ? "단가(원/kg) *" : "단가(원) *"}>
+                <Input
+                  type="number"
+                  step="1"
+                  value={manualMode ? manualAmountStr : unitPriceStr}
+                  onChange={(e) => (manualMode ? setManualAmountStr(e.target.value) : setUnitPriceStr(e.target.value))}
+                  placeholder="0"
+                />
               </Field>
             </div>
+
+            {/* 금액 직접입력 토글 — 운송비 포함 등(단가 대신 라인 총액) */}
+            <label className="flex w-fit items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={manualMode}
+                onChange={(e) => {
+                  setManualMode(e.target.checked);
+                  setManualAmountStr("");
+                }}
+                className="size-3.5 accent-foreground"
+              />
+              금액 직접입력 — 단가 대신 라인 총액(운송비 포함 등)
+            </label>
 
             {calc && rebarSpec ? (
               <div className="rounded-lg border border-dashed bg-muted/30 p-2 text-xs text-muted-foreground">
@@ -466,8 +502,10 @@ export function QuoteDialog({
                     <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-xs">
                       <span className="flex-1 truncate font-medium">{li?.name ?? "—"}</span>
                       <span className="text-muted-foreground">
-                        {reb ? `${fmtNum(c!.weightKg)}kg` : `${l.qty}${l.unit}`} × {fmtKrw(l.unitPrice)}
-                        {reb ? "/kg" : ""}
+                        {reb ? `${fmtNum(c!.weightKg)}kg` : `${l.qty}${l.unit}`}
+                        {l.manualAmount != null && l.manualAmount > 0
+                          ? " · 금액직접"
+                          : ` × ${fmtKrw(l.unitPrice)}${reb ? "/kg" : ""}`}
                       </span>
                       <span className="w-24 text-right tabular-nums">{fmtKrw(sub)}</span>
                       <button
