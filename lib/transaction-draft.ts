@@ -12,6 +12,8 @@ export type LineDraft = {
   qty: number;
   unitPrice: number;
   tonMetric: boolean;
+  /** 운송비 포함 등 — 단가 계산 대신 라인 총액을 직접 입력(원). null/미설정이면 자동 계산. */
+  manualAmount?: number | null;
 };
 
 /** 단위 옵션 — 폼 select 공통. ton_metric 은 unit='ton' + tonMetric=true 로 분해. */
@@ -49,7 +51,10 @@ export function calcLineDraft(
     : null;
   const calc =
     item && spec ? calculateRebarWeight(item, spec, l.unit, l.qty, l.unitPrice, l.tonMetric, true) : null;
-  return { item, calc, subtotal: calc ? calc.subtotal : Math.round(l.unitPrice * l.qty) };
+  const autoSubtotal = calc ? calc.subtotal : Math.round(l.unitPrice * l.qty);
+  // 금액 직접입력(운송비 포함 등)이면 그 값이 공급가. 중량(재고)은 그대로 계산.
+  const subtotal = l.manualAmount != null && l.manualAmount > 0 ? Math.round(l.manualAmount) : autoSubtotal;
+  return { item, calc, subtotal };
 }
 
 /** 라인 배열 공급가 합. */
@@ -78,6 +83,8 @@ export function serializeLines(
         weight_kg: c ? c.weightKg : null,
         // 톤(1,000kg) 여부를 영구 저장 — weight_kg 만으론 이론중량 톤과 구분 불가(수정 시 손실).
         ton_metric: l.tonMetric,
+        // 금액 직접입력(운송비 포함 등) 시 라인 총액. null이면 자동 계산.
+        manual_amount: l.manualAmount ?? null,
       };
     }),
   );
@@ -92,7 +99,7 @@ export function buildStatementLines(
 ): StatementLine[] {
   return lines
     .map((l): StatementLine | null => {
-      const { item, calc: c } = calcLineDraft(items, rebarSpecs, l);
+      const { item, calc: c, subtotal: sub } = calcLineDraft(items, rebarSpecs, l);
       if (!item) return null;
       const isReb = !!item.rebar_spec_code && !!c;
       const spec = isReb
@@ -100,7 +107,6 @@ export function buildStatementLines(
             .filter(Boolean)
             .join(" ")
         : "";
-      const sub = c ? c.subtotal : Math.round(l.unitPrice * l.qty);
       const unitLabel = l.unit === "ton" ? "톤" : l.unit === "kg" ? "kg" : "EA";
       return {
         item_name: item.name,

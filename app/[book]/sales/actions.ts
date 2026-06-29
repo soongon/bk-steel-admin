@@ -62,6 +62,7 @@ type SaleLineInput = {
   qty: number;
   unit_price_krw: number;
   weight_kg: number | null;
+  manual_amount: number | null; // 금액 직접입력(운송비 포함 등) 시 라인 총액
 };
 type CreateInput = {
   book: Book;
@@ -110,6 +111,7 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
         qty: Number(o.qty) || 0,
         unit_price_krw: Number(o.unit_price_krw) || 0,
         weight_kg: w != null && w !== "" ? Number(w) : null,
+        manual_amount: o.manual_amount != null && o.manual_amount !== "" ? Number(o.manual_amount) : null,
       };
     });
   } catch {
@@ -159,16 +161,25 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
   if (!resolvedPartnerId) return { ok: false, error: "거래처를 확인해주세요." };
 
   // 라인별 공급가(철근=원/kg×이론중량, 비철근=단가×수량) → 헤더 합계.
-  const lines = parsed.lines.map((l) => ({
-    item_id: l.item_id,
-    unit: l.unit,
-    qty: l.qty,
-    unit_price_krw: l.unit_price_krw,
-    weight_kg: l.weight_kg,
-    line_subtotal_krw: l.weight_kg
-      ? Math.round(l.unit_price_krw * l.weight_kg)
-      : Math.round(l.unit_price_krw * l.qty),
-  }));
+  // 금액 직접입력(운송비 포함 등)이면 그 총액을 공급가로, 단가는 총액÷(중량 or 수량) 역산 저장.
+  const lines = parsed.lines.map((l) => {
+    const manual = l.manual_amount != null && l.manual_amount > 0;
+    const lineSubtotal = manual
+      ? Math.round(l.manual_amount!)
+      : l.weight_kg
+        ? Math.round(l.unit_price_krw * l.weight_kg)
+        : Math.round(l.unit_price_krw * l.qty);
+    const denom = l.weight_kg ?? l.qty;
+    const unitPrice = manual && denom > 0 ? Math.round(lineSubtotal / denom) : l.unit_price_krw;
+    return {
+      item_id: l.item_id,
+      unit: l.unit,
+      qty: l.qty,
+      unit_price_krw: unitPrice,
+      weight_kg: l.weight_kg,
+      line_subtotal_krw: lineSubtotal,
+    };
+  });
   const subtotal = lines.reduce((s, l) => s + l.line_subtotal_krw, 0);
   const documented = parsed.is_documented;
   const { vatType, vatRate, vat, total } = computeVat(documented, parsed.tax_doc_type, subtotal);
