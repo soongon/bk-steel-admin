@@ -193,8 +193,10 @@ export function SaleFormDialog({
   const calcLine = (l: LineDraft) => calcLineDraft(items, rebarSpecs, l);
 
   // 현재 입력이 유효하면 임시 라인으로 포함(추가 버튼 안 눌러도 마지막 1건 반영)
+  // 이론중량 톤은 정수만(표준본수 기반). 톤(1,000kg)은 소수 허용(예: 1.1·3.5톤). 가닥·kg은 기존대로.
+  const fractionalTon = unit === "ton" && !tonMetric && !Number.isInteger(qty);
   const pendingLine: LineDraft | null =
-    itemId && qty > 0 && (manualMode ? manualAmount > 0 : unitPrice > 0)
+    itemId && qty > 0 && !fractionalTon && (manualMode ? manualAmount > 0 : unitPrice > 0)
       ? { itemKind, itemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null }
       : null;
   const allLines = pendingLine ? [...lines, pendingLine] : lines;
@@ -292,6 +294,10 @@ export function SaleFormDialog({
   function addLine() {
     if (!itemId) { setError("품목을 선택해주세요."); return; }
     if (qty <= 0) { setError("수량을 입력해주세요."); return; }
+    if (fractionalTon) {
+      setError("이론중량 톤은 정수만 입력하세요. 소수 톤은 단위를 '톤 (1,000kg)'로 바꿔주세요.");
+      return;
+    }
     if (manualMode ? manualAmount <= 0 : unitPrice <= 0) {
       setError(manualMode ? "금액을 입력해주세요." : "단가를 입력해주세요.");
       return;
@@ -513,7 +519,7 @@ export function SaleFormDialog({
                 <Field label="수량 *">
                   <Input
                     type="number"
-                    step="1"
+                    step={unit === "ton" && tonMetric ? "any" : "1"}
                     min="0"
                     value={qtyStr}
                     onChange={(e) => setQtyStr(e.target.value)}
@@ -546,6 +552,11 @@ export function SaleFormDialog({
                 />
                 금액 직접입력 — 단가 대신 라인 총액(운송비 포함 등)
               </label>
+              {fractionalTon ? (
+                <p className="text-xs text-amber-600 dark:text-amber-500">
+                  이론중량 톤은 정수만 — 소수 톤(1.1·3.5 등)은 단위를 ‘톤 (1,000kg)’로 바꿔주세요.
+                </p>
+              ) : null}
 
               {/* 환산 표시 (rebar) */}
               {calc && rebarSpec ? (
