@@ -215,8 +215,10 @@ export default async function SaleDetailPage({
       const subtotal = Number(line.line_subtotal_krw ?? line.qty * line.unit_price_krw);
       const vatRate = Number(sale.vat_rate ?? 10);
       const vat = sale.is_documented ? Math.round((subtotal * vatRate) / 100) : 0;
-      // 수량·단위는 저장된 입력 그대로(톤이면 톤). 단가는 입력단위당으로 환산해 수량×단가=공급가 정합.
+      // 철근(이론중량 청구)은 입력 단가(원/kg)를 그대로 표기 — 명세표 수량 셀에 중량(kg)을 병기해
+      // 단가(원/kg)×중량=공급가 정합을 보인다. 비철근(톤·EA)은 입력단위당으로 환산(수량×단가=공급가).
       const q = Number(line.qty);
+      const isRebar = item?.category === "rebar" && !!item?.rebar_spec_code;
       const unitLabel =
         line.unit === "ton" ? "톤" : line.unit === "kg" ? "kg" : line.unit === "ea" ? "EA" : line.unit;
       return {
@@ -224,7 +226,11 @@ export default async function SaleDetailPage({
         spec,
         qty: q,
         unit: unitLabel,
-        unit_price_krw: q > 0 ? Math.round(subtotal / q) : Number(line.unit_price_krw),
+        unit_price_krw: isRebar
+          ? Number(line.unit_price_krw)
+          : q > 0
+            ? Math.round(subtotal / q)
+            : Number(line.unit_price_krw),
         subtotal_krw: subtotal,
         vat_krw: vat,
         weight_kg: line.theoretical_weight_kg ?? line.weight_kg,

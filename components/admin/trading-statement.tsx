@@ -296,7 +296,12 @@ function StatementCopy({
                   {line.spec}
                 </td>
                 <td className={`border ${baseClass} px-1 py-0.5 text-right tabular-nums`}>
-                  {line.qty} {line.unit}
+                  <div className="whitespace-nowrap">
+                    {line.qty} {line.unit}
+                  </div>
+                  {line.spec && line.weight_kg != null ? (
+                    <div className="whitespace-nowrap text-[10px] text-zinc-500">{fmtKrw(line.weight_kg)}kg</div>
+                  ) : null}
                 </td>
                 <td className={`border ${baseClass} px-1 py-0.5 text-right tabular-nums`}>
                   {fmtKrw(line.unit_price_krw)}

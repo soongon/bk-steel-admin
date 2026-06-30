@@ -113,7 +113,7 @@ export function buildStatementLines(
         spec,
         qty: l.qty,
         unit: unitLabel,
-        unit_price_krw: l.qty > 0 ? Math.round(sub / l.qty) : l.unitPrice,
+        unit_price_krw: isReb ? l.unitPrice : l.qty > 0 ? Math.round(sub / l.qty) : l.unitPrice,
         subtotal_krw: sub,
         vat_krw: Math.round((sub * vatRate) / 100),
         weight_kg: isReb && c ? c.weightKg : null,
