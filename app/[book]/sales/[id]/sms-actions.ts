@@ -1,7 +1,9 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { sendMms } from "@/lib/solapi";
+import { getMessageProvider } from "@/lib/message";
+import { fetchCompanyProfile } from "@/lib/company-profile";
+import { type Book } from "@/lib/book";
 
 export type SmsActionResult = { ok: true } | { ok: false; error: string };
 
@@ -26,7 +28,7 @@ export async function sendStatementSms(
   // 권한 없거나 없는 매출이면 0건 → single() error.
   const { data: sale, error: saleErr } = await supabase
     .from("sale")
-    .select("id")
+    .select("id, book")
     .eq("id", saleId)
     .is("deleted_at", null)
     .single();
@@ -48,8 +50,16 @@ export async function sendStatementSms(
     };
   }
 
+  // 발행 사업자번호(팝빌 발신 주체) — 책별 회사정보. 솔라피 fallback 은 corpNum 무시.
+  const company = await fetchCompanyProfile(supabase, sale.book as Book);
   const text = `[${companyName || "신라철강"}] ${siteName ? siteName + " " : ""}거래명세서를 보내드립니다.`;
-  const r = await sendMms({ to: toPhone, text, subject: "거래명세서", imageJpeg });
+  const r = await getMessageProvider().sendImageMms({
+    corpNum: company?.business_no ?? null,
+    to: toPhone,
+    subject: "거래명세서",
+    text,
+    imageJpeg,
+  });
   if (!r.ok) return { ok: false, error: r.error };
 
   // 문자 전송 = 명세표 송부 → statement_sent_on 최초 1회 기록(재전송이 날짜 안 덮게).

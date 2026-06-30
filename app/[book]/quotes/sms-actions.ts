@@ -1,7 +1,9 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { sendMms } from "@/lib/solapi";
+import { getMessageProvider } from "@/lib/message";
+import { fetchCompanyProfile } from "@/lib/company-profile";
+import { type Book } from "@/lib/book";
 
 export type SmsActionResult = { ok: true } | { ok: false; error: string };
 
@@ -26,7 +28,7 @@ export async function sendQuoteMms(
   // P0: 유료 발송 전 권한·존재 확인 — RLS 가 책별 권한(viewer)을 강제하고, 삭제건은 제외.
   const { data: quote, error: quoteErr } = await supabase
     .from("quote")
-    .select("id")
+    .select("id, book")
     .eq("id", quoteId)
     .is("deleted_at", null)
     .single();
@@ -48,8 +50,15 @@ export async function sendQuoteMms(
     };
   }
 
+  const company = await fetchCompanyProfile(supabase, quote.book as Book);
   const text = `[${companyName || "신라철강"}] ${siteName ? siteName + " " : ""}견적서를 보내드립니다.`;
-  const r = await sendMms({ to: toPhone, text, subject: "견적서", imageJpeg });
+  const r = await getMessageProvider().sendImageMms({
+    corpNum: company?.business_no ?? null,
+    to: toPhone,
+    subject: "견적서",
+    text,
+    imageJpeg,
+  });
   if (!r.ok) return { ok: false, error: r.error };
 
   // 발송 성공 → 기록(best-effort). KST 기준.
