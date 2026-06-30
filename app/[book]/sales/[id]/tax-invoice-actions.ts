@@ -8,7 +8,13 @@ import { fetchCompanyProfile } from "@/lib/company-profile";
 import { revalidateTransactionPaths } from "@/lib/transaction";
 import { digitsOnly } from "@/lib/format";
 import { electronicIssueBlockReason } from "@/lib/tax-invoice";
-import { getEtaxProvider, type EtaxIssueInput, type EtaxLine } from "@/lib/etax";
+import { getEtaxProvider } from "@/lib/etax";
+import {
+  SALE_ETAX_SELECT,
+  buildSaleEtaxInput,
+  buildSaleEtaxLines,
+  summarizeEtaxLines,
+} from "@/lib/etax/sale-payload";
 
 export type TaxInvoiceActionResult =
   | { ok: true; state?: string; ntsConfirmNum?: string | null }
@@ -18,13 +24,7 @@ export type TaxInvoiceActionResult =
 async function loadSale(supabase: SupabaseClient, saleId: string) {
   const { data } = await supabase
     .from("sale")
-    .select(
-      `id, book, doc_no, ordered_on, is_documented, tax_doc_type, vat_type, vat_rate,
-       subtotal_krw, vat_krw, total_krw,
-       partner:partner(id, name, business_no, representative, address, industry, email, phone),
-       sale_line(id, qty, unit, unit_price_krw, line_subtotal_krw, display_name,
-         item:item(name, category, rebar_spec_code, rebar_grade_code, length_m))`,
-    )
+    .select(SALE_ETAX_SELECT)
     .eq("id", saleId)
     .is("deleted_at", null)
     .maybeSingle();
@@ -41,45 +41,6 @@ async function activeInvoice(supabase: SupabaseClient, saleId: string) {
     .neq("state", "cancelled")
     .maybeSingle();
   return data as Record<string, any> | null;
-}
-
-/** sale_line → 세금계산서 품목 라인(철근은 '철근' 라벨·display_name 반영, 라인별 세액 산출). */
-function buildLines(sale: Record<string, any>): EtaxLine[] {
-  const vatRate = Number(sale.vat_rate ?? 10);
-  const dt = digitsOnly(String(sale.ordered_on));
-  return (sale.sale_line ?? []).map((l: any, i: number): EtaxLine => {
-    const it = l.item;
-    const isReb = it?.category === "rebar" && !!it?.rebar_spec_code;
-    const supply = Math.round(Number(l.line_subtotal_krw ?? Number(l.qty) * Number(l.unit_price_krw)));
-    const tax = sale.is_documented ? Math.round((supply * vatRate) / 100) : 0;
-    const spec = isReb
-      ? [it.rebar_spec_code, it.rebar_grade_code, it.length_m ? `${it.length_m}M` : null]
-          .filter(Boolean)
-          .join(" ")
-      : "";
-    return {
-      serialNum: i + 1,
-      date: dt,
-      itemName: (l.display_name ?? (isReb ? "철근" : it?.name)) || "품목",
-      spec: spec || null,
-      qty: Number(l.qty),
-      unitCost: Number(l.unit_price_krw),
-      supplyCost: supply,
-      tax,
-      remark: null,
-    };
-  });
-}
-
-function taxTypeOf(vatType: string): "taxable" | "zero" | "free" {
-  if (vatType === "zero_rated") return "zero";
-  if (vatType === "exempt" || vatType === "non_taxable") return "free";
-  return "taxable";
-}
-
-function summarize(lines: EtaxLine[]): string | null {
-  if (lines.length === 0) return null;
-  return lines.length > 1 ? `${lines[0].itemName} 외 ${lines.length - 1}건` : lines[0].itemName;
 }
 
 /**
@@ -136,41 +97,14 @@ export async function issueSaleTaxInvoice(
   }
 
   const writeDateIso = opts.writeDate || String(sale.ordered_on);
-  const lines = buildLines(sale);
-  const input: EtaxIssueInput = {
-    mgtKey: `${book}-${sale.doc_no}`,
-    writeDate: digitsOnly(writeDateIso),
+  const input = buildSaleEtaxInput(sale, company, {
+    writeDateIso,
     purpose: opts.purpose ?? "charge",
-    taxType: taxTypeOf(String(sale.vat_type)),
-    supplier: {
-      corpNum: digitsOnly(company.business_no),
-      name: company.name,
-      ceoName: company.representative,
-      addr: company.address,
-      bizType: company.business_type,
-      bizClass: company.business_item,
-      contactName: company.representative,
-      email: company.email,
-      tel: company.phone ?? company.mobile,
-    },
-    buyer: {
-      corpNum: buyerBizNo,
-      name: partner?.name ?? "",
-      ceoName: buyerCeo,
-      addr: partner?.address ?? null,
-      bizType: partner?.industry ?? null,
-      bizClass: null,
-      contactName: partner?.name ?? null,
-      email: buyerEmail,
-      tel: partner?.phone ?? null,
-    },
-    supplyCostTotal: Number(sale.subtotal_krw),
-    taxTotal: Number(sale.vat_krw),
-    totalAmount: Number(sale.total_krw),
-    itemSummary: summarize(lines),
     remark: opts.remark?.trim() || null,
-    lines,
-  };
+    buyerBizNo,
+    buyerEmail,
+    buyerCeo,
+  });
 
   const provider = getEtaxProvider();
   let result;
@@ -290,7 +224,7 @@ export async function recordManualTaxInvoice(
   const company = await fetchCompanyProfile(supabase, book);
   const partner = sale.partner as Record<string, any> | null;
   const writeDateIso = opts.writeDate || String(sale.ordered_on);
-  const lines = buildLines(sale);
+  const lines = buildSaleEtaxLines(sale);
   const { error } = await supabase.rpc("record_sale_tax_invoice", {
     p_sale_id: saleId,
     p_invoice: {
@@ -306,7 +240,7 @@ export async function recordManualTaxInvoice(
       supply_krw: Number(sale.subtotal_krw),
       vat_krw: Number(sale.vat_krw),
       total_krw: Number(sale.total_krw),
-      item_summary: summarize(lines),
+      item_summary: summarizeEtaxLines(lines),
       remark: "수기 기록(종이/면세계산서)",
       asp_response: null,
     },
