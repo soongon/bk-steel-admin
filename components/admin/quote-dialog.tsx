@@ -160,8 +160,10 @@ export function QuoteDialog({
 
   const calcLine = (l: LineDraft) => calcLineDraft(items, rebarSpecs, l);
 
+  // 이론중량 톤은 정수만(표준본수 기반). 톤(1,000kg)은 소수 허용(예: 1.1·3.5톤). 가닥·kg은 기존대로.
+  const fractionalTon = unit === "ton" && !tonMetric && !Number.isInteger(qty);
   const pendingLine: LineDraft | null =
-    itemId && qty > 0 && (manualMode ? manualAmount > 0 : unitPrice > 0)
+    itemId && qty > 0 && !fractionalTon && (manualMode ? manualAmount > 0 : unitPrice > 0)
       ? { itemKind, itemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null }
       : null;
   const allLines = pendingLine ? [...lines, pendingLine] : lines;
@@ -239,6 +241,10 @@ export function QuoteDialog({
   function addLine() {
     if (!itemId) { setError("품목을 선택해주세요."); return; }
     if (qty <= 0) { setError("수량을 입력해주세요."); return; }
+    if (fractionalTon) {
+      setError("이론중량 톤은 정수만 입력하세요. 소수 톤은 단위를 '톤 (1,000kg)'로 바꿔주세요.");
+      return;
+    }
     if (manualMode ? manualAmount <= 0 : unitPrice <= 0) {
       setError(manualMode ? "금액을 입력해주세요." : "단가를 입력해주세요.");
       return;
@@ -450,7 +456,7 @@ export function QuoteDialog({
                 </select>
               </Field>
               <Field label="수량 *">
-                <Input type="number" step="1" min="0" value={qtyStr} onChange={(e) => setQtyStr(e.target.value)} placeholder="0" />
+                <Input type="number" step={unit === "ton" && tonMetric ? "any" : "1"} min="0" value={qtyStr} onChange={(e) => setQtyStr(e.target.value)} placeholder="0" />
               </Field>
               <Field label={manualMode ? "금액(원) *" : itemKind === "rebar" ? "단가(원/kg) *" : "단가(원) *"}>
                 <Input
@@ -476,6 +482,11 @@ export function QuoteDialog({
               />
               금액 직접입력 — 단가 대신 라인 총액(운송비 포함 등)
             </label>
+            {fractionalTon ? (
+              <p className="text-xs text-amber-600 dark:text-amber-500">
+                이론중량 톤은 정수만 — 소수 톤(1.1·3.5 등)은 단위를 ‘톤 (1,000kg)’로 바꿔주세요.
+              </p>
+            ) : null}
 
             {calc && rebarSpec ? (
               <div className="rounded-lg border border-dashed bg-muted/30 p-2 text-xs text-muted-foreground">
