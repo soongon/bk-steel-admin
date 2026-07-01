@@ -21,7 +21,7 @@ import { type DeliveryCertificate } from "@/lib/delivery-certificate";
 import { type DeliveryCertData } from "@/components/admin/delivery-cert-form";
 import { StatementButton } from "./statement-button";
 import { DeliveryCertButton } from "./delivery-cert-button";
-import { TaxInvoiceButton, type SaleTaxInvoice } from "./tax-invoice-button";
+import { TaxInvoiceButton, type SaleTaxInvoice, type BuyerPartner } from "./tax-invoice-button";
 import { SettleDialog, type BankAccount } from "../settle-dialog";
 import { taxDocMode } from "@/lib/tax-invoice";
 import { markSaleDelivered, toggleSaleStatementSent } from "../actions";
@@ -57,6 +57,7 @@ export function SaleLifecyclePanel({
   cert,
   certFormData,
   taxInvoice,
+  partners = [],
 }: {
   sale: LifecycleSale;
   bankAccounts: BankAccount[];
@@ -65,6 +66,7 @@ export function SaleLifecyclePanel({
   cert: DeliveryCertificate | null;
   certFormData: DeliveryCertData | null;
   taxInvoice: SaleTaxInvoice | null;
+  partners?: BuyerPartner[];
 }) {
   const [pending, startTransition] = useTransition();
   const [delivering, startDeliver] = useTransition();
@@ -184,6 +186,8 @@ export function SaleLifecyclePanel({
                     taxInvoice={taxInvoice}
                     statementData={statementData}
                     company={company}
+                    partners={partners}
+                    defaultBuyerPartnerId={sale.partner_id}
                   />
                 ) : null}
 

@@ -11,6 +11,7 @@ import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
+import { type BuyerPartner } from "./tax-invoice-button";
 import { type SaleTaxInvoice } from "./tax-invoice-button";
 import { SaleLineNameButton, type NameLine } from "./sale-line-name-button";
 import { SaleEditButton } from "./sale-edit-button";
@@ -260,7 +261,7 @@ export default async function SaleDetailPage({
   const [editPartnersRes, editItemsRes, editRebarRes, editSitesRes, editCompanies] = await Promise.all([
     supabase
       .from("partner")
-      .select("id, code, name, business_no, representative, address, phone, fax, industry")
+      .select("id, code, name, business_no, representative, address, phone, fax, industry, email")
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),
@@ -367,6 +368,7 @@ export default async function SaleDetailPage({
         cert={cert}
         certFormData={certFormData}
         taxInvoice={taxInvoice}
+        partners={(editPartnersRes.data ?? []) as BuyerPartner[]}
       />
 
       {/* 정보 카드 그리드 */}

@@ -54,6 +54,7 @@ export async function issueSaleTaxInvoice(
     writeDate?: string;
     purpose?: "charge" | "receipt";
     remark?: string;
+    buyerPartnerId?: string; // 하청 등 — 실제 발행 대상 거래처가 매출 거래처와 다를 때
     buyerBusinessNo?: string;
     buyerEmail?: string;
     buyerCeoName?: string;
@@ -63,11 +64,24 @@ export async function issueSaleTaxInvoice(
   const sale = await loadSale(supabase, saleId);
   if (!sale) return { ok: false, error: "매출을 찾을 수 없습니다." };
   const book = sale.book as Book;
-  const partner = sale.partner as Record<string, any> | null;
+  const salePartner = sale.partner as Record<string, any> | null;
 
-  const buyerBizNo = digitsOnly(opts.buyerBusinessNo ?? partner?.business_no ?? "");
-  const buyerEmail = opts.buyerEmail?.trim() || partner?.email || null;
-  const buyerCeo = opts.buyerCeoName?.trim() || partner?.representative || null;
+  // 발행 대상 거래처(공급받는자): buyerPartnerId 지정 시 그 거래처(하청 등으로 납품처와 다를 수 있음),
+  // 아니면 매출 거래처. 매출의 partner_id 는 바꾸지 않는다 — 세금계산서 buyer 스냅샷만 다르게.
+  let buyerPartner = salePartner;
+  if (opts.buyerPartnerId && opts.buyerPartnerId !== salePartner?.id) {
+    const { data: bp } = await supabase
+      .from("partner")
+      .select("id, name, business_no, representative, address, industry, email, phone")
+      .eq("id", opts.buyerPartnerId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (bp) buyerPartner = bp as Record<string, any>;
+  }
+
+  const buyerBizNo = digitsOnly(opts.buyerBusinessNo ?? buyerPartner?.business_no ?? "");
+  const buyerEmail = opts.buyerEmail?.trim() || buyerPartner?.email || null;
+  const buyerCeo = opts.buyerCeoName?.trim() || buyerPartner?.representative || null;
 
   const existing = await activeInvoice(supabase, saleId);
   const block = electronicIssueBlockReason({
@@ -79,16 +93,16 @@ export async function issueSaleTaxInvoice(
   });
   if (block) return { ok: false, error: block };
 
-  // 거래처 사업자정보 보강(입력값 있을 때만 partner 갱신 — 마스터 보강, 금액 무관)
-  if (partner?.id && (opts.buyerBusinessNo || opts.buyerEmail || opts.buyerCeoName)) {
+  // 발행 대상 거래처 사업자정보 보강(입력값 있을 때만 갱신 — 마스터 보강, 금액 무관)
+  if (buyerPartner?.id && (opts.buyerBusinessNo || opts.buyerEmail || opts.buyerCeoName)) {
     await supabase
       .from("partner")
       .update({
-        business_no: buyerBizNo || partner.business_no,
-        email: buyerEmail ?? partner.email,
-        representative: buyerCeo ?? partner.representative,
+        business_no: buyerBizNo || buyerPartner.business_no,
+        email: buyerEmail ?? buyerPartner.email,
+        representative: buyerCeo ?? buyerPartner.representative,
       })
-      .eq("id", partner.id);
+      .eq("id", buyerPartner.id);
   }
 
   const company = await fetchCompanyProfile(supabase, book);
@@ -97,7 +111,9 @@ export async function issueSaleTaxInvoice(
   }
 
   const writeDateIso = opts.writeDate || String(sale.ordered_on);
-  const input = buildSaleEtaxInput(sale, company, {
+  // buyer 스냅샷은 발행 대상 거래처로 — sale_line·금액은 매출 그대로, partner 만 교체.
+  const saleForInvoice = buyerPartner === salePartner ? sale : { ...sale, partner: buyerPartner };
+  const input = buildSaleEtaxInput(saleForInvoice, company, {
     writeDateIso,
     purpose: opts.purpose ?? "charge",
     remark: opts.remark?.trim() || null,
@@ -138,7 +154,7 @@ export async function issueSaleTaxInvoice(
   revalidateTransactionPaths("sales");
   await notifyKakaoWork(
     `🧾 세금계산서 발행 · ${BOOK_LABEL[book]}\n` +
-      `거래처: ${partner?.name ?? "—"}\n` +
+      `거래처: ${buyerPartner?.name ?? "—"}\n` +
       `금액: ${fmtWon(input.totalAmount)}\n` +
       `승인번호: ${result.ntsConfirmNum ?? "(국세청 전송 대기)"}\n` +
       adminUrl(`/${book}/sales/${saleId}`),

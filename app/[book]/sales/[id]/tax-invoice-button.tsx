@@ -34,6 +34,18 @@ export type SaleTaxInvoice = {
   write_date: string | null;
 };
 
+/** 발행 대상 거래처 선택용(하청 등으로 납품처와 발행처가 다를 때). */
+export type BuyerPartner = {
+  id: string;
+  name: string;
+  business_no: string | null;
+  representative: string | null;
+  address: string | null;
+  industry: string | null;
+  email: string | null;
+  phone: string | null;
+};
+
 const STATE_BADGE: Record<TaxInvoiceState, string> = {
   draft: "bg-muted text-muted-foreground",
   issuing: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
@@ -57,12 +69,16 @@ export function TaxInvoiceButton({
   taxInvoice,
   statementData,
   company,
+  partners = [],
+  defaultBuyerPartnerId = null,
 }: {
   saleId: string;
   mode: TaxDocMode;
   taxInvoice: SaleTaxInvoice | null;
   statementData: StatementData;
   company: CompanyProfile | null;
+  partners?: BuyerPartner[];
+  defaultBuyerPartnerId?: string | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -72,10 +88,40 @@ export function TaxInvoiceButton({
   const [writeDate, setWriteDate] = useState(statementData.ordered_on || today);
   const [purpose, setPurpose] = useState<"charge" | "receipt">("charge");
   const [remark, setRemark] = useState("");
+  const [buyerPartnerId, setBuyerPartnerId] = useState(defaultBuyerPartnerId ?? "");
   const [bizNo, setBizNo] = useState(statementData.partner.business_no ?? "");
   const [ceo, setCeo] = useState(statementData.partner.representative ?? "");
   const [email, setEmail] = useState(statementData.partner.email ?? "");
   const [manualNo, setManualNo] = useState("");
+
+  const buyerPartner = partners.find((p) => p.id === buyerPartnerId) ?? null;
+  const buyerDiffers = !!defaultBuyerPartnerId && buyerPartnerId !== defaultBuyerPartnerId;
+
+  // 발행 대상 거래처 변경 시 사업자정보 자동 채움(수동 수정 가능).
+  function onBuyerChange(id: string) {
+    setBuyerPartnerId(id);
+    const p = partners.find((x) => x.id === id);
+    if (p) {
+      setBizNo(p.business_no ?? "");
+      setCeo(p.representative ?? "");
+      setEmail(p.email ?? "");
+    }
+  }
+
+  // 미리보기·발행에 반영할 공급받는자(선택 거래처 + 수동 보강값).
+  const previewData: StatementData = {
+    ...statementData,
+    partner: {
+      ...statementData.partner,
+      name: buyerPartner?.name ?? statementData.partner.name,
+      business_no: digitsOnly(bizNo) || buyerPartner?.business_no || statementData.partner.business_no,
+      representative: ceo || buyerPartner?.representative || statementData.partner.representative,
+      address: buyerPartner?.address ?? statementData.partner.address,
+      industry: buyerPartner?.industry ?? statementData.partner.industry,
+      email: email || buyerPartner?.email || statementData.partner.email,
+      phone: buyerPartner?.phone ?? statementData.partner.phone,
+    },
+  };
 
   if (mode === "none") return null;
   const has = !!taxInvoice;
@@ -90,6 +136,7 @@ export function TaxInvoiceButton({
         writeDate,
         purpose,
         remark: remark || undefined,
+        buyerPartnerId: buyerPartnerId || undefined,
         buyerBusinessNo: bizNo,
         buyerCeoName: ceo || undefined,
         buyerEmail: email || undefined,
@@ -200,6 +247,30 @@ export function TaxInvoiceButton({
             </div>
           ) : mode === "electronic" ? (
             <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <Field label="공급받는자(발행 거래처)">
+                  <select
+                    value={buyerPartnerId}
+                    onChange={(e) => onBuyerChange(e.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  >
+                    {defaultBuyerPartnerId && !partners.some((p) => p.id === defaultBuyerPartnerId) ? (
+                      <option value={defaultBuyerPartnerId}>{statementData.partner.name} (매출 거래처)</option>
+                    ) : null}
+                    {partners.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {p.business_no ? ` · ${p.business_no}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                {buyerDiffers ? (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                    납품 거래처와 다른 곳으로 발행합니다(하청 등). 매출의 거래처는 바뀌지 않습니다.
+                  </p>
+                ) : null}
+              </div>
               <Field label="작성일자">
                 <Input type="date" value={writeDate} onChange={(e) => setWriteDate(e.target.value)} />
               </Field>
@@ -248,7 +319,7 @@ export function TaxInvoiceButton({
             <div className="mt-2 overflow-x-auto bg-white p-3">
               <div className="mx-auto w-[760px]">
                 <TaxInvoiceDocument
-                  data={statementData}
+                  data={previewData}
                   company={company}
                   purpose={purpose}
                   writeDate={writeDate}
