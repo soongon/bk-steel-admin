@@ -386,7 +386,7 @@ export function SaleFormDialog({
           {/* 책 + 거래처 */}
           <div className="grid grid-cols-2 gap-3">
             <Field label="책 *">
-              {view === "all" && !editing ? (
+              {view === "all" || !!editing ? (
                 <div className="flex gap-2">
                   {BOOKS.map((b) => (
                     <button

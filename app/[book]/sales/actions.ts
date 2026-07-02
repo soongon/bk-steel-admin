@@ -233,10 +233,10 @@ export async function updateSaleHeader(
     return typeof v === "string" ? v.trim() : "";
   };
 
-  // 현재 상태·공급가 — 전이 검증 + 부가세 재계산 기준
+  // 현재 상태·공급가·책·수금 — 전이 검증 + 부가세 재계산 + 책 변경 가드
   const { data: cur } = await supabase
     .from("sale")
-    .select("status, subtotal_krw")
+    .select("status, subtotal_krw, book, settled_on")
     .eq("id", id)
     .single();
 
@@ -247,6 +247,23 @@ export async function updateSaleHeader(
   }
   if (newStatus === "settled") {
     return { ok: false, error: "수금완료는 매출 목록의 '수금' 버튼(통장 선택)으로 처리하세요." };
+  }
+
+  // 책 변경 — 수금완료·세금계산서 발행된 매출은 통장·공급자 정합 때문에 불가.
+  const newBook = str("book");
+  const bookChanged = !!newBook && !!cur && newBook !== cur.book;
+  if (bookChanged) {
+    if (cur!.settled_on || cur!.status === "settled") {
+      return { ok: false, error: "수금 완료된 매출은 책을 변경할 수 없습니다(통장 정합 유지)." };
+    }
+    const { data: ti } = await supabase
+      .from("tax_invoice")
+      .select("id")
+      .eq("sale_id", id)
+      .is("deleted_at", null)
+      .neq("state", "cancelled")
+      .maybeSingle();
+    if (ti) return { ok: false, error: "세금계산서가 발행된 매출은 책을 변경할 수 없습니다(공급자 정합)." };
   }
 
   const siteName = str("site_name") || null;
@@ -262,6 +279,7 @@ export async function updateSaleHeader(
   );
 
   const updates: Record<string, unknown> = {
+    ...(bookChanged ? { book: newBook } : {}),
     site_id: resolvedSiteId,
     site_name: siteName,
     delivered_on: str("delivered_on") || null,
