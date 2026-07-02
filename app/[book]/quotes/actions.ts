@@ -66,7 +66,9 @@ function readQuoteInput(formData: FormData) {
     if (!l.item_id) return { error: "품목을 선택해주세요." };
     if (!l.unit) return { error: "단위를 선택해주세요." };
     if (l.qty <= 0) return { error: "수량을 입력해주세요." };
-    if (l.unit_price_krw <= 0) return { error: "단가를 입력해주세요." };
+    // 금액 직접입력(manual_amount>0)이면 단가 없이도 등록 — 그 총액을 라인 금액으로 저장.
+    const manual = l.manual_amount != null && l.manual_amount > 0;
+    if (!manual && l.unit_price_krw <= 0) return { error: "단가를 입력하거나 금액 직접입력을 사용하세요." };
   }
 
   // 견적은 거래처·현장 둘 다 optional(잠재 고객은 prospect_name 만). 무자료(부가세 제외) 토글.
