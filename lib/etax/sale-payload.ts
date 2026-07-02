@@ -32,7 +32,7 @@ export function buildSaleEtaxLines(sale: Record<string, any>): EtaxLine[] {
       itemName: (l.display_name ?? (isReb ? "철근" : it?.name)) || "품목",
       spec: spec || null,
       qty: Number(l.qty),
-      unitCost: Number(l.unit_price_krw),
+      unitCost: Number(l.unit_price_krw) || null, // 금액 직접입력(단가 0) → 계산서 단가 공란
       supplyCost: supply,
       tax,
       remark: null,

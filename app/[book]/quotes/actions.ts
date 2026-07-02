@@ -104,8 +104,8 @@ export async function createQuote(formData: FormData): Promise<QuoteActionResult
       : l.weight_kg
         ? Math.round(l.unit_price_krw * l.weight_kg)
         : Math.round(l.unit_price_krw * l.qty);
-    const denom = l.weight_kg ?? l.qty;
-    const unitPrice = manual && denom > 0 ? Math.round(lineSubtotal / denom) : l.unit_price_krw;
+    // 금액 직접입력이면 단가는 비워둔다(0) — 역산하지 않고 '-' 로 표시.
+    const unitPrice = manual ? 0 : l.unit_price_krw;
     return {
       item_id: l.item_id,
       unit: l.unit,
@@ -166,8 +166,8 @@ export async function updateQuote(quoteId: string, formData: FormData): Promise<
       : l.weight_kg
         ? Math.round(l.unit_price_krw * l.weight_kg)
         : Math.round(l.unit_price_krw * l.qty);
-    const denom = l.weight_kg ?? l.qty;
-    const unitPrice = manual && denom > 0 ? Math.round(lineSubtotal / denom) : l.unit_price_krw;
+    // 금액 직접입력이면 단가는 비워둔다(0) — 역산하지 않고 '-' 로 표시.
+    const unitPrice = manual ? 0 : l.unit_price_krw;
     return {
       item_id: l.item_id,
       unit: l.unit,

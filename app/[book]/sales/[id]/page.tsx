@@ -227,11 +227,14 @@ export default async function SaleDetailPage({
         spec,
         qty: q,
         unit: unitLabel,
-        unit_price_krw: isRebar
-          ? Number(line.unit_price_krw)
-          : q > 0
-            ? Math.round(subtotal / q)
-            : Number(line.unit_price_krw),
+        unit_price_krw:
+          Number(line.unit_price_krw) === 0
+            ? 0 // 금액 직접입력(단가 미입력) → 명세표에 '-'
+            : isRebar
+              ? Number(line.unit_price_krw)
+              : q > 0
+                ? Math.round(subtotal / q)
+                : Number(line.unit_price_krw),
         subtotal_krw: subtotal,
         vat_krw: vat,
         weight_kg: line.theoretical_weight_kg ?? line.weight_kg,
@@ -476,7 +479,9 @@ export default async function SaleDetailPage({
                   <td className="px-2 py-2 text-right tabular-nums">
                     {l.qty.toLocaleString()} {l.unit}
                   </td>
-                  <td className="px-2 py-2 text-right tabular-nums">{fmtKrw(l.unit_price_krw)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">
+                    {l.unit_price_krw > 0 ? fmtKrw(l.unit_price_krw) : "-"}
+                  </td>
                   <td className="px-2 py-2 text-right tabular-nums">{fmtKrw(l.subtotal_krw)}</td>
                   <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{fmtKrw(l.vat_krw)}</td>
                   <td className="px-4 py-2 text-right text-xs tabular-nums text-muted-foreground">

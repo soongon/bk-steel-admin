@@ -134,7 +134,7 @@ export function TaxInvoiceDocument({
                   <td className={`border ${base} px-1 py-0.5 text-right tabular-nums`}>
                     {line.qty} {line.unit}
                   </td>
-                  <td className={`border ${base} px-1 py-0.5 text-right tabular-nums`}>{fmt(line.unit_price_krw)}</td>
+                  <td className={`border ${base} px-1 py-0.5 text-right tabular-nums`}>{line.unit_price_krw > 0 ? fmt(line.unit_price_krw) : "-"}</td>
                   <td className={`border ${base} px-1 py-0.5 text-right tabular-nums`}>{fmt(line.subtotal_krw)}</td>
                   <td className={`border ${base} px-1 py-0.5 text-right tabular-nums`}>{fmt(line.vat_krw)}</td>
                 </tr>

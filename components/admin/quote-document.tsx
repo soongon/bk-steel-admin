@@ -153,7 +153,7 @@ export function QuoteDocument({
                   ) : null}
                 </td>
                 <td className="border border-zinc-400 px-1 py-0.5 text-right tabular-nums">
-                  {fmtKrw(line.unit_price_krw)}
+                  {line.unit_price_krw > 0 ? fmtKrw(line.unit_price_krw) : "-"}
                 </td>
                 <td className="border border-zinc-400 px-1 py-0.5 text-right tabular-nums">
                   {fmtKrw(line.subtotal_krw)}

@@ -242,7 +242,9 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
                 <TableCell className="text-right tabular-nums">
                   {l.weight_kg != null ? `${fmtNum(l.weight_kg)}kg` : "—"}
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{fmtKrw(l.unit_price_krw)}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {Number(l.unit_price_krw) > 0 ? fmtKrw(l.unit_price_krw) : "-"}
+                </TableCell>
                 <TableCell className="text-right tabular-nums">{fmtKrw(l.subtotal_krw)}</TableCell>
               </TableRow>
             ))}
