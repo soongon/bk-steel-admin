@@ -2,8 +2,15 @@
 // CorpNum(발행 사업자번호)은 env 가 아니라 호출자가 supplier.corpNum 으로 전달 — 한 LinkHub
 // 계정으로 법인(BK)·사업자(SL) 사업자번호를 각각 연동회원으로 두고 발행한다.
 // 운영/테스트는 POPBILL_IS_TEST 로 분기(기본 true = 테스트베드, 국세청 실전송 없음).
-import * as popbill from "popbill";
+//
+// ⚠️ popbill SDK(CJS)는 서비스 팩토리(TaxinvoiceService 등)가 인스턴스를 this(모듈 객체)에 캐싱한다.
+// `import * as popbill` 의 ESM namespace 는 Next 프로덕션 번들에서 frozen 이라 그 캐싱 쓰기가 무시돼
+// TaxinvoiceService() 가 undefined 를 반환 → registIssue 호출 시 'undefined' 에러(로컬 tsx 는 정상).
+// createRequire 로 실제 mutable CJS exports 를 받아 SDK 가 설계대로 동작하게 한다.
+import { createRequire } from "node:module";
 import type { EtaxProvider, EtaxIssueInput, EtaxState, EtaxStatus } from "./types";
+
+const popbill = createRequire(import.meta.url)("popbill") as typeof import("popbill");
 
 const SELL = "SELL"; // MgtKeyType.SELL — 정발행(판매자 문서관리번호)
 

@@ -2,7 +2,11 @@
 // 세금계산서(lib/etax/popbill)와 동일 LinkHub 계정·키·IsTest 게이트 공유. 발신번호=POPBILL_SENDER.
 // CorpNum(발행 사업자번호)은 호출자가 input.corpNum 으로 전달(책별 company_profile.business_no).
 // (server-only 미사용 — node: 임포트가 이미 클라 번들을 차단. lib/etax/popbill 과 동일. index 경유 시 solapi 가 가드.)
-import * as popbill from "popbill";
+// ⚠️ SDK 팩토리(MessageService/KakaoService)가 this(모듈 객체)에 캐싱 → frozen ESM namespace 로 부르면
+// 프로덕션에서 undefined 반환. createRequire 로 mutable CJS exports 를 받는다(lib/etax/popbill 과 동일).
+import { createRequire } from "node:module";
+
+const popbill = createRequire(import.meta.url)("popbill") as typeof import("popbill");
 import { writeFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
