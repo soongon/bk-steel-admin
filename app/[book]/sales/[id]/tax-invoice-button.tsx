@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ReceiptTextIcon, FileTextIcon, RefreshCwIcon, XCircleIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -93,6 +93,36 @@ export function TaxInvoiceButton({
   const [ceo, setCeo] = useState(statementData.partner.representative ?? "");
   const [email, setEmail] = useState(statementData.partner.email ?? "");
   const [manualNo, setManualNo] = useState("");
+
+  // 발행 상태 자동 새로고침 — 국세청 승인번호는 팝빌 배치로 뒤늦게 부여된다. 승인 대기(issued/
+  // issuing/nts_sent)면 상세를 보는 동안 자동 폴링해 승인번호를 반영(수동 [상태 새로고침] 불필요).
+  // 상태가 실제로 바뀔 때만 router.refresh() → 무한 루프 방지. 승인/실패/취소면 폴링 종료.
+  const taxState = taxInvoice?.state;
+  const taxProvider = taxInvoice?.provider;
+  useEffect(() => {
+    if (!taxState || taxProvider === "manual") return;
+    if (!["issuing", "issued", "nts_sent"].includes(taxState)) return;
+    let cancelled = false;
+    let tries = 0;
+    const poll = async () => {
+      if (cancelled) return;
+      tries += 1;
+      const r = await refreshTaxInvoiceStatus(saleId);
+      if (!cancelled && r.ok && r.state && r.state !== taxState) router.refresh();
+    };
+    void poll(); // 즉시 1회
+    const iv = setInterval(() => {
+      if (cancelled || tries >= 20) {
+        clearInterval(iv); // 최대 ~10분(20×30s) 후 종료
+        return;
+      }
+      void poll();
+    }, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [taxState, taxProvider, saleId, router]);
 
   const buyerPartner = partners.find((p) => p.id === buyerPartnerId) ?? null;
   const buyerDiffers = !!defaultBuyerPartnerId && buyerPartnerId !== defaultBuyerPartnerId;
@@ -221,8 +251,13 @@ export function TaxInvoiceButton({
             <div className="flex flex-col gap-2 rounded-lg border p-3 text-sm">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">상태</span>
-                <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${STATE_BADGE[taxInvoice!.state]}`}>
-                  {TAX_INVOICE_STATE_KO[taxInvoice!.state]}
+                <span className="flex items-center gap-1.5">
+                  {["issuing", "issued", "nts_sent"].includes(taxInvoice!.state) ? (
+                    <span className="text-[10px] text-muted-foreground">승인 대기 · 자동 확인 중</span>
+                  ) : null}
+                  <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${STATE_BADGE[taxInvoice!.state]}`}>
+                    {TAX_INVOICE_STATE_KO[taxInvoice!.state]}
+                  </span>
                 </span>
               </div>
               <div className="flex items-center justify-between">
