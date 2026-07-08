@@ -12,7 +12,8 @@
     "radar:collect": "tsx scripts/radar-collect.ts",
     "radar:collect:dry": "tsx scripts/radar-collect.ts --dry-run",
     "radar:check": "tsx scripts/radar-scoring-check.ts",
-    "notify:overdue": "tsx scripts/notify-overdue.ts"
+    "notify:overdue": "tsx scripts/notify-overdue.ts",
+    "cleanup:notify-images": "tsx scripts/cleanup-notify-images.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

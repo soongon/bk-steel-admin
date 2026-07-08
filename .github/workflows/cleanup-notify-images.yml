@@ -1,0 +1,29 @@
+name: 알림 이미지 정리 · 주간
+
+# attachments 버킷 notify/ 의 오래된 카카오워크 알림 이미지 삭제(기본 30일 초과).
+on:
+  schedule:
+    - cron: '0 18 * * 0'   # 매주 월요일 03:00 KST (일 18:00 UTC)
+  workflow_dispatch:
+
+concurrency:
+  group: cleanup-notify-images
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: 오래된 알림 이미지 삭제
+        run: npm run cleanup:notify-images
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # NOTIFY_IMAGE_RETENTION_DAYS: '30'   # 보관 기간 조정 시 repo variable/secret 로
