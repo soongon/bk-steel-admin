@@ -348,6 +348,27 @@ export async function settleSale(
   });
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("sales");
+  // 수금 완료 알림(best-effort)
+  const { data: s } = await supabase
+    .from("sale")
+    .select("doc_no, book, total_krw, partner:partner(name)")
+    .eq("id", id)
+    .maybeSingle();
+  const { data: ba } = await supabase
+    .from("bank_account")
+    .select("bank_name")
+    .eq("id", bankAccountId)
+    .maybeSingle();
+  if (s) {
+    await notifyKakaoWork(
+      `💰 수금 완료 · ${BOOK_LABEL[s.book as Book]}\n` +
+        `거래처: ${(s.partner as { name?: string } | null)?.name ?? "—"}\n` +
+        `금액: ${fmtWon(s.total_krw as number)}\n` +
+        `통장: ${(ba as { bank_name?: string } | null)?.bank_name ?? "—"}\n` +
+        `문서: ${s.doc_no}\n` +
+        adminUrl(`/${s.book}/sales/${id}`),
+    );
+  }
   return { ok: true };
 }
 
@@ -364,6 +385,21 @@ export async function cancelSale(id: string): Promise<SaleActionResult> {
     .eq("id", id);
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("sales");
+  // 매출 취소 알림(best-effort)
+  const { data: s } = await supabase
+    .from("sale")
+    .select("doc_no, book, total_krw, partner:partner(name)")
+    .eq("id", id)
+    .maybeSingle();
+  if (s) {
+    await notifyKakaoWork(
+      `🔴 매출 취소 · ${BOOK_LABEL[s.book as Book]}\n` +
+        `거래처: ${(s.partner as { name?: string } | null)?.name ?? "—"}\n` +
+        `금액: ${fmtWon(s.total_krw as number)}\n` +
+        `문서: ${s.doc_no}\n` +
+        adminUrl(`/${s.book}/sales/${id}`),
+    );
+  }
   return { ok: true };
 }
 
