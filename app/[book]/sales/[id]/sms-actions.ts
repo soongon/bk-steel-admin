@@ -3,7 +3,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { getMessageProvider } from "@/lib/message";
 import { fetchCompanyProfile } from "@/lib/company-profile";
-import { type Book } from "@/lib/book";
+import { type Book, BOOK_LABEL } from "@/lib/book";
+import { notifyKakaoWorkWithImage } from "@/lib/kakaowork";
 
 export type SmsActionResult = { ok: true } | { ok: false; error: string };
 
@@ -28,7 +29,7 @@ export async function sendStatementSms(
   // 권한 없거나 없는 매출이면 0건 → single() error.
   const { data: sale, error: saleErr } = await supabase
     .from("sale")
-    .select("id, book")
+    .select("id, book, doc_no, partner:partner(name)")
     .eq("id", saleId)
     .is("deleted_at", null)
     .single();
@@ -78,6 +79,15 @@ export async function sendStatementSms(
     console.error("[sms] 발송 성공·기록 실패:", e1?.message ?? e2?.message, "sale=", saleId);
   }
 
+  // 명세표 이미지도 운영방(카카오워크)에 공유(best-effort)
+  await notifyKakaoWorkWithImage(
+    supabase,
+    imageJpeg,
+    `statement-${saleId}`,
+    `📄 명세표 송부 · ${BOOK_LABEL[sale.book as Book]}\n` +
+      `거래처: ${(sale.partner as { name?: string } | null)?.name ?? "—"} · 문서 ${sale.doc_no}\n` +
+      `수신: ${toPhone}`,
+  );
   return { ok: true };
 }
 
@@ -95,7 +105,7 @@ export async function sendTaxInvoiceSms(
 
   const { data: sale, error: saleErr } = await supabase
     .from("sale")
-    .select("id, book")
+    .select("id, book, doc_no, partner:partner(name)")
     .eq("id", saleId)
     .is("deleted_at", null)
     .single();
@@ -126,5 +136,15 @@ export async function sendTaxInvoiceSms(
     imageJpeg,
   });
   if (!r.ok) return { ok: false, error: r.error };
+
+  // 세금계산서 이미지도 운영방(카카오워크)에 공유(best-effort)
+  await notifyKakaoWorkWithImage(
+    supabase,
+    imageJpeg,
+    `taxinvoice-${saleId}`,
+    `🧾 세금계산서 문자 발송 · ${BOOK_LABEL[sale.book as Book]}\n` +
+      `거래처: ${(sale.partner as { name?: string } | null)?.name ?? "—"} · 문서 ${sale.doc_no}\n` +
+      `수신: ${toPhone}`,
+  );
   return { ok: true };
 }

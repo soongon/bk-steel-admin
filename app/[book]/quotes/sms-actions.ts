@@ -3,7 +3,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { getMessageProvider } from "@/lib/message";
 import { fetchCompanyProfile } from "@/lib/company-profile";
-import { type Book } from "@/lib/book";
+import { type Book, BOOK_LABEL } from "@/lib/book";
+import { notifyKakaoWorkWithImage } from "@/lib/kakaowork";
 
 export type SmsActionResult = { ok: true } | { ok: false; error: string };
 
@@ -28,7 +29,7 @@ export async function sendQuoteMms(
   // P0: 유료 발송 전 권한·존재 확인 — RLS 가 책별 권한(viewer)을 강제하고, 삭제건은 제외.
   const { data: quote, error: quoteErr } = await supabase
     .from("quote")
-    .select("id, book")
+    .select("id, book, doc_no, partner:partner(name), prospect_name")
     .eq("id", quoteId)
     .is("deleted_at", null)
     .single();
@@ -74,5 +75,14 @@ export async function sendQuoteMms(
     console.error("[quote-sms] 발송 성공·기록 실패:", e1?.message ?? e2?.message, "quote=", quoteId);
   }
 
+  // 견적서 이미지도 운영방(카카오워크)에 공유(best-effort)
+  await notifyKakaoWorkWithImage(
+    supabase,
+    imageJpeg,
+    `quote-${quoteId}`,
+    `📄 견적서 송부 · ${BOOK_LABEL[quote.book as Book]}\n` +
+      `거래처: ${(quote.partner as { name?: string } | null)?.name ?? quote.prospect_name ?? "—"} · 문서 ${quote.doc_no}\n` +
+      `수신: ${toPhone}`,
+  );
   return { ok: true };
 }
