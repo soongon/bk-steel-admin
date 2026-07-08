@@ -63,6 +63,7 @@ type SaleLineInput = {
   unit_price_krw: number;
   weight_kg: number | null;
   manual_amount: number | null; // 금액 직접입력(운송비 포함 등) 시 라인 총액
+  display_name: string | null; // 철제 직접입력 품목명(공용 STEEL_CUSTOM 라벨)
 };
 type CreateInput = {
   book: Book;
@@ -112,6 +113,7 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
         unit_price_krw: Number(o.unit_price_krw) || 0,
         weight_kg: w != null && w !== "" ? Number(w) : null,
         manual_amount: o.manual_amount != null && o.manual_amount !== "" ? Number(o.manual_amount) : null,
+        display_name: typeof o.display_name === "string" && o.display_name.trim() ? o.display_name.trim() : null,
       };
     });
   } catch {
@@ -180,6 +182,7 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
       unit_price_krw: unitPrice,
       weight_kg: l.weight_kg,
       line_subtotal_krw: lineSubtotal,
+      display_name: l.display_name,
     };
   });
   const subtotal = lines.reduce((s, l) => s + l.line_subtotal_krw, 0);

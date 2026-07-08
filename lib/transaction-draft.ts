@@ -4,6 +4,9 @@
 import { calculateRebarWeight, type RebarCalc } from "@/lib/rebar";
 import { type StatementLine } from "@/components/admin/trading-statement";
 
+/** 철제 직접입력용 공용 placeholder 품목(0062 시드 고정 id). 실제 품목명은 라인 display_name. */
+export const STEEL_CUSTOM_ITEM_ID = "00000000-0000-0000-0000-0000000057ee";
+
 /** 거래 라인 입력 초안 — 매출·견적 폼 공유. */
 export type LineDraft = {
   itemKind: "rebar" | "steel";
@@ -14,6 +17,8 @@ export type LineDraft = {
   tonMetric: boolean;
   /** 운송비 포함 등 — 단가 계산 대신 라인 총액을 직접 입력(원). null/미설정이면 자동 계산. */
   manualAmount?: number | null;
+  /** 철제 직접입력 시 실제 품목명(공용 STEEL_CUSTOM item 에 라벨 오버라이드). 없으면 item.name. */
+  displayName?: string | null;
 };
 
 /** 단위 옵션 — 폼 select 공통. ton_metric 은 unit='ton' + tonMetric=true 로 분해. */
@@ -85,6 +90,8 @@ export function serializeLines(
         ton_metric: l.tonMetric,
         // 금액 직접입력(운송비 포함 등) 시 라인 총액. null이면 자동 계산.
         manual_amount: l.manualAmount ?? null,
+        // 철제 직접입력 품목명(공용 STEEL_CUSTOM 라벨 오버라이드). null이면 item.name.
+        display_name: l.displayName?.trim() || null,
       };
     }),
   );
@@ -109,7 +116,7 @@ export function buildStatementLines(
         : "";
       const unitLabel = l.unit === "ton" ? "톤" : l.unit === "kg" ? "kg" : "EA";
       return {
-        item_name: item.name,
+        item_name: l.displayName?.trim() || item.name,
         spec,
         qty: l.qty,
         unit: unitLabel,
