@@ -300,15 +300,51 @@ export async function markPurchasePaid(
   });
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("purchases");
+  // 결제 완료 알림(best-effort)
+  const { data: p } = await supabase
+    .from("purchase")
+    .select("doc_no, book, total_krw, partner:partner(name)")
+    .eq("id", id)
+    .maybeSingle();
+  const { data: ba } = await supabase
+    .from("bank_account")
+    .select("bank_name")
+    .eq("id", bankAccountId)
+    .maybeSingle();
+  if (p) {
+    await notifyKakaoWork(
+      `💸 결제 완료 · ${BOOK_LABEL[p.book as Book]}\n` +
+        `매입처: ${(p.partner as { name?: string } | null)?.name ?? "—"}\n` +
+        `금액: ${fmtWon(p.total_krw as number)}\n` +
+        `통장: ${(ba as { bank_name?: string } | null)?.bank_name ?? "—"}\n` +
+        `문서: ${p.doc_no}\n` +
+        adminUrl(`/${p.book}/purchases/${id}`),
+    );
+  }
   return { ok: true };
 }
 
 export async function deletePurchase(id: string): Promise<PurchaseActionResult> {
   const supabase = await createClient();
+  // 삭제 전 정보 확보(soft-delete 후엔 조회 제외됨) — 알림용.
+  const { data: p } = await supabase
+    .from("purchase")
+    .select("doc_no, book, total_krw, partner:partner(name)")
+    .eq("id", id)
+    .maybeSingle();
   // RPC가 manager 권한을 강제(soft-delete가 staff UPDATE 정책으로 우회되던 문제 차단).
   const { error } = await supabase.rpc("soft_delete_purchase", { p_id: id });
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("purchases");
+  // 매입 취소(삭제) 알림(best-effort)
+  if (p) {
+    await notifyKakaoWork(
+      `🔴 매입 취소 · ${BOOK_LABEL[p.book as Book]}\n` +
+        `매입처: ${(p.partner as { name?: string } | null)?.name ?? "—"}\n` +
+        `금액: ${fmtWon(p.total_krw as number)}\n` +
+        `문서: ${p.doc_no}`,
+    );
+  }
   return { ok: true };
 }
 
