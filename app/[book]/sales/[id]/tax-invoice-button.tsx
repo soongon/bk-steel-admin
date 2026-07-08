@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ReceiptTextIcon, FileTextIcon, RefreshCwIcon, XCircleIcon } from "lucide-react";
+import { ReceiptTextIcon, FileTextIcon, RefreshCwIcon, XCircleIcon, MessageSquareIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -26,6 +26,7 @@ import {
   getTaxInvoicePrintUrl,
   recordManualTaxInvoice,
 } from "./tax-invoice-actions";
+import { sendTaxInvoiceSms } from "./sms-actions";
 
 export type SaleTaxInvoice = {
   state: TaxInvoiceState;
@@ -93,6 +94,9 @@ export function TaxInvoiceButton({
   const [ceo, setCeo] = useState(statementData.partner.representative ?? "");
   const [email, setEmail] = useState(statementData.partner.email ?? "");
   const [manualNo, setManualNo] = useState("");
+  const captureRef = useRef<HTMLDivElement>(null); // 세금계산서 문자전송용 캡처 대상(화면 밖)
+  const [smsOpen, setSmsOpen] = useState(false);
+  const [smsPhone, setSmsPhone] = useState("");
 
   // 발행 상태 자동 새로고침 — 국세청 승인번호는 팝빌 배치로 뒤늦게 부여된다. 승인 대기(issued/
   // issuing/nts_sent)면 상세를 보는 동안 자동 폴링해 승인번호를 반영(수동 [상태 새로고침] 불필요).
@@ -220,6 +224,51 @@ export function TaxInvoiceButton({
       } else toast.error(r.error);
     });
   }
+  function openSmsInput() {
+    setSmsPhone(previewData.partner.phone ?? "");
+    setSmsOpen(true);
+  }
+  function onSendSms() {
+    if (!captureRef.current) return;
+    if (digitsOnly(smsPhone).length < 10) {
+      toast.error("수신 번호를 확인하세요.");
+      return;
+    }
+    const node = captureRef.current;
+    start(async () => {
+      let dataUrl: string;
+      try {
+        // html2canvas-pro: Tailwind4 oklch 색상 파싱(원조 html2canvas 는 실패). 브라우저 전용.
+        const html2canvas = (await import("html2canvas-pro")).default;
+        const canvas = await html2canvas(node, {
+          scale: 2,
+          backgroundColor: "#ffffff",
+          useCORS: true,
+          imageTimeout: 15000,
+        });
+        const MAX_W = 1400; // MMS 권장 가로(~1500px) 이하로 다운스케일
+        let out = canvas;
+        if (canvas.width > MAX_W) {
+          const scaled = document.createElement("canvas");
+          scaled.width = MAX_W;
+          scaled.height = Math.round((canvas.height * MAX_W) / canvas.width);
+          scaled.getContext("2d")?.drawImage(canvas, 0, 0, scaled.width, scaled.height);
+          out = scaled;
+        }
+        dataUrl = out.toDataURL("image/jpeg", 0.85);
+      } catch {
+        toast.error("세금계산서 이미지 생성 실패");
+        return;
+      }
+      const r = await sendTaxInvoiceSms(saleId, dataUrl, smsPhone, company?.name ?? undefined);
+      if (r.ok) {
+        toast.success("세금계산서 문자(MMS) 전송됨");
+        setSmsOpen(false);
+        setOpen(false);
+        router.refresh();
+      } else toast.error(r.error);
+    });
+  }
 
   return (
     <>
@@ -275,9 +324,46 @@ export function TaxInvoiceButton({
                 <Button size="sm" variant="outline" onClick={onRefresh} disabled={pending}>
                   <RefreshCwIcon className="size-4" /> 상태 새로고침
                 </Button>
+                <Button size="sm" variant="outline" onClick={openSmsInput} disabled={pending}>
+                  <MessageSquareIcon className="size-4" /> 문자 전송
+                </Button>
                 <Button size="sm" variant="outline" onClick={onCancel} disabled={pending} className="text-destructive">
                   <XCircleIcon className="size-4" /> 발행취소
                 </Button>
+              </div>
+
+              {/* 문자 전송 — 인라인 수신번호(펼침). 계산서 이미지를 거래처 휴대폰으로 MMS. */}
+              {smsOpen ? (
+                <div className="mt-1 flex items-end gap-2 rounded-lg border bg-muted/30 p-2">
+                  <label className="flex flex-1 flex-col gap-1 text-sm">
+                    <span className="text-muted-foreground">수신 번호 *</span>
+                    <Input
+                      value={smsPhone}
+                      onChange={(e) => setSmsPhone(e.target.value)}
+                      placeholder="010-0000-0000"
+                      inputMode="numeric"
+                    />
+                    {!previewData.partner.phone ? (
+                      <span className="text-xs text-amber-600">거래처 휴대폰이 없습니다 — 직접 입력</span>
+                    ) : null}
+                  </label>
+                  <Button size="sm" onClick={onSendSms} disabled={pending}>
+                    {pending ? "전송 중..." : "전송"}
+                  </Button>
+                </div>
+              ) : null}
+
+              {/* 캡처 전용(화면 밖) — details 접힘과 무관하게 세금계산서 이미지 캡처 */}
+              <div className="pointer-events-none fixed left-[-9999px] top-0" aria-hidden>
+                <div ref={captureRef} className="w-[760px] bg-white p-4 text-zinc-900">
+                  <TaxInvoiceDocument
+                    data={previewData}
+                    company={company}
+                    purpose={purpose}
+                    writeDate={taxInvoice!.write_date ?? writeDate}
+                    ntsConfirmNum={taxInvoice!.nts_confirm_num}
+                  />
+                </div>
               </div>
             </div>
           ) : mode === "electronic" ? (

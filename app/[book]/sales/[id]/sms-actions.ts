@@ -80,3 +80,51 @@ export async function sendStatementSms(
 
   return { ok: true };
 }
+
+/**
+ * 발행된 전자세금계산서 이미지를 거래처에 MMS로 전송(부가 편의 — 법적 원본은 팝빌이 이메일로 발송).
+ * sendStatementSms 미러. 캡처 이미지는 클라이언트(html2canvas-pro) data URL.
+ */
+export async function sendTaxInvoiceSms(
+  saleId: string,
+  imageDataUrl: string,
+  toPhone: string,
+  companyName?: string,
+): Promise<SmsActionResult> {
+  const supabase = await createClient();
+
+  const { data: sale, error: saleErr } = await supabase
+    .from("sale")
+    .select("id, book")
+    .eq("id", saleId)
+    .is("deleted_at", null)
+    .single();
+  if (saleErr || !sale) {
+    return { ok: false, error: "권한이 없거나 존재하지 않는 매출입니다." };
+  }
+
+  if (!imageDataUrl.startsWith("data:image/")) {
+    return { ok: false, error: "이미지 형식이 올바르지 않습니다." };
+  }
+  const base64 = imageDataUrl.split(",")[1] ?? "";
+  if (!base64) return { ok: false, error: "세금계산서 이미지가 비어 있습니다." };
+  const imageJpeg = Buffer.from(base64, "base64");
+  if (imageJpeg.byteLength > MAX_IMAGE_BYTES) {
+    return {
+      ok: false,
+      error: `이미지가 너무 큽니다(${Math.round(imageJpeg.byteLength / 1024)}KB). MMS 권장 200KB 이하로 줄여주세요.`,
+    };
+  }
+
+  const company = await fetchCompanyProfile(supabase, sale.book as Book);
+  const text = `[${companyName || "신라철강"}] 전자세금계산서를 보내드립니다.`;
+  const r = await getMessageProvider().sendImageMms({
+    corpNum: company?.business_no ?? null,
+    to: toPhone,
+    subject: "전자세금계산서",
+    text,
+    imageJpeg,
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true };
+}
