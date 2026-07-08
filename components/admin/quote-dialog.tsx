@@ -21,6 +21,7 @@ import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import {
   type LineDraft,
   UNIT_OPTIONS,
+  STEEL_CUSTOM_ITEM_ID,
   calcLineDraft,
   buildStatementLines,
   serializeLines,
@@ -124,6 +125,7 @@ export function QuoteDialog({
   const [paymentTerms, setPaymentTerms] = useState(""); // 결제조건
 
   const [itemKind, setItemKind] = useState<"rebar" | "steel">("rebar");
+  const [steelName, setSteelName] = useState(""); // 철제 직접입력 품목명(공용 STEEL_CUSTOM)
   const itemOptions = useMemo(
     () =>
       itemKind === "rebar"
@@ -160,11 +162,16 @@ export function QuoteDialog({
 
   const calcLine = (l: LineDraft) => calcLineDraft(items, rebarSpecs, l);
 
+  // 철제는 공용 STEEL_CUSTOM item + 직접입력 품목명(displayName). 철근은 선택한 itemId 그대로.
+  const effItemId = itemKind === "steel" ? STEEL_CUSTOM_ITEM_ID : itemId;
+  const effDisplayName = itemKind === "steel" ? steelName.trim() : null;
+  const itemChosen = itemKind === "steel" ? !!steelName.trim() : !!itemId;
+
   // 이론중량 톤은 정수만(표준본수 기반). 톤(1,000kg)은 소수 허용(예: 1.1·3.5톤). 가닥·kg은 기존대로.
   const fractionalTon = unit === "ton" && !tonMetric && !Number.isInteger(qty);
   const pendingLine: LineDraft | null =
-    itemId && qty > 0 && !fractionalTon && (manualMode ? manualAmount > 0 : unitPrice > 0)
-      ? { itemKind, itemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null }
+    itemChosen && qty > 0 && !fractionalTon && (manualMode ? manualAmount > 0 : unitPrice > 0)
+      ? { itemKind, itemId: effItemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null, displayName: effDisplayName }
       : null;
   const allLines = pendingLine ? [...lines, pendingLine] : lines;
 
@@ -239,7 +246,11 @@ export function QuoteDialog({
   })();
 
   function addLine() {
-    if (!itemId) { setError("품목을 선택해주세요."); return; }
+    if (itemKind === "steel") {
+      if (!steelName.trim()) { setError("품목명을 입력해주세요."); return; }
+    } else if (!itemId) {
+      setError("품목을 선택해주세요."); return;
+    }
     if (qty <= 0) { setError("수량을 입력해주세요."); return; }
     if (fractionalTon) {
       setError("이론중량 톤은 정수만 입력하세요. 소수 톤은 단위를 '톤 (1,000kg)'로 바꿔주세요.");
@@ -251,9 +262,10 @@ export function QuoteDialog({
     }
     setLines((prev) => [
       ...prev,
-      { itemKind, itemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null },
+      { itemKind, itemId: effItemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null, displayName: effDisplayName },
     ]);
     setItemId("");
+    setSteelName("");
     setQtyStr("");
     setUnitPriceStr("");
     setManualMode(false);
@@ -414,6 +426,7 @@ export function QuoteDialog({
                       onClick={() => {
                         setItemKind(k);
                         setItemId("");
+                        setSteelName("");
                       }}
                       className={`flex-1 rounded-md border px-2 py-1 text-xs ${itemKind === k ? "bg-foreground text-background" : "bg-background"}`}
                     >
@@ -423,18 +436,26 @@ export function QuoteDialog({
                 </div>
               </Field>
               <Field label="품목 *">
-                <select
-                  value={itemId}
-                  onChange={(e) => setItemId(e.target.value)}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  <option value="">— 선택 —</option>
-                  {itemOptions.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                    </option>
-                  ))}
-                </select>
+                {itemKind === "steel" ? (
+                  <Input
+                    value={steelName}
+                    onChange={(e) => setSteelName(e.target.value)}
+                    placeholder="품목명 직접입력 (예: ㄱ앵글 65×65)"
+                  />
+                ) : (
+                  <select
+                    value={itemId}
+                    onChange={(e) => setItemId(e.target.value)}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                  >
+                    <option value="">— 선택 —</option>
+                    {itemOptions.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </Field>
             </div>
             <div className="grid grid-cols-3 gap-3">
@@ -511,7 +532,7 @@ export function QuoteDialog({
                   const reb = !!li?.rebar_spec_code && !!c;
                   return (
                     <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-xs">
-                      <span className="flex-1 truncate font-medium">{li?.name ?? "—"}</span>
+                      <span className="flex-1 truncate font-medium">{l.displayName?.trim() || li?.name || "—"}</span>
                       <span className="text-muted-foreground">
                         {reb ? `${fmtNum(c!.weightKg)}kg` : `${l.qty}${l.unit}`}
                         {l.manualAmount != null && l.manualAmount > 0

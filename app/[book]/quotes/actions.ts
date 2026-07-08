@@ -32,6 +32,7 @@ type QuoteLineInput = {
   weight_kg: number | null;
   ton_metric: boolean;
   manual_amount: number | null; // 금액 직접입력(운송비 포함 등) 시 라인 총액
+  display_name: string | null; // 철제 직접입력 품목명(공용 STEEL_CUSTOM 라벨)
 };
 
 function readQuoteInput(formData: FormData) {
@@ -56,6 +57,7 @@ function readQuoteInput(formData: FormData) {
         weight_kg: w != null && w !== "" ? Number(w) : null,
         ton_metric: Boolean(o.ton_metric),
         manual_amount: o.manual_amount != null && o.manual_amount !== "" ? Number(o.manual_amount) : null,
+        display_name: typeof o.display_name === "string" && o.display_name.trim() ? o.display_name.trim() : null,
       };
     });
   } catch {
@@ -115,6 +117,7 @@ export async function createQuote(formData: FormData): Promise<QuoteActionResult
       ton_metric: l.ton_metric,
       line_subtotal_krw: lineSubtotal,
       manual_amount: manual ? Math.round(l.manual_amount!) : null,
+      display_name: l.display_name,
     };
   });
   const subtotal = lines.reduce((s, l) => s + l.line_subtotal_krw, 0);
@@ -177,6 +180,7 @@ export async function updateQuote(quoteId: string, formData: FormData): Promise<
       ton_metric: l.ton_metric,
       line_subtotal_krw: lineSubtotal,
       manual_amount: manual ? Math.round(l.manual_amount!) : null,
+      display_name: l.display_name,
     };
   });
   const subtotal = lines.reduce((s, l) => s + l.line_subtotal_krw, 0);

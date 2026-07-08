@@ -117,6 +117,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
         unitPrice: Number(l.unit_price_krw),
         tonMetric: isMetricTon,
         manualAmount: l.manual_amount != null ? Number(l.manual_amount) : null,
+        displayName: l.display_name != null ? String(l.display_name) : null,
       } as LineDraft;
     }),
   };
