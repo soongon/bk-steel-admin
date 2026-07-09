@@ -17,6 +17,7 @@ import { TradingStatement, type StatementData } from "@/components/admin/trading
 import { type CompanyProfile } from "@/lib/company-profile";
 import { digitsOnly } from "@/lib/format";
 import { sendStatementSms } from "./sms-actions";
+import { captureNodeToJpeg } from "@/lib/capture-node";
 
 /**
  * 거래명세표 — 버튼으로 모달 열기(공급받는자 보관용 1매).
@@ -58,25 +59,7 @@ export function StatementButton({
     startTransition(async () => {
       let dataUrl: string;
       try {
-        // 브라우저 전용 — html2canvas-pro 는 Tailwind4 oklch 색상을 파싱(원조 html2canvas 는 실패).
-        const html2canvas = (await import("html2canvas-pro")).default;
-        const canvas = await html2canvas(node, {
-          scale: 2,
-          backgroundColor: "#ffffff",
-          useCORS: true,
-          imageTimeout: 15000,
-        });
-        // 1600px(800×2)는 MMS 권장 가로(~1500px) 초과 가능 → 1400px 이하로 다운스케일
-        const MAX_W = 1400;
-        let out = canvas;
-        if (canvas.width > MAX_W) {
-          const scaled = document.createElement("canvas");
-          scaled.width = MAX_W;
-          scaled.height = Math.round((canvas.height * MAX_W) / canvas.width);
-          scaled.getContext("2d")?.drawImage(canvas, 0, 0, scaled.width, scaled.height);
-          out = scaled;
-        }
-        dataUrl = out.toDataURL("image/jpeg", 0.85);
+        dataUrl = await captureNodeToJpeg(node); // 200KB 이하 자동 압축
       } catch {
         toast.error("명세서 이미지 생성 실패");
         return;

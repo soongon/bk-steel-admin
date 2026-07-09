@@ -9,7 +9,7 @@ import { notifyKakaoWorkWithImage } from "@/lib/kakaowork";
 export type SmsActionResult = { ok: true } | { ok: false; error: string };
 
 // MMS 이미지 권장 상한(솔라피 ~200KB) — 약간 여유. 초과 시 발송 전 차단(비용·413 방지).
-const MAX_IMAGE_BYTES = 280_000;
+const MAX_IMAGE_BYTES = 205_000; // 솔라피 MMS 상한 200KB — 클라 캡처가 195KB 이하로 압축(capture-node), 서버는 백스톱.
 
 /**
  * 매출 거래명세서 이미지를 거래처에 MMS로 전송.

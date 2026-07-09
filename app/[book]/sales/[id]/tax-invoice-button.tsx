@@ -27,6 +27,7 @@ import {
   recordManualTaxInvoice,
 } from "./tax-invoice-actions";
 import { sendTaxInvoiceSms } from "./sms-actions";
+import { captureNodeToJpeg } from "@/lib/capture-node";
 
 export type SaleTaxInvoice = {
   state: TaxInvoiceState;
@@ -238,24 +239,7 @@ export function TaxInvoiceButton({
     start(async () => {
       let dataUrl: string;
       try {
-        // html2canvas-pro: Tailwind4 oklch 색상 파싱(원조 html2canvas 는 실패). 브라우저 전용.
-        const html2canvas = (await import("html2canvas-pro")).default;
-        const canvas = await html2canvas(node, {
-          scale: 2,
-          backgroundColor: "#ffffff",
-          useCORS: true,
-          imageTimeout: 15000,
-        });
-        const MAX_W = 1400; // MMS 권장 가로(~1500px) 이하로 다운스케일
-        let out = canvas;
-        if (canvas.width > MAX_W) {
-          const scaled = document.createElement("canvas");
-          scaled.width = MAX_W;
-          scaled.height = Math.round((canvas.height * MAX_W) / canvas.width);
-          scaled.getContext("2d")?.drawImage(canvas, 0, 0, scaled.width, scaled.height);
-          out = scaled;
-        }
-        dataUrl = out.toDataURL("image/jpeg", 0.85);
+        dataUrl = await captureNodeToJpeg(node); // 200KB 이하 자동 압축
       } catch {
         toast.error("세금계산서 이미지 생성 실패");
         return;

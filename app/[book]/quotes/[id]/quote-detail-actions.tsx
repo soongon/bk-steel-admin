@@ -19,6 +19,7 @@ import { type Book } from "@/lib/book";
 import { digitsOnly } from "@/lib/format";
 import { markQuoteSent, deleteQuote } from "../actions";
 import { sendQuoteMms } from "../sms-actions";
+import { captureNodeToJpeg } from "@/lib/capture-node";
 
 /**
  * 견적 상세의 액션 묶음 — 견적서 보기(출력)·문자(MMS) 전송·발송 표시·삭제.
@@ -62,24 +63,7 @@ export function QuoteDetailActions({
     start(async () => {
       let dataUrl: string;
       try {
-        // 브라우저 전용 — html2canvas-pro 는 Tailwind4 oklch 색상을 파싱(원조 html2canvas 는 실패).
-        const html2canvas = (await import("html2canvas-pro")).default;
-        const canvas = await html2canvas(node, {
-          scale: 2,
-          backgroundColor: "#ffffff",
-          useCORS: true,
-          imageTimeout: 15000,
-        });
-        const MAX_W = 1400;
-        let out = canvas;
-        if (canvas.width > MAX_W) {
-          const scaled = document.createElement("canvas");
-          scaled.width = MAX_W;
-          scaled.height = Math.round((canvas.height * MAX_W) / canvas.width);
-          scaled.getContext("2d")?.drawImage(canvas, 0, 0, scaled.width, scaled.height);
-          out = scaled;
-        }
-        dataUrl = out.toDataURL("image/jpeg", 0.85);
+        dataUrl = await captureNodeToJpeg(node); // 200KB 이하 자동 압축
       } catch {
         toast.error("견적서 이미지 생성 실패");
         return;
