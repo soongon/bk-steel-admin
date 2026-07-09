@@ -39,7 +39,9 @@ export function QuoteDocument({
     ...data.lines,
     ...Array.from({ length: Math.max(0, MIN_ROWS - data.lines.length) }, () => null),
   ];
-  const firstRebarIdx = data.lines.findIndex((l) => !!l.spec);
+  // 철근만 '철근' 라벨로 묶고, 철제는 각 라인 품명 표시. is_rebar 미제공(옛 경로)이면 규격 유무로 판정.
+  const isRebarLine = (l: (typeof data.lines)[number]) => l.is_rebar ?? !!l.spec;
+  const firstRebarIdx = data.lines.findIndex(isRebarLine);
 
   return (
     <div className="quote-print text-zinc-900 print:text-black">
@@ -141,14 +143,18 @@ export function QuoteDocument({
               <tr key={i}>
                 <td className="border border-zinc-400 px-1 py-0.5 text-center">{i + 1}</td>
                 <td className="border border-zinc-400 px-1 py-0.5">
-                  {line.spec ? (i === firstRebarIdx ? "철근" : "") : line.item_name}
+                  {isRebarLine(line)
+                    ? i === firstRebarIdx
+                      ? line.display_name ?? "철근"
+                      : ""
+                    : line.display_name ?? line.item_name}
                 </td>
                 <td className="border border-zinc-400 px-1 py-0.5 text-center text-[11px]">{line.spec}</td>
                 <td className="border border-zinc-400 px-1 py-0.5 text-right tabular-nums">
                   <div className="whitespace-nowrap">
                     {line.qty} {line.unit}
                   </div>
-                  {line.weight_kg != null ? (
+                  {isRebarLine(line) && line.weight_kg != null ? (
                     <div className="whitespace-nowrap text-[10px] text-zinc-500">{fmtKrw(line.weight_kg)}kg</div>
                   ) : null}
                 </td>

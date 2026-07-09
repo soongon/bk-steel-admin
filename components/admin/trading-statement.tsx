@@ -13,6 +13,7 @@ export type StatementLine = {
   note?: string;
   ordered_on?: string;  // 누적 명세표에서 라인별 날짜 표시용 (단건은 헤더의 ordered_on 사용)
   display_name?: string | null;  // 품목명 라벨 오버라이드(예: 철근→철근(현대철강)). 없으면 기본(철근/품목명).
+  is_rebar?: boolean;  // 철근 여부. 철근만 '철근' 라벨로 묶고 중량 병기. 철제는 각 라인 품명 표시.
 };
 
 export type StatementData = {
@@ -146,8 +147,10 @@ function StatementCopy({
     ...data.lines,
     ...Array.from({ length: Math.max(0, MIN_ROWS - data.lines.length) }, () => null),
   ];
-  // 철근(규격 있는 라인)은 품목칸에 '철근'을 첫 행만 표기하고 이후는 비움(중복 제거).
-  const firstRebarIdx = data.lines.findIndex((l) => !!l.spec);
+  // 철근 라인은 품목칸에 '철근'을 첫 행만 표기하고 이후는 비움(중복 제거). 철제는 각 라인 품명 표시.
+  // is_rebar 미제공(옛 경로)이면 규격 유무로 판정(하위호환).
+  const isRebarLine = (l: StatementLine) => l.is_rebar ?? !!l.spec;
+  const firstRebarIdx = data.lines.findIndex(isRebarLine);
   // 입금계좌 '농협 [번호] 최원식' — bank_default_name 이 '은행/예금주' 포맷이면 분리해 번호를 사이에.
   const bankParts = (company.bank_default_name ?? "").split("/").map((x) => x.trim());
   const bankLine = [bankParts[0], company.bank_default_no, bankParts[1] || company.representative]
@@ -286,7 +289,7 @@ function StatementCopy({
                     : ""}
                 </td>
                 <td className={`border ${baseClass} px-1 py-0.5`}>
-                  {line.spec
+                  {isRebarLine(line)
                     ? i === firstRebarIdx
                       ? line.display_name ?? "철근"
                       : ""
@@ -299,7 +302,7 @@ function StatementCopy({
                   <div className="whitespace-nowrap">
                     {line.qty} {line.unit}
                   </div>
-                  {line.spec && line.weight_kg != null ? (
+                  {isRebarLine(line) && line.weight_kg != null ? (
                     <div className="whitespace-nowrap text-[10px] text-zinc-500">{fmtKrw(line.weight_kg)}kg</div>
                   ) : null}
                 </td>

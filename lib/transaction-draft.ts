@@ -122,6 +122,7 @@ export function buildStatementLines(
       return {
         item_name: l.displayName?.trim() || item.name,
         spec,
+        is_rebar: isReb,
         qty: l.qty,
         unit: unitLabel,
         unit_price_krw:

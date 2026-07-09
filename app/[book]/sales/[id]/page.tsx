@@ -225,8 +225,9 @@ export default async function SaleDetailPage({
       const unitLabel =
         line.unit === "ton" ? "톤" : line.unit === "kg" ? "kg" : line.unit === "ea" ? "EA" : line.unit;
       return {
-        item_name: item?.name ?? "—",
+        item_name: line.display_name?.trim() || item?.name || "—",
         spec,
+        is_rebar: isRebar,
         qty: q,
         unit: unitLabel,
         unit_price_krw:

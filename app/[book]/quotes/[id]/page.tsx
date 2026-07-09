@@ -136,6 +136,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
     return {
       item_name: l.display_name?.trim() || item?.name || "—",
       spec,
+      is_rebar: isReb,
       qty: Number(l.qty),
       unit: unitLabel,
       unit_price_krw: Number(l.unit_price_krw),
