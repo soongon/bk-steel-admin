@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/admin/field";
 import { Input } from "@/components/ui/input";
 import { type StatementData } from "@/components/admin/trading-statement";
 import { TaxInvoiceDocument } from "@/components/admin/tax-invoice-document";
@@ -452,14 +453,5 @@ export function TaxInvoiceButton({
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      {children}
-    </label>
   );
 }

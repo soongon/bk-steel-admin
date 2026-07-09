@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/admin/field";
 import { PlusIcon, XIcon } from "lucide-react";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
@@ -623,14 +624,5 @@ export function PurchaseFormDialog({
         </form>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      {children}
-    </label>
   );
 }

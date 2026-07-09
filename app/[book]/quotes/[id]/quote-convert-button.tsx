@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/admin/field";
 import { Input } from "@/components/ui/input";
 import { type Book } from "@/lib/book";
 import { TAX_DOC_OPTIONS } from "@/lib/tax-doc";
@@ -192,14 +193,5 @@ export function QuoteConvertButton({
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      {children}
-    </label>
   );
 }
