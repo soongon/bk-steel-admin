@@ -52,6 +52,12 @@ function NaraView({ projects }: { projects: RadarProjectRow[] }) {
         const ua = a.stage === "awarded" ? 0 : 1;
         const ub = b.stage === "awarded" ? 0 : 1;
         if (ua !== ub) return ua - ub;
+        // 낙찰 건끼리는 낙찰일 역순(최신 먼저 — 지금 전화할 타이밍). 날짜 없으면 뒤로.
+        if (ua === 0) {
+          const da = a.stage_date ?? "";
+          const db = b.stage_date ?? "";
+          if (da !== db) return db.localeCompare(da);
+        }
         const ga = GRADE_RANK[a.relevance_grade ?? "C"] ?? 2;
         const gb = GRADE_RANK[b.relevance_grade ?? "C"] ?? 2;
         if (ga !== gb) return ga - gb;
