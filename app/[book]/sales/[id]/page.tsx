@@ -18,6 +18,7 @@ import { SaleEditButton } from "./sale-edit-button";
 import { type SaleRow } from "../sale-form-dialog";
 import { type BankAccount } from "../settle-dialog";
 import { fmtKrw, fmtNum, formatBusinessNo, formatPhone } from "@/lib/format";
+import { rebarSpecLabel } from "@/lib/rebar";
 
 const STATUS_KO: Record<string, string> = {
   reserved: "주문",
@@ -205,13 +206,7 @@ export default async function SaleDetailPage({
       const item = line.item;
       let spec = "";
       if (item?.category === "rebar" && item?.rebar_spec_code) {
-        spec = [
-          item.rebar_spec_code,
-          item.rebar_grade_code,
-          item.length_m ? `${item.length_m}M` : null,
-        ]
-          .filter(Boolean)
-          .join(" ");
+        spec = rebarSpecLabel(item);
       } else if (line.spec_text) {
         spec = String(line.spec_text); // 철제 직접입력 규격
       }

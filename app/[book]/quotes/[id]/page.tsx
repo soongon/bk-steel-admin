@@ -4,6 +4,7 @@ import { ArrowLeftIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { BookBadge } from "@/components/admin/book-badge";
 import { fmtKrw, fmtNum } from "@/lib/format";
+import { rebarSpecLabel } from "@/lib/rebar";
 import { type QuoteDocumentData } from "@/components/admin/quote-document";
 import { type CompanyProfile } from "@/lib/company-profile";
 import {
@@ -126,11 +127,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
   const stLines = lines.map((l) => {
     const item = l.item as Record<string, any> | null;
     const isReb = !!item?.rebar_spec_code;
-    const spec = isReb
-      ? [item!.rebar_spec_code, item!.rebar_grade_code, item!.length_m ? `${item!.length_m}M` : null]
-          .filter(Boolean)
-          .join(" ")
-      : l.spec_text ? String(l.spec_text) : ""; // 철제 직접입력 규격
+    const spec = isReb ? rebarSpecLabel(item!) : l.spec_text ? String(l.spec_text) : ""; // 철제 직접입력 규격
     const unitLabel = l.unit === "ton" ? "톤" : l.unit === "kg" ? "kg" : "EA";
     const sub = Number(l.line_subtotal_krw);
     return {

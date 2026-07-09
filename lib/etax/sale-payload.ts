@@ -2,6 +2,7 @@
 // 검증 스크립트(scripts/etax-app-path-test)가 같은 코드를 쓰도록 분리 — 실데이터 매핑을
 // 한 곳에서만 정의한다. createClient·RPC·revalidate 같은 부수효과는 호출자(액션)가 담당.
 import { digitsOnly } from "@/lib/format";
+import { rebarSpecLabel } from "@/lib/rebar";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { type EtaxIssueInput, type EtaxLine } from "./types";
 
@@ -21,11 +22,7 @@ export function buildSaleEtaxLines(sale: Record<string, any>): EtaxLine[] {
     const isReb = it?.category === "rebar" && !!it?.rebar_spec_code;
     const supply = Math.round(Number(l.line_subtotal_krw ?? Number(l.qty) * Number(l.unit_price_krw)));
     const tax = sale.is_documented ? Math.round((supply * vatRate) / 100) : 0;
-    const spec = isReb
-      ? [it.rebar_spec_code, it.rebar_grade_code, it.length_m ? `${it.length_m}M` : null]
-          .filter(Boolean)
-          .join(" ")
-      : l.spec_text || ""; // 철제 직접입력 규격
+    const spec = isReb ? rebarSpecLabel(it) : l.spec_text || ""; // 철제 직접입력 규격
     return {
       serialNum: i + 1,
       date: dt,

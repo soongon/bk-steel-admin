@@ -2,41 +2,18 @@
 // CorpNum(발행 사업자번호)은 env 가 아니라 호출자가 supplier.corpNum 으로 전달 — 한 LinkHub
 // 계정으로 법인(BK)·사업자(SL) 사업자번호를 각각 연동회원으로 두고 발행한다.
 // 운영/테스트는 POPBILL_IS_TEST 로 분기(기본 true = 테스트베드, 국세청 실전송 없음).
-//
-// ⚠️ popbill SDK(CJS)는 서비스 팩토리(TaxinvoiceService 등)가 인스턴스를 this(모듈 객체)에 캐싱한다.
-// `import * as popbill` 의 ESM namespace 는 Next 프로덕션 번들에서 frozen 이라 그 캐싱 쓰기가 무시돼
-// TaxinvoiceService() 가 undefined 를 반환 → registIssue 호출 시 'undefined' 에러(로컬 tsx 는 정상).
-// createRequire 로 실제 mutable CJS exports 를 받아 SDK 가 설계대로 동작하게 한다.
-import { createRequire } from "node:module";
+// SDK 로드·config·promisify 는 lib/popbill-config 공용(메시지 어댑터와 공유).
+import { popbill, popbillIsTest, popbillConfigure, popbillPromisify } from "@/lib/popbill-config";
 import type { EtaxProvider, EtaxIssueInput, EtaxState, EtaxStatus } from "./types";
-
-const popbill = createRequire(import.meta.url)("popbill") as typeof import("popbill");
 
 const SELL = "SELL"; // MgtKeyType.SELL — 정발행(판매자 문서관리번호)
 
-function isTest(): boolean {
-  return process.env.POPBILL_IS_TEST !== "false"; // 기본 테스트베드
-}
+const isTest = popbillIsTest;
+const promisify = popbillPromisify;
 
-let configured = false;
 function service() {
-  const LinkID = process.env.POPBILL_LINK_ID;
-  const SecretKey = process.env.POPBILL_SECRET_KEY;
-  if (!LinkID || !SecretKey) {
-    throw new Error("팝빌 연동키(POPBILL_LINK_ID·POPBILL_SECRET_KEY)가 설정되지 않았습니다.");
-  }
-  if (!configured) {
-    popbill.config({ LinkID, SecretKey, IsTest: isTest() });
-    configured = true;
-  }
+  popbillConfigure();
   return popbill.TaxinvoiceService();
-}
-
-/** 콜백(success/error) API → Promise. */
-function promisify<T>(run: (s: (r: T) => void, e: (err: { message?: string }) => void) => void): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    run(resolve, (err) => reject(new Error(err?.message || "팝빌 처리 오류")));
-  });
 }
 
 // 팝빌 stateCode 상세값은 테스트베드에서 최종 확정 필요. 국세청 승인번호(ntsconfirmNum) 유무를

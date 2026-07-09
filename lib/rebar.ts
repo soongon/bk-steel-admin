@@ -6,6 +6,17 @@
 export const isRebarItem = (i: { category: string; rebar_spec_code: string | null }) =>
   i.category === "rebar" || !!i.rebar_spec_code;
 
+/** 철근 규격 라벨 조합 — "D13 SD400 8M". 명세표·견적서·계산서 공통(4곳 중복 제거). */
+export function rebarSpecLabel(item: {
+  rebar_spec_code?: string | null;
+  rebar_grade_code?: string | null;
+  length_m?: number | null;
+}): string {
+  return [item.rebar_spec_code, item.rebar_grade_code, item.length_m ? `${item.length_m}M` : null]
+    .filter(Boolean)
+    .join(" ");
+}
+
 /** "D13" → 13. 정렬용(10미리부터). 못 읽으면 맨 뒤. */
 const specMm = (code: string | null) => {
   const n = parseInt(String(code ?? "").replace(/\D/g, ""), 10);

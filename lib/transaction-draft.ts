@@ -1,7 +1,7 @@
 // 거래 라인(매출·견적 공통) 순수 로직 — 폼이 공유하는 LineDraft·환산·합계·명세 빌더.
 // UI(입력 컴포넌트)는 transaction-line-editor.tsx, 헤더(거래처·세금 vs 유효기간·조건)는 각 폼이 보유.
 
-import { calculateRebarWeight, type RebarCalc } from "@/lib/rebar";
+import { calculateRebarWeight, rebarSpecLabel, type RebarCalc } from "@/lib/rebar";
 import { type StatementLine } from "@/components/admin/trading-statement";
 
 /** 철제 직접입력용 공용 placeholder 품목(0062 시드 고정 id). 실제 품목명은 라인 display_name. */
@@ -64,14 +64,6 @@ export function calcLineDraft(
   return { item, calc, subtotal };
 }
 
-/** 라인 배열 공급가 합. */
-export function sumLineSubtotals(
-  items: DraftItem[],
-  rebarSpecs: DraftRebarSpec[],
-  lines: LineDraft[],
-): number {
-  return lines.reduce((s, l) => s + calcLineDraft(items, rebarSpecs, l).subtotal, 0);
-}
 
 /** FormData 의 lines JSON 직렬화용 — RPC(create_*_with_lines)가 받는 형태. */
 export function serializeLines(
@@ -113,11 +105,7 @@ export function buildStatementLines(
       const { item, calc: c, subtotal: sub } = calcLineDraft(items, rebarSpecs, l);
       if (!item) return null;
       const isReb = !!item.rebar_spec_code && !!c;
-      const spec = isReb
-        ? [item.rebar_spec_code, item.rebar_grade_code, item.length_m ? `${item.length_m}M` : null]
-            .filter(Boolean)
-            .join(" ")
-        : l.specText?.trim() || ""; // 철제 직접입력 규격
+      const spec = isReb ? rebarSpecLabel(item) : l.specText?.trim() || ""; // 철제 직접입력 규격
       const unitLabel = l.unit === "ton" ? "톤" : l.unit === "kg" ? "kg" : "EA";
       return {
         item_name: l.displayName?.trim() || item.name,

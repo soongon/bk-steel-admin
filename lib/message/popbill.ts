@@ -2,41 +2,17 @@
 // 세금계산서(lib/etax/popbill)와 동일 LinkHub 계정·키·IsTest 게이트 공유. 발신번호=POPBILL_SENDER.
 // CorpNum(발행 사업자번호)은 호출자가 input.corpNum 으로 전달(책별 company_profile.business_no).
 // (server-only 미사용 — node: 임포트가 이미 클라 번들을 차단. lib/etax/popbill 과 동일. index 경유 시 solapi 가 가드.)
-// ⚠️ SDK 팩토리(MessageService/KakaoService)가 this(모듈 객체)에 캐싱 → frozen ESM namespace 로 부르면
-// 프로덕션에서 undefined 반환. createRequire 로 mutable CJS exports 를 받는다(lib/etax/popbill 과 동일).
-import { createRequire } from "node:module";
-
-const popbill = createRequire(import.meta.url)("popbill") as typeof import("popbill");
 import { writeFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { digitsOnly } from "@/lib/format";
+import { popbill, popbillIsTest, popbillConfigure, popbillPromisify } from "@/lib/popbill-config";
 import type { MessageProvider, MmsInput, AlimtalkInput, MessageResult } from "./types";
 
-function isTest(): boolean {
-  return process.env.POPBILL_IS_TEST !== "false"; // 기본 테스트베드
-}
-
-let configured = false;
-function ensureConfig(): void {
-  const LinkID = process.env.POPBILL_LINK_ID;
-  const SecretKey = process.env.POPBILL_SECRET_KEY;
-  if (!LinkID || !SecretKey) {
-    throw new Error("팝빌 연동키(POPBILL_LINK_ID·POPBILL_SECRET_KEY)가 설정되지 않았습니다.");
-  }
-  if (!configured) {
-    popbill.config({ LinkID, SecretKey, IsTest: isTest() });
-    configured = true;
-  }
-}
-
-/** 콜백(success/error) API → Promise. */
-function promisify<T>(run: (s: (r: T) => void, e: (err: { message?: string }) => void) => void): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    run(resolve, (err) => reject(new Error(err?.message || "팝빌 처리 오류")));
-  });
-}
+const isTest = popbillIsTest;
+const ensureConfig = popbillConfigure;
+const promisify = popbillPromisify;
 
 function senderNo(): string {
   return digitsOnly(process.env.POPBILL_SENDER ?? "");
