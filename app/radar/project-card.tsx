@@ -54,11 +54,13 @@ export function ProjectCard({ p }: { p: RadarProjectRow }) {
             {grade ? (
               <span
                 className={cn(
-                  "inline-flex h-5 items-center rounded-md border px-1.5 text-xs font-semibold",
+                  "inline-flex h-5 items-center rounded-md border px-2 text-xs font-bold",
                   grade.className,
+                  // A등급(철근 관련성 최상)은 링으로 추가 강조 — 지금 전화 최우선.
+                  p.relevance_grade === "A" && "ring-1 ring-rose-400/70",
                 )}
               >
-                {grade.label}
+                {grade.label}등급
               </span>
             ) : null}
           </div>
