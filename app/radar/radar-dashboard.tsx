@@ -37,6 +37,7 @@ const byDateDesc = (key: keyof RadarProjectRow) => (a: RadarProjectRow, b: Radar
 
 /** 관급(나라장터) 뷰 — 낙찰 우선 리스트 + 관급 KPI. (판매: 신축·구조토목) */
 function NaraView({ projects }: { projects: RadarProjectRow[] }) {
+  const [sub, setSub] = useState<"awarded" | "notice">("awarded");
   const now = new Date();
   const ago = new Date(now);
   ago.setDate(now.getDate() - 7);
@@ -77,22 +78,60 @@ function NaraView({ projects }: { projects: RadarProjectRow[] }) {
         <KpiCard title="A등급 기회" value={`${aCount}건`} hint="철근 관련성 상위" />
         <KpiCard title="입찰공고 (대기)" value={`${notices}건`} hint="낙찰 전 모니터링" />
       </section>
-      {projects.length === 0 ? (
-        <p className="rounded-xl border border-dashed bg-muted/30 p-8 text-center text-sm text-muted-foreground">
-          이 권역의 관급 발주가 없습니다.
-        </p>
-      ) : (
-        <>
-          {awardedList.length > 0 ? (
-            <ProjectSection title="🔵 낙찰 확정" hint="낙찰사에 전화 · 최신순" projects={awardedList} />
-          ) : null}
-          {noticeList.length > 0 ? (
-            <ProjectSection title="⏳ 입찰공고 (대기)" hint="낙찰 전 모니터링" projects={noticeList} />
-          ) : null}
-          {otherList.length > 0 ? <ProjectSection title="기타" projects={otherList} /> : null}
-        </>
-      )}
+
+      {/* 낙찰 확정 / 입찰공고 서브탭 — 한 번에 하나만(낙찰이 많아 공고가 묻히던 문제 해소) */}
+      <div className="flex gap-2">
+        <NaraSubTabBtn active={sub === "awarded"} onClick={() => setSub("awarded")} label="🔵 낙찰 확정" count={awardedList.length} />
+        <NaraSubTabBtn active={sub === "notice"} onClick={() => setSub("notice")} label="⏳ 입찰공고 (대기)" count={noticeList.length} />
+      </div>
+
+      {(() => {
+        const list = sub === "awarded" ? awardedList : noticeList;
+        if (list.length === 0) {
+          return (
+            <p className="rounded-xl border border-dashed bg-muted/30 p-8 text-center text-sm text-muted-foreground">
+              {sub === "awarded" ? "낙찰 확정 건이 없습니다." : "대기 중인 입찰공고가 없습니다."}
+            </p>
+          );
+        }
+        return (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {list.map((p) => (
+              <ProjectCard key={p.id} p={p} />
+            ))}
+          </div>
+        );
+      })()}
+      {otherList.length > 0 && sub === "notice" ? (
+        <ProjectSection title="기타" projects={otherList} />
+      ) : null}
     </div>
+  );
+}
+
+function NaraSubTabBtn({
+  active,
+  onClick,
+  label,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium " +
+        (active ? "bg-foreground text-background" : "bg-background text-muted-foreground hover:text-foreground")
+      }
+    >
+      {label}
+      <span className={active ? "opacity-80" : "text-muted-foreground"}>{count}</span>
+    </button>
   );
 }
 
