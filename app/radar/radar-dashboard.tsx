@@ -46,23 +46,27 @@ function NaraView({ projects }: { projects: RadarProjectRow[] }) {
   const aCount = projects.filter((p) => p.relevance_grade === "A").length;
   const notices = projects.filter((p) => p.stage === "bid_notice").length;
 
-  const sorted = useMemo(
+  // 낙찰 확정: 낙찰일 역순(최신=지금 전화). 입찰공고: 등급→점수(선점 우선).
+  const byGradeScore = (a: RadarProjectRow, b: RadarProjectRow) => {
+    const ga = GRADE_RANK[a.relevance_grade ?? "C"] ?? 2;
+    const gb = GRADE_RANK[b.relevance_grade ?? "C"] ?? 2;
+    if (ga !== gb) return ga - gb;
+    return (b.relevance_score ?? 0) - (a.relevance_score ?? 0);
+  };
+  const awardedList = useMemo(
     () =>
-      [...projects].sort((a, b) => {
-        const ua = a.stage === "awarded" ? 0 : 1;
-        const ub = b.stage === "awarded" ? 0 : 1;
-        if (ua !== ub) return ua - ub;
-        // 낙찰 건끼리는 낙찰일 역순(최신 먼저 — 지금 전화할 타이밍). 날짜 없으면 뒤로.
-        if (ua === 0) {
-          const da = a.stage_date ?? "";
-          const db = b.stage_date ?? "";
-          if (da !== db) return db.localeCompare(da);
-        }
-        const ga = GRADE_RANK[a.relevance_grade ?? "C"] ?? 2;
-        const gb = GRADE_RANK[b.relevance_grade ?? "C"] ?? 2;
-        if (ga !== gb) return ga - gb;
-        return (b.relevance_score ?? 0) - (a.relevance_score ?? 0);
-      }),
+      projects
+        .filter((p) => p.stage === "awarded")
+        .sort((a, b) => (b.stage_date ?? "").localeCompare(a.stage_date ?? "") || byGradeScore(a, b)),
+    [projects],
+  );
+  const noticeList = useMemo(
+    () => projects.filter((p) => p.stage === "bid_notice").sort(byGradeScore),
+    [projects],
+  );
+  // 그 외 단계(있으면) — 안전망.
+  const otherList = useMemo(
+    () => projects.filter((p) => p.stage !== "awarded" && p.stage !== "bid_notice").sort(byGradeScore),
     [projects],
   );
 
@@ -73,18 +77,49 @@ function NaraView({ projects }: { projects: RadarProjectRow[] }) {
         <KpiCard title="A등급 기회" value={`${aCount}건`} hint="철근 관련성 상위" />
         <KpiCard title="입찰공고 (대기)" value={`${notices}건`} hint="낙찰 전 모니터링" />
       </section>
-      {sorted.length === 0 ? (
+      {projects.length === 0 ? (
         <p className="rounded-xl border border-dashed bg-muted/30 p-8 text-center text-sm text-muted-foreground">
           이 권역의 관급 발주가 없습니다.
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {sorted.map((p) => (
-            <ProjectCard key={p.id} p={p} />
-          ))}
-        </div>
+        <>
+          {awardedList.length > 0 ? (
+            <ProjectSection title="🔵 낙찰 확정" hint="낙찰사에 전화 · 최신순" projects={awardedList} />
+          ) : null}
+          {noticeList.length > 0 ? (
+            <ProjectSection title="⏳ 입찰공고 (대기)" hint="낙찰 전 모니터링" projects={noticeList} />
+          ) : null}
+          {otherList.length > 0 ? <ProjectSection title="기타" projects={otherList} /> : null}
+        </>
       )}
     </div>
+  );
+}
+
+/** 관급 뷰 섹션 — 제목 + 건수 + 카드 그리드. */
+function ProjectSection({
+  title,
+  hint,
+  projects,
+}: {
+  title: string;
+  hint?: string;
+  projects: RadarProjectRow[];
+}) {
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-baseline gap-2">
+        <h3 className="text-sm font-semibold">
+          {title} <span className="text-muted-foreground">{projects.length}</span>
+        </h3>
+        {hint ? <span className="text-xs text-muted-foreground">· {hint}</span> : null}
+      </div>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {projects.map((p) => (
+          <ProjectCard key={p.id} p={p} />
+        ))}
+      </div>
+    </section>
   );
 }
 
