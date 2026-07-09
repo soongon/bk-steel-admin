@@ -115,7 +115,7 @@ export default async function SaleDetailPage({
       site:site(id, code, name),
       receive_bank_account_id, receive_bank:bank_account!sale_receive_bank_account_id_fkey(code, bank_name),
       sale_line(
-        id, qty, unit, unit_price_krw, weight_kg, theoretical_weight_kg, line_subtotal_krw, notes, display_name,
+        id, qty, unit, unit_price_krw, weight_kg, theoretical_weight_kg, line_subtotal_krw, notes, display_name, spec_text,
         item:item(id, name, code, rebar_spec_code, rebar_grade_code, length_m, category)
       )
     `,
@@ -212,6 +212,8 @@ export default async function SaleDetailPage({
         ]
           .filter(Boolean)
           .join(" ");
+      } else if (line.spec_text) {
+        spec = String(line.spec_text); // 철제 직접입력 규격
       }
       const subtotal = Number(line.line_subtotal_krw ?? line.qty * line.unit_price_krw);
       const vatRate = Number(sale.vat_rate ?? 10);

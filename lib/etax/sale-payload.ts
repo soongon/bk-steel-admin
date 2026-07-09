@@ -9,7 +9,7 @@ import { type EtaxIssueInput, type EtaxLine } from "./types";
 export const SALE_ETAX_SELECT = `id, book, doc_no, ordered_on, is_documented, tax_doc_type, vat_type, vat_rate,
        subtotal_krw, vat_krw, total_krw,
        partner:partner(id, name, business_no, representative, address, industry, email, phone),
-       sale_line(id, qty, unit, unit_price_krw, line_subtotal_krw, display_name,
+       sale_line(id, qty, unit, unit_price_krw, line_subtotal_krw, display_name, spec_text,
          item:item(name, category, rebar_spec_code, rebar_grade_code, length_m))`;
 
 /** sale_line → 세금계산서 품목 라인(철근은 '철근' 라벨·display_name 반영, 라인별 세액 산출). */
@@ -25,7 +25,7 @@ export function buildSaleEtaxLines(sale: Record<string, any>): EtaxLine[] {
       ? [it.rebar_spec_code, it.rebar_grade_code, it.length_m ? `${it.length_m}M` : null]
           .filter(Boolean)
           .join(" ")
-      : "";
+      : l.spec_text || ""; // 철제 직접입력 규격
     return {
       serialNum: i + 1,
       date: dt,

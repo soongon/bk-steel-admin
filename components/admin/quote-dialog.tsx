@@ -126,6 +126,7 @@ export function QuoteDialog({
 
   const [itemKind, setItemKind] = useState<"rebar" | "steel">("rebar");
   const [steelName, setSteelName] = useState(""); // 철제 직접입력 품목명(공용 STEEL_CUSTOM)
+  const [steelSpec, setSteelSpec] = useState(""); // 철제 직접입력 규격
   const itemOptions = useMemo(
     () =>
       itemKind === "rebar"
@@ -162,16 +163,17 @@ export function QuoteDialog({
 
   const calcLine = (l: LineDraft) => calcLineDraft(items, rebarSpecs, l);
 
-  // 철제는 공용 STEEL_CUSTOM item + 직접입력 품목명(displayName). 철근은 선택한 itemId 그대로.
+  // 철제는 공용 STEEL_CUSTOM item + 직접입력 품목명(displayName)·규격(specText). 철근은 itemId 그대로.
   const effItemId = itemKind === "steel" ? STEEL_CUSTOM_ITEM_ID : itemId;
   const effDisplayName = itemKind === "steel" ? steelName.trim() : null;
+  const effSpecText = itemKind === "steel" ? steelSpec.trim() || null : null;
   const itemChosen = itemKind === "steel" ? !!steelName.trim() : !!itemId;
 
   // 이론중량 톤은 정수만(표준본수 기반). 톤(1,000kg)은 소수 허용(예: 1.1·3.5톤). 가닥·kg은 기존대로.
   const fractionalTon = unit === "ton" && !tonMetric && !Number.isInteger(qty);
   const pendingLine: LineDraft | null =
     itemChosen && qty > 0 && !fractionalTon && (manualMode ? manualAmount > 0 : unitPrice > 0)
-      ? { itemKind, itemId: effItemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null, displayName: effDisplayName }
+      ? { itemKind, itemId: effItemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null, displayName: effDisplayName, specText: effSpecText }
       : null;
   const allLines = pendingLine ? [...lines, pendingLine] : lines;
 
@@ -262,10 +264,11 @@ export function QuoteDialog({
     }
     setLines((prev) => [
       ...prev,
-      { itemKind, itemId: effItemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null, displayName: effDisplayName },
+      { itemKind, itemId: effItemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null, displayName: effDisplayName, specText: effSpecText },
     ]);
     setItemId("");
     setSteelName("");
+    setSteelSpec("");
     setQtyStr("");
     setUnitPriceStr("");
     setManualMode(false);
@@ -427,6 +430,7 @@ export function QuoteDialog({
                         setItemKind(k);
                         setItemId("");
                         setSteelName("");
+                        setSteelSpec("");
                       }}
                       className={`flex-1 rounded-md border px-2 py-1 text-xs ${itemKind === k ? "bg-foreground text-background" : "bg-background"}`}
                     >
@@ -435,13 +439,22 @@ export function QuoteDialog({
                   ))}
                 </div>
               </Field>
-              <Field label="품목 *">
+              <Field label={itemKind === "steel" ? "품명 · 규격 *" : "품목 *"}>
                 {itemKind === "steel" ? (
-                  <Input
-                    value={steelName}
-                    onChange={(e) => setSteelName(e.target.value)}
-                    placeholder="품목명 직접입력 (예: ㄱ앵글 65×65)"
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      value={steelName}
+                      onChange={(e) => setSteelName(e.target.value)}
+                      placeholder="품명 (예: 앵글(SS))"
+                      className="flex-1"
+                    />
+                    <Input
+                      value={steelSpec}
+                      onChange={(e) => setSteelSpec(e.target.value)}
+                      placeholder="규격 (예: 75x75x6T 10M)"
+                      className="flex-1"
+                    />
+                  </div>
                 ) : (
                   <select
                     value={itemId}
@@ -532,7 +545,10 @@ export function QuoteDialog({
                   const reb = !!li?.rebar_spec_code && !!c;
                   return (
                     <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-xs">
-                      <span className="flex-1 truncate font-medium">{l.displayName?.trim() || li?.name || "—"}</span>
+                      <span className="flex-1 truncate font-medium">
+                        {l.displayName?.trim() || li?.name || "—"}
+                        {l.specText?.trim() ? <span className="font-normal text-muted-foreground"> {l.specText.trim()}</span> : null}
+                      </span>
                       <span className="text-muted-foreground">
                         {reb ? `${fmtNum(c!.weightKg)}kg` : `${l.qty}${l.unit}`}
                         {l.manualAmount != null && l.manualAmount > 0

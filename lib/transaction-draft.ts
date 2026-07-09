@@ -19,6 +19,8 @@ export type LineDraft = {
   manualAmount?: number | null;
   /** 철제 직접입력 시 실제 품목명(공용 STEEL_CUSTOM item 에 라벨 오버라이드). 없으면 item.name. */
   displayName?: string | null;
+  /** 철제 직접입력 규격(품명과 분리, 예: 75x75x6T 10M). 없으면 null(철근은 조합). */
+  specText?: string | null;
 };
 
 /** 단위 옵션 — 폼 select 공통. ton_metric 은 unit='ton' + tonMetric=true 로 분해. */
@@ -92,6 +94,8 @@ export function serializeLines(
         manual_amount: l.manualAmount ?? null,
         // 철제 직접입력 품목명(공용 STEEL_CUSTOM 라벨 오버라이드). null이면 item.name.
         display_name: l.displayName?.trim() || null,
+        // 철제 직접입력 규격(품명과 분리). null이면 없음/철근은 조합.
+        spec_text: l.specText?.trim() || null,
       };
     }),
   );
@@ -113,7 +117,7 @@ export function buildStatementLines(
         ? [item.rebar_spec_code, item.rebar_grade_code, item.length_m ? `${item.length_m}M` : null]
             .filter(Boolean)
             .join(" ")
-        : "";
+        : l.specText?.trim() || ""; // 철제 직접입력 규격
       const unitLabel = l.unit === "ton" ? "톤" : l.unit === "kg" ? "kg" : "EA";
       return {
         item_name: l.displayName?.trim() || item.name,

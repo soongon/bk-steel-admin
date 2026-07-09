@@ -118,6 +118,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
         tonMetric: isMetricTon,
         manualAmount: l.manual_amount != null ? Number(l.manual_amount) : null,
         displayName: l.display_name != null ? String(l.display_name) : null,
+        specText: l.spec_text != null ? String(l.spec_text) : null,
       } as LineDraft;
     }),
   };
@@ -129,11 +130,11 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
       ? [item!.rebar_spec_code, item!.rebar_grade_code, item!.length_m ? `${item!.length_m}M` : null]
           .filter(Boolean)
           .join(" ")
-      : "";
+      : l.spec_text ? String(l.spec_text) : ""; // 철제 직접입력 규격
     const unitLabel = l.unit === "ton" ? "톤" : l.unit === "kg" ? "kg" : "EA";
     const sub = Number(l.line_subtotal_krw);
     return {
-      item_name: item?.name ?? "—",
+      item_name: l.display_name?.trim() || item?.name || "—",
       spec,
       qty: Number(l.qty),
       unit: unitLabel,
