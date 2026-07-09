@@ -99,6 +99,11 @@ export function ProjectCard({ p }: { p: RadarProjectRow }) {
             <PhoneCallIcon className="size-4 shrink-0" />
             {p.awarded_company ?? p.contact_party ?? "낙찰사"}
             <span className="text-xs font-normal opacity-80">(낙찰사)</span>
+            {p.stage_date ? (
+              <span className="ml-auto shrink-0 text-xs font-normal tabular-nums opacity-80">
+                낙찰 {p.stage_date}
+              </span>
+            ) : null}
           </p>
           {p.ordering_org ? (
             <p className="mt-1 flex items-center gap-1 text-xs text-blue-700/70 dark:text-blue-300/70">
