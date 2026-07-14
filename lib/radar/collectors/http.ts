@@ -21,7 +21,7 @@ export function buildUrl(
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 외부 OpenAPI 응답은 본질적으로 untyped
-export async function fetchJson(url: string, timeoutMs = 12000): Promise<any> {
+export async function fetchJson(url: string, timeoutMs = 12000, bigIntFields: string[] = []): Promise<any> {
   // 타임아웃 필수: data.go.kr이 연결만 잡고 응답을 안 주면(행) 순차 수집 전체가 멈춤.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -33,7 +33,14 @@ export async function fetchJson(url: string, timeoutMs = 12000): Promise<any> {
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} ${res.statusText} (${url.split("?")[0]})`);
     }
-    return await res.json();
+    if (bigIntFields.length === 0) return await res.json();
+    // 자연키 등 16자리+ 정수는 JS Number 정밀도(~15자리) 초과로 뭉개진다(예: 지수표기).
+    // 지정 필드를 JSON.parse 전에 문자열로 감싸 원본 정밀도 보존(source_key 유니크성 유지).
+    let text = await res.text();
+    for (const f of bigIntFields) {
+      text = text.replace(new RegExp(`("${f}"\\s*:\\s*)(\\d{15,})`, "g"), '$1"$2"');
+    }
+    return JSON.parse(text);
   } finally {
     clearTimeout(timer);
   }
@@ -47,14 +54,14 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  */
 export async function fetchJsonRetry(
   url: string,
-  opts: { retries?: number; timeoutMs?: number; delayMs?: number } = {},
+  opts: { retries?: number; timeoutMs?: number; delayMs?: number; bigIntFields?: string[] } = {},
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> {
-  const { retries = 2, timeoutMs = 12000, delayMs = 600 } = opts;
+  const { retries = 2, timeoutMs = 12000, delayMs = 600, bigIntFields } = opts;
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await fetchJson(url, timeoutMs);
+      return await fetchJson(url, timeoutMs, bigIntFields);
     } catch (e) {
       lastErr = e;
       if (attempt < retries) await sleep(delayMs * (attempt + 1));

@@ -91,8 +91,11 @@ function isNewOrExtension(archGbCdNm: unknown): boolean {
 export function normalizePermitItem(item: Record<string, any>, sigunguCd: string): CollectedProject | null {
   if (!isNewOrExtension(item.archGbCdNm)) return null;
 
-  const pk = item.mgmPmsrgstPk ?? null; // 허가관리대장 PK
-  if (pk == null) return null;
+  // 허가관리대장 PK — 문자열로 보존(bigIntFields). 혹시 Number로 오면 문자열화하되
+  // 이미 정밀도 손실된 지수표기는 걸러낸다.
+  const pkRaw = item.mgmPmsrgstPk;
+  const pk = pkRaw == null ? null : String(pkRaw);
+  if (pk == null || pk.includes("e+") || pk.includes("E+")) return null;
 
   const region = SIGUNGU_TO_REGION[sigunguCd];
   if (!region) return null;
@@ -184,7 +187,8 @@ export const buildingPermitCollector: Collector = {
                 pageNo: page,
                 _type: "json",
               });
-              const json = await fetchJsonRetry(url);
+              // mgmPmsrgstPk(허가대장 PK, 22자리 정수)는 Number 정밀도 초과로 뭉개지므로 문자열 보존.
+              const json = await fetchJsonRetry(url, { bigIntFields: ["mgmPmsrgstPk"] });
               const body = json?.response?.body;
               const rawItems = body?.items?.item ?? [];
               const items = Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [];
