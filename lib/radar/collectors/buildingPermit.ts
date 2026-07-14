@@ -49,11 +49,13 @@ export function normalizeStructure(
   return "etc";
 }
 
-/** YYYYMMDD → YYYY-MM-DD. 빈/형식불일치는 null. */
+/** YYYYMMDD → YYYY-MM-DD. 빈/형식불일치·연도 오타(1990~2099 밖)는 null. */
 function toIsoDate(yyyymmdd: string | null | undefined): string | null {
   if (!yyyymmdd) return null;
   const d = String(yyyymmdd).trim();
   if (!/^\d{8}$/.test(d)) return null;
+  const year = Number(d.slice(0, 4));
+  if (year < 1990 || year > 2099) return null; // API 원본 오타 방어(예: 21210430=2121년)
   return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
 }
 
