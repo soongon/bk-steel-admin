@@ -54,7 +54,7 @@ const NARA_DEMO_BUILDING = ["건물", "건축물", "주택", "빌라", "빌딩",
  */
 export function naraSteelCategory(
   text: string,
-): "building" | "civil_struct" | "civil_low" | "demolition" | "exclude" {
+): "building" | "building_reno" | "civil_struct" | "civil_low" | "demolition" | "exclude" {
   // 철거·해체가 먼저 — 비건물 철거(지장물·슬레이트 등)는 건물 키워드가 섞여도 우선 컷, 그다음 건물 철거만 매입.
   if (NARA_DEMOLITION.some((k) => text.includes(k))) {
     if (NARA_DEMO_NONBUILDING.some((k) => text.includes(k))) return "exclude";
@@ -63,9 +63,12 @@ export function naraSteelCategory(
   if (NARA_EXCLUDE.some((k) => text.includes(k))) return "exclude";
   const newBuild = NARA_NEWBUILD.some((k) => text.includes(k));
   const buildingType = NARA_BUILDING_TYPE.some((k) => text.includes(k));
-  if (buildingType && newBuild) return "building"; // 신축/증축 건물
-  if (NARA_STRUCT.some((k) => text.includes(k))) return "civil_struct"; // 교량·옹벽 등 구조물
-  return "civil_low"; // 보수·리모델링·도로·상하수 등 = 약(C)
+  if (buildingType && newBuild) return "building"; // 신축/증축 건물 = 건축(강)
+  // 구조물(교량·옹벽 등)은 신축 아니어도 구조토목.
+  if (NARA_STRUCT.some((k) => text.includes(k))) return "civil_struct";
+  // 건물 유형인데 신축 아님 = 리모델링·보수·기능보강 건축(철근 씀, 신축보단 적음).
+  if (buildingType) return "building_reno";
+  return "civil_low"; // 도로·상하수·정비 등 순수 토목 = 약(C)
 }
 
 /** "2026-05-02 13:16:05" / "2026-05-14" → "2026-05-02". */

@@ -202,6 +202,7 @@ export const USAGE_LABEL: Record<string, string> = {
   etc: "기타",
   // 관급(나라장터) 공종 카테고리
   building: "건축",
+  building_reno: "건축·보수", // 건물 리모델링·보수·기능보강(신축 아님)
   civil_struct: "구조토목",
   civil_low: "토목",
   demolition: "철거·해체", // 매입 신호(고철·중고철근 발생)

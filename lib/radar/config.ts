@@ -147,6 +147,7 @@ export const STEEL_KG_PER_SQM = 45;
 /** 공종 카테고리 점수(0~1). 건축=철근 多 / 구조토목=中 / 일반토목=弱. (제외는 수집 단계에서 컷) */
 export const NARA_CATEGORY_SCORE: Record<string, number> = {
   building: 1.0,
+  building_reno: 0.55, // 건물 리모델링·보수 — 철근 쓰나 신축보다 적음(구조토목 근처)
   civil_struct: 0.6,
   civil_low: 0.2,
   demolition: 0.7, // 매입: 건물 철거 = 고철·중고철근 발생(금액 규모 ∝ 물량)
