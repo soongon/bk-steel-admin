@@ -17,10 +17,12 @@ export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
     <>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {BOOKS.map((book) => {
-          // B 책은 SL의 무자료 흐름 — 명세서는 SL 정보로 발행. 편집은 SL 카드에서만.
-          const aliasOfSL = book === "b";
-          const effective: Book = aliasOfSL ? "sl" : book;
-          const p = byBook.get(effective);
+          // B계좌는 SL 사업자의 무자료 흐름 — 상호·사업자번호는 SL과 동일하되 입금계좌·계좌사본은
+          // 히든 통장(SL 공식계좌와 다름)이라 별도 편집. b row 없으면 표시·프리필은 SL 폴백.
+          const isBBook = book === "b";
+          const own = byBook.get(book); // 이 책의 자체 row
+          const p = own ?? (isBBook ? byBook.get("sl") : undefined); // 표시용(B 미설정 시 SL)
+          const usingSLFallback = isBBook && !own;
           return (
             <div
               key={book}
@@ -33,21 +35,16 @@ export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
                     {BOOK_LABEL[book]} 책
                   </span>
                 </div>
-                {aliasOfSL ? (
-                  <span className="inline-flex h-6 items-center rounded-md border border-dashed px-2 text-xs text-muted-foreground">
-                    사업자 정보 사용
-                  </span>
-                ) : (
-                  <Button size="sm" variant="outline" onClick={() => setEditing(book)}>
-                    <PencilIcon className="size-4" />
-                    편집
-                  </Button>
-                )}
+                <Button size="sm" variant="outline" onClick={() => setEditing(book)}>
+                  <PencilIcon className="size-4" />
+                  편집
+                </Button>
               </div>
 
-              {aliasOfSL ? (
+              {isBBook ? (
                 <p className="mb-2 rounded-md bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
-                  B계좌는 SL 사업자의 무자료 흐름입니다. 거래명세표·세금계산서는 사업자(SL) 정보를 그대로 사용 — 사업자 카드에서만 편집하세요.
+                  B계좌는 SL 사업자의 무자료 흐름 — 상호·사업자번호는 SL과 동일하게 두고, <b>입금계좌·계좌사본만</b> B계좌(히든 통장)로 넣으세요.
+                  {usingSLFallback ? " (현재 미설정 — SL 정보 표시 중)" : ""}
                 </p>
               ) : null}
 
@@ -72,21 +69,25 @@ export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
                     ) : null}
                     {p.notes ? <Row label="비고" value={p.notes} colSpan /> : null}
                   </dl>
-                  {p.stamp_url ? (
-                    <div className="mt-3 flex items-center gap-2 border-t pt-3">
-                      <span className="text-xs text-muted-foreground">인감:</span>
-                      <img
-                        src={p.stamp_url}
-                        alt="인감"
-                        className="size-12 rounded border bg-white object-contain"
-                      />
+                  {p.stamp_url || p.bank_copy_url ? (
+                    <div className="mt-3 flex items-center gap-4 border-t pt-3">
+                      {p.stamp_url ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">인감:</span>
+                          <img src={p.stamp_url} alt="인감" className="size-12 rounded border bg-white object-contain" />
+                        </div>
+                      ) : null}
+                      {p.bank_copy_url ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">계좌사본:</span>
+                          <img src={p.bank_copy_url} alt="계좌사본" className="h-12 w-20 rounded border bg-white object-contain" />
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                 </>
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  미설정 — {aliasOfSL ? "사업자(SL) 카드에서 등록" : "편집 버튼으로 등록"}
-                </p>
+                <p className="text-sm text-muted-foreground">미설정 — 편집 버튼으로 등록</p>
               )}
             </div>
           );
@@ -97,7 +98,12 @@ export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
         open={editing !== null}
         onOpenChange={(o) => !o && setEditing(null)}
         book={editing ?? "bk"}
-        profile={editing ? byBook.get(editing) ?? null : null}
+        // B 편집 시 자체 row 없으면 SL 을 프리필(상호·사업자번호 동일 시작, 계좌만 변경).
+        profile={
+          editing
+            ? byBook.get(editing) ?? (editing === "b" ? byBook.get("sl") ?? null : null)
+            : null
+        }
       />
     </>
   );

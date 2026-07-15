@@ -95,6 +95,35 @@ export function CompanyFormDialog({
               <Field label="은행명·예금주" name="bank_default_name" defaultValue={profile?.bank_default_name} placeholder="국민은행 / SL철강" />
               <Field label="계좌번호" name="bank_default_no" defaultValue={profile?.bank_default_no} placeholder="000-000000-00-000" />
             </div>
+            {/* 계좌(통장) 사본 이미지 */}
+            <p className="mb-2 mt-3 text-xs font-medium text-muted-foreground">
+              계좌사본 이미지 — 4MB 이하, PNG/JPG/WebP
+            </p>
+            <div className="flex items-center gap-3">
+              {profile?.bank_copy_url ? (
+                <img
+                  src={profile.bank_copy_url}
+                  alt="현재 계좌사본"
+                  className="h-16 w-24 rounded border bg-white object-contain"
+                />
+              ) : (
+                <div className="flex h-16 w-24 items-center justify-center rounded border-2 border-dashed border-zinc-300 text-[10px] text-muted-foreground dark:border-zinc-700">
+                  미등록
+                </div>
+              )}
+              <input
+                type="file"
+                name="bank_copy_file"
+                accept="image/png,image/jpeg,image/webp"
+                className="block w-full text-xs file:mr-2 file:rounded file:border file:bg-muted file:px-2 file:py-1 file:text-xs"
+              />
+            </div>
+            {profile?.bank_copy_url ? (
+              <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <input type="checkbox" name="bank_copy_clear" value="true" className="size-3.5" />
+                계좌사본 제거 (저장 시 삭제)
+              </label>
+            ) : null}
           </div>
 
           <Field label="비고" name="notes" defaultValue={profile?.notes} />

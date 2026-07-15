@@ -74,6 +74,32 @@ export async function updateCompanyProfile(
     stampUrl = "";   // 빈 문자열 → null로 정리
   }
 
+  // 계좌사본 이미지 업로드 (선택) — 인감과 동일 패턴, 같은 company-stamps 버킷(bank- 접두).
+  let bankCopyUrl: string | undefined = undefined;
+  const bankFile = formData.get("bank_copy_file");
+  const bankClear = formData.get("bank_copy_clear") === "true";
+  if (bankFile instanceof File && bankFile.size > 0) {
+    if (bankFile.size > 4 * 1024 * 1024) {
+      return { ok: false, error: "계좌사본 이미지는 4MB 이하여야 합니다." };
+    }
+    const ext = (bankFile.name.split(".").pop() ?? "png").toLowerCase();
+    const rand = Math.random().toString(36).slice(2, 8);
+    const path = `${book}/bank-${Date.now()}-${rand}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from("company-stamps")
+      .upload(path, bankFile, { contentType: bankFile.type || "image/png", upsert: false });
+    if (upErr) {
+      const msg = upErr.message.includes("row-level security")
+        ? "Storage 권한 거부 — 0034 마이그레이션 적용 여부를 확인해주세요."
+        : `계좌사본 업로드 실패: ${upErr.message}`;
+      return { ok: false, error: msg };
+    }
+    const { data: pub } = supabase.storage.from("company-stamps").getPublicUrl(path);
+    bankCopyUrl = pub.publicUrl;
+  } else if (bankClear) {
+    bankCopyUrl = "";
+  }
+
   const payload: Record<string, unknown> = {
     book,
     name,
@@ -92,6 +118,9 @@ export async function updateCompanyProfile(
   };
   if (stampUrl !== undefined) {
     payload.stamp_url = stampUrl === "" ? null : stampUrl;
+  }
+  if (bankCopyUrl !== undefined) {
+    payload.bank_copy_url = bankCopyUrl === "" ? null : bankCopyUrl;
   }
 
   const { error } = await supabase
