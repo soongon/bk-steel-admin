@@ -16,12 +16,14 @@ export function TaxInvoiceDocument({
   ntsConfirmNum,
   purpose = "charge",
   writeDate,
+  remark,
 }: {
   data: StatementData;
   company: CompanyProfile | null;
   ntsConfirmNum?: string | null;
   purpose?: "charge" | "receipt";
   writeDate?: string | null;
+  remark?: string | null; // 계산서 비고(발행 입력값) — 매출 내부 메모(data.notes)는 계산서에 싣지 않음
 }) {
   if (!company) {
     return (
@@ -92,7 +94,7 @@ export function TaxInvoiceDocument({
               <td className={`border ${base} px-1 py-1 font-mono`}>{wDate}</td>
               <td className={`border ${base} px-1 py-1 text-right tabular-nums`}>{fmt(data.subtotal_krw)}</td>
               <td className={`border ${base} px-1 py-1 text-right tabular-nums`}>{fmt(data.vat_krw)}</td>
-              <td className={`border ${base} px-1 py-1`}>{data.notes ?? ""}</td>
+              <td className={`border ${base} px-1 py-1`}>{remark ?? ""}</td>
             </tr>
           </tbody>
         </table>

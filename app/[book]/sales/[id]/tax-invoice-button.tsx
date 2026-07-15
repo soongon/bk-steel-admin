@@ -35,6 +35,7 @@ export type SaleTaxInvoice = {
   nts_confirm_num: string | null;
   provider: string;
   write_date: string | null;
+  remark: string | null;
 };
 
 /** 발행 대상 거래처 선택용(하청 등으로 납품처와 발행처가 다를 때). */
@@ -91,7 +92,7 @@ export function TaxInvoiceButton({
   const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
   const [writeDate, setWriteDate] = useState(statementData.ordered_on || today);
   const [purpose, setPurpose] = useState<"charge" | "receipt">("charge");
-  const [remark, setRemark] = useState("");
+  const [remark, setRemark] = useState(taxInvoice?.remark ?? ""); // 발행됨: 저장된 계산서 비고 표시
   const [buyerPartnerId, setBuyerPartnerId] = useState(defaultBuyerPartnerId ?? "");
   const [bizNo, setBizNo] = useState(statementData.partner.business_no ?? "");
   const [ceo, setCeo] = useState(statementData.partner.representative ?? "");
@@ -351,6 +352,7 @@ export function TaxInvoiceButton({
                     purpose={purpose}
                     writeDate={taxInvoice!.write_date ?? writeDate}
                     ntsConfirmNum={taxInvoice!.nts_confirm_num}
+                    remark={remark}
                   />
                 </div>
               </div>
@@ -437,6 +439,7 @@ export function TaxInvoiceButton({
                   purpose={purpose}
                   writeDate={writeDate}
                   ntsConfirmNum={taxInvoice?.nts_confirm_num}
+                  remark={remark}
                 />
               </div>
             </div>

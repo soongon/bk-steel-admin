@@ -171,7 +171,7 @@ export default async function SaleDetailPage({
   // 활성 세금계산서(미취소) — 라이프사이클 계산서 단계 실상태 표시용
   const { data: taxInvoiceRow } = await supabase
     .from("tax_invoice")
-    .select("state, nts_confirm_num, provider, write_date")
+    .select("state, nts_confirm_num, provider, write_date, remark")
     .eq("sale_id", id)
     .is("deleted_at", null)
     .neq("state", "cancelled")
