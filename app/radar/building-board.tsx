@@ -193,12 +193,19 @@ export function BuildingBoard({ projects }: { projects: RadarProjectRow[] }) {
         />
       </section>
 
+      {/* 모바일: 가로 스크롤 칸반(한 컬럼씩 스와이프) · md+: 균등 그리드 */}
       <div
-        className="grid gap-3"
+        className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:snap-none md:overflow-visible md:px-0 md:pb-0"
         style={{ gridTemplateColumns: `repeat(${SELL_COLUMNS.length}, minmax(0, 1fr))` }}
       >
         {SELL_COLUMNS.map((c) => (
-          <div key={c.key} className={cn("flex flex-col gap-2 rounded-xl border p-2", c.className)}>
+          <div
+            key={c.key}
+            className={cn(
+              "flex w-[82vw] shrink-0 snap-start flex-col gap-2 rounded-xl border p-2 sm:w-72 md:w-auto md:shrink",
+              c.className,
+            )}
+          >
             <div className="flex items-center justify-between px-1">
               <div>
                 <div className="text-sm font-semibold">{c.label}</div>

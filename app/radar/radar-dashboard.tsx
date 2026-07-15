@@ -364,17 +364,18 @@ function SourceTabBtn({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex flex-1 items-center gap-2.5 rounded-xl border p-3 text-left transition-colors",
+        "flex flex-1 items-center gap-2 rounded-xl border p-2.5 text-left transition-colors sm:gap-2.5 sm:p-3",
         active ? "border-foreground/30 bg-card ring-1 ring-foreground/10" : "border-border bg-card/40 hover:bg-card",
       )}
     >
-      <Icon className={cn("size-5", active ? "text-foreground" : "text-muted-foreground")} />
+      <Icon className={cn("size-5 shrink-0", active ? "text-foreground" : "text-muted-foreground")} />
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 text-sm font-semibold">
-          {label}
-          <span className="tabular-nums text-xs text-muted-foreground">{count}</span>
+          <span className="truncate">{label}</span>
+          <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{count}</span>
         </div>
-        <div className="text-[11px] text-muted-foreground">{sub}</div>
+        {/* 부제는 좁은 화면에서 숨김(3개 탭이 넘치지 않게) */}
+        <div className="hidden text-[11px] text-muted-foreground sm:block">{sub}</div>
       </div>
     </button>
   );
@@ -472,7 +473,7 @@ export function RadarDashboard({ projects }: { projects: RadarProjectRow[] }) {
               {label}
               <span className="tabular-nums text-xs text-muted-foreground">{count}</span>
             </div>
-            <div className="text-[11px] text-muted-foreground">{sub}</div>
+            <div className="hidden text-[11px] text-muted-foreground sm:block">{sub}</div>
           </button>
         ))}
       </div>
