@@ -9,7 +9,8 @@ export type EtaxParty = {
   bizType: string | null; // 업태
   bizClass: string | null; // 종목
   contactName: string | null; // 담당자명
-  email: string | null; // 담당자 이메일
+  email: string | null; // 담당자 이메일(팝빌 invoiceeEmail1 — 발행 시 자동 송부)
+  email2?: string | null; // 2번째 담당자 이메일(발행 후 sendEmail 로 추가 전송)
   tel: string | null;
 };
 
@@ -62,4 +63,6 @@ export interface EtaxProvider {
   getStatus(corpNum: string, mgtKey: string): Promise<EtaxStatus>;
   cancel(corpNum: string, mgtKey: string, reason: string): Promise<EtaxResult>;
   getPrintUrl(corpNum: string, mgtKey: string): Promise<string>;
+  /** 발행된 세금계산서를 지정 이메일로 (재)전송 — 2번째 수신처 등. */
+  sendEmail(corpNum: string, mgtKey: string, receiver: string): Promise<void>;
 }

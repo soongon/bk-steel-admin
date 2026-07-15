@@ -46,6 +46,7 @@ export type BuyerPartner = {
   address: string | null;
   industry: string | null;
   email: string | null;
+  email2: string | null;
   phone: string | null;
 };
 
@@ -95,6 +96,7 @@ export function TaxInvoiceButton({
   const [bizNo, setBizNo] = useState(statementData.partner.business_no ?? "");
   const [ceo, setCeo] = useState(statementData.partner.representative ?? "");
   const [email, setEmail] = useState(statementData.partner.email ?? "");
+  const [email2, setEmail2] = useState(statementData.partner.email2 ?? "");
   const [manualNo, setManualNo] = useState("");
   const captureRef = useRef<HTMLDivElement>(null); // 세금계산서 문자전송용 캡처 대상(화면 밖)
   const [smsOpen, setSmsOpen] = useState(false);
@@ -141,6 +143,7 @@ export function TaxInvoiceButton({
       setBizNo(p.business_no ?? "");
       setCeo(p.representative ?? "");
       setEmail(p.email ?? "");
+      setEmail2(p.email2 ?? "");
     }
   }
 
@@ -176,6 +179,7 @@ export function TaxInvoiceButton({
         buyerBusinessNo: bizNo,
         buyerCeoName: ceo || undefined,
         buyerEmail: email || undefined,
+        buyerEmail2: email2 || undefined,
       });
       if (r.ok) {
         toast.success(`세금계산서 발행됨${r.ntsConfirmNum ? ` · 승인 ${r.ntsConfirmNum}` : ""}`);
@@ -276,7 +280,7 @@ export function TaxInvoiceButton({
               {has
                 ? "발행된 세금계산서 — 상태 조회·원본 PDF·발행취소."
                 : mode === "electronic"
-                  ? "국세청 전자세금계산서를 발행합니다(공급받는자 이메일로 자동 전송)."
+                  ? "국세청 전자세금계산서를 발행합니다(공급받는자 이메일로 자동 전송 · 이메일 2 입력 시 함께 전송)."
                   : "종이·면세계산서 번호를 기록합니다(발행은 외부에서)."}
             </DialogDescription>
           </DialogHeader>
@@ -404,6 +408,9 @@ export function TaxInvoiceButton({
               </Field>
               <Field label="거래처 이메일(전송)">
                 <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="buyer@example.com" />
+              </Field>
+              <Field label="거래처 이메일 2 (선택 · 추가 전송)">
+                <Input value={email2} onChange={(e) => setEmail2(e.target.value)} placeholder="buyer2@example.com" />
               </Field>
               <Field label="비고">
                 <Input value={remark} onChange={(e) => setRemark(e.target.value)} />

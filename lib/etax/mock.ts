@@ -22,4 +22,7 @@ export const mockProvider: EtaxProvider = {
   async getPrintUrl() {
     throw new Error("테스트(mock) 모드 — 실제 PDF가 없습니다. 팝빌 키를 설정하세요.");
   },
+  async sendEmail() {
+    /* mock — 무동작 */
+  },
 };

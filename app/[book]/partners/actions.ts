@@ -13,6 +13,7 @@ type PartnerInput = {
   representative: string | null;
   phone: string | null;
   email: string | null;
+  email2: string | null;
   address: string | null;
   industry: string | null;
   notes: string | null;
@@ -39,6 +40,7 @@ function readPartnerInput(formData: FormData): PartnerInput {
     representative: str("representative"),
     phone: digits("phone"),
     email: str("email"),
+    email2: str("email2"),
     address: str("address"),
     industry: str("industry"),
     notes: str("notes"),

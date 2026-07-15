@@ -112,7 +112,7 @@ export default async function SaleDetailPage({
       subtotal_krw, vat_krw, total_krw, vat_rate, site_name, site_id, partner_id, is_documented,
       tax_doc_type, tax_doc_no, payment_due_on, settled_on, notes, delivery_cert_id,
       statement_sent_on, tax_invoice_issued_on, source_quote_id,
-      partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email),
+      partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email, email2),
       site:site(id, code, name),
       receive_bank_account_id, receive_bank:bank_account!sale_receive_bank_account_id_fkey(code, bank_name),
       sale_line(
@@ -199,6 +199,7 @@ export default async function SaleDetailPage({
       fax: partner?.fax ?? null,
       industry: partner?.industry ?? null,
       email: partner?.email ?? null,
+      email2: partner?.email2 ?? null,
     },
     site_name: sale.site_name,
     is_documented: sale.is_documented,
@@ -262,7 +263,7 @@ export default async function SaleDetailPage({
   const [editPartnersRes, editItemsRes, editRebarRes, editSitesRes, editCompanies] = await Promise.all([
     supabase
       .from("partner")
-      .select("id, code, name, business_no, representative, address, phone, fax, industry, email")
+      .select("id, code, name, business_no, representative, address, phone, fax, industry, email, email2")
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),

@@ -57,6 +57,7 @@ export async function issueSaleTaxInvoice(
     buyerPartnerId?: string; // 하청 등 — 실제 발행 대상 거래처가 매출 거래처와 다를 때
     buyerBusinessNo?: string;
     buyerEmail?: string;
+    buyerEmail2?: string; // 2번째 수신 이메일 — 발행 후 추가 전송
     buyerCeoName?: string;
   } = {},
 ): Promise<TaxInvoiceActionResult> {
@@ -72,7 +73,7 @@ export async function issueSaleTaxInvoice(
   if (opts.buyerPartnerId && opts.buyerPartnerId !== salePartner?.id) {
     const { data: bp } = await supabase
       .from("partner")
-      .select("id, name, business_no, representative, address, industry, email, phone")
+      .select("id, name, business_no, representative, address, industry, email, email2, phone")
       .eq("id", opts.buyerPartnerId)
       .is("deleted_at", null)
       .maybeSingle();
@@ -81,6 +82,7 @@ export async function issueSaleTaxInvoice(
 
   const buyerBizNo = digitsOnly(opts.buyerBusinessNo ?? buyerPartner?.business_no ?? "");
   const buyerEmail = opts.buyerEmail?.trim() || buyerPartner?.email || null;
+  const buyerEmail2 = opts.buyerEmail2?.trim() || buyerPartner?.email2 || null;
   const buyerCeo = opts.buyerCeoName?.trim() || buyerPartner?.representative || null;
 
   const existing = await activeInvoice(supabase, saleId);
@@ -94,12 +96,13 @@ export async function issueSaleTaxInvoice(
   if (block) return { ok: false, error: block };
 
   // 발행 대상 거래처 사업자정보 보강(입력값 있을 때만 갱신 — 마스터 보강, 금액 무관)
-  if (buyerPartner?.id && (opts.buyerBusinessNo || opts.buyerEmail || opts.buyerCeoName)) {
+  if (buyerPartner?.id && (opts.buyerBusinessNo || opts.buyerEmail || opts.buyerEmail2 || opts.buyerCeoName)) {
     await supabase
       .from("partner")
       .update({
         business_no: buyerBizNo || buyerPartner.business_no,
         email: buyerEmail ?? buyerPartner.email,
+        email2: buyerEmail2 ?? buyerPartner.email2,
         representative: buyerCeo ?? buyerPartner.representative,
       })
       .eq("id", buyerPartner.id);
@@ -119,6 +122,7 @@ export async function issueSaleTaxInvoice(
     remark: opts.remark?.trim() || null,
     buyerBizNo,
     buyerEmail,
+    buyerEmail2,
     buyerCeo,
   });
 
@@ -151,6 +155,16 @@ export async function issueSaleTaxInvoice(
     },
   });
   if (error) return { ok: false, error: error.message };
+
+  // email1 은 발행(registIssue) 시 invoiceeEmail1 로 자동 송부됨. 2번째 수신처는 별도 재전송(best-effort).
+  if (buyerEmail2) {
+    try {
+      await provider.sendEmail(input.supplier.corpNum, result.mgtKey, buyerEmail2);
+    } catch {
+      /* 추가 이메일 전송 실패는 발행 성공을 깨지 않음 */
+    }
+  }
+
   revalidateTransactionPaths("sales");
   await notifyKakaoWork(
     `🧾 세금계산서 발행 · ${BOOK_LABEL[book]}\n` +

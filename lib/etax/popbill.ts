@@ -107,4 +107,8 @@ export const popbillProvider: EtaxProvider = {
     const svc = service();
     return promisify<string>((s, e) => svc.getPrintURL(corpNum, SELL, mgtKey, s, e));
   },
+  async sendEmail(corpNum, mgtKey, receiver) {
+    const svc = service();
+    await promisify((s, e) => svc.sendEmail(corpNum, SELL, mgtKey, receiver, "", s, e));
+  },
 };

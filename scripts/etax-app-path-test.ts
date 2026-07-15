@@ -118,6 +118,7 @@ async function main() {
       remark: "발행 경로 검증",
       buyerBizNo: digitsOnly(partner?.business_no ?? ""),
       buyerEmail: partner?.email ?? null,
+      buyerEmail2: partner?.email2 ?? null,
       buyerCeo: partner?.representative ?? null,
     });
     console.log("5) payload mgtKey:", input.mgtKey, "| 공급자", input.supplier.corpNum, "→ 공급받는자", input.buyer.corpNum);

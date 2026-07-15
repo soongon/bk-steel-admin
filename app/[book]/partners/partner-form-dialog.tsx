@@ -23,6 +23,7 @@ export type PartnerRow = {
   representative: string | null;
   phone: string | null;
   email: string | null;
+  email2: string | null;
   address: string | null;
   industry: string | null;
   notes: string | null;
@@ -117,8 +118,9 @@ export function PartnerFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="연락처" name="phone" defaultValue={formatPhone(initial?.phone)} placeholder="010-0000-0000" />
-            <Field label="이메일" name="email" type="email" defaultValue={initial?.email ?? undefined} placeholder="contact@partner.com" />
+            <Field label="이메일 (세금계산서 수신)" name="email" type="email" defaultValue={initial?.email ?? undefined} placeholder="contact@partner.com" />
           </div>
+          <Field label="이메일 2 (선택 · 계산서 추가 수신)" name="email2" type="email" defaultValue={editing?.email2 ?? undefined} placeholder="담당자2@partner.com" />
           <Field label="업종" name="industry" defaultValue={editing?.industry ?? undefined} placeholder="철근 대리점" />
           <Field label="주소" name="address" defaultValue={initial?.address ?? undefined} />
           <Field label="메모" name="notes" defaultValue={initial?.notes ?? undefined} />

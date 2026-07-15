@@ -49,6 +49,15 @@ declare module "popbill" {
       success: (url: string) => void,
       error: (e: PopbillError) => void,
     ): void;
+    sendEmail(
+      corpNum: string,
+      keyType: string,
+      mgtKey: string,
+      receiver: string,
+      userID: string,
+      success: (r: PopbillResponse) => void,
+      error: (e: PopbillError) => void,
+    ): void;
   }
 
   export function TaxinvoiceService(): TaxinvoiceServiceInstance;
