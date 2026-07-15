@@ -351,9 +351,18 @@ function StatementCopy({
         </div>
       ) : (
         <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-          <div className={`col-span-2 border ${baseClass} px-2 py-1`}>
-            <span className="text-muted-foreground">입금계좌: </span>
-            {bankLine}
+          <div className={`col-span-2 flex items-center gap-2 border ${baseClass} px-2 py-1`}>
+            <div className="flex-1">
+              <span className="text-muted-foreground">입금계좌: </span>
+              {bankLine}
+            </div>
+            {company.bank_copy_url ? (
+              <img
+                src={company.bank_copy_url}
+                alt="계좌사본"
+                className="h-10 w-16 shrink-0 rounded border bg-white object-contain"
+              />
+            ) : null}
           </div>
           <div className={`border ${baseClass} px-2 py-1 text-center`}>
             인 수 자: ______________ (인)
