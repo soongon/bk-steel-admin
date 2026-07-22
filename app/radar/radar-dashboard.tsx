@@ -6,7 +6,6 @@ import {
   LandmarkIcon,
   PhoneCallIcon,
   RecycleIcon,
-  TruckIcon,
   Building2Icon,
 } from "lucide-react";
 import { KpiCard } from "@/components/admin/kpi-card";
@@ -15,8 +14,6 @@ import {
   RADAR_REGION_LABEL,
   RELEVANCE_GRADE_META,
   USAGE_LABEL,
-  estimateDeliveryTier,
-  DELIVERY_LABEL,
   salesMode,
   type RadarProjectRow,
   type RadarRegion,
@@ -25,13 +22,12 @@ import {
 import { cn } from "@/lib/utils";
 import { BuildingBoard } from "./building-board";
 import { ProjectCard } from "./project-card";
+import { BuyCard } from "./buy-card";
 
 type RegionTab = "all" | RadarRegion;
 type SourceTab = "building" | "nara" | "notice";
 
 const GRADE_RANK: Record<string, number> = { A: 0, B: 1, C: 2 };
-const fmtKrw = (n: number | null) =>
-  n == null ? "" : n >= 1e8 ? `${(n / 1e8).toFixed(1)}억` : `${Math.round(n / 1e4).toLocaleString("ko-KR")}만`;
 const byDateDesc = (key: keyof RadarProjectRow) => (a: RadarProjectRow, b: RadarProjectRow) =>
   String(b[key] ?? "").localeCompare(String(a[key] ?? ""));
 
@@ -221,7 +217,7 @@ function NoticeView({ projects }: { projects: RadarProjectRow[] }) {
   );
 }
 
-/** 매입(buy) 뷰 — 나라장터 철거·해체(낙찰사=철거업체) + 민간 준공(남은 철근). */
+/** 매입(buy) 뷰 — 나라장터 철거·해체(낙찰사=철거업체) + 민간 준공(남은 철근). 판매와 동일한 카드 그리드. */
 function BuyView({ projects }: { projects: RadarProjectRow[] }) {
   const demo = useMemo(
     () => projects.filter((p) => p.usage === "demolition").sort(byDateDesc("stage_date")),
@@ -244,103 +240,61 @@ function BuyView({ projects }: { projects: RadarProjectRow[] }) {
         <KpiCard title="A등급 매입" value={`${aCount}건`} hint="물량 상위" />
       </section>
 
-      {/* 나라장터 철거·해체 */}
-      <div className="flex flex-col gap-2">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-          <RecycleIcon className="size-4 text-emerald-600" /> 나라장터 철거·해체
-          <span className="text-xs font-normal text-muted-foreground">낙찰사(철거업체) = 매입처</span>
-        </h3>
-        {demo.length === 0 ? (
-          <p className="rounded-lg border border-dashed bg-muted/30 p-5 text-center text-xs text-muted-foreground">
-            이 권역의 철거·해체 발주가 없습니다.
-          </p>
-        ) : (
-          demo.map((p) => {
-            const grade = p.relevance_grade ? RELEVANCE_GRADE_META[p.relevance_grade] : null;
-            return (
-              <div
-                key={p.id}
-                className="flex items-center gap-2.5 rounded-lg border bg-card p-2.5 text-sm ring-1 ring-emerald-500/10"
-              >
-                <span className="w-14 shrink-0 tabular-nums text-xs text-muted-foreground">
-                  {p.stage_date ? p.stage_date.slice(2).replaceAll("-", ".") : ""}
-                </span>
-                {grade ? (
-                  <span className={cn("shrink-0 rounded border px-1 text-[10px] font-semibold", grade.className)}>
-                    {grade.label}
-                  </span>
-                ) : null}
-                <span className="min-w-0 flex-1 truncate" title={p.title}>
-                  {p.title}
-                </span>
-                {p.est_amount ? (
-                  <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{fmtKrw(p.est_amount)}</span>
-                ) : null}
-                {p.contact_party && p.stage === "awarded" ? (
-                  <span className="shrink-0 rounded bg-emerald-100 px-1.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-                    {p.contact_party}
-                  </span>
-                ) : (
-                  <span className="shrink-0 text-[11px] text-muted-foreground">낙찰 전</span>
-                )}
-                <span className="shrink-0 text-xs text-muted-foreground">{RADAR_REGION_LABEL[p.region]}</span>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* 민간 준공 — 남은 철근 */}
-      <div className="flex flex-col gap-2">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-          <Building2Icon className="size-4 text-muted-foreground" /> 민간 준공 현장
-          <span className="text-xs font-normal text-muted-foreground">남은 철근 정리</span>
-        </h3>
-        {done.length === 0 ? (
-          <p className="rounded-lg border border-dashed bg-muted/30 p-5 text-center text-xs text-muted-foreground">
-            이 권역의 준공 현장이 없습니다.
-          </p>
-        ) : (
-          done.map((p) => {
-            const grade = p.relevance_grade ? RELEVANCE_GRADE_META[p.relevance_grade] : null;
-            const tier = estimateDeliveryTier(p.floor_area, p.usage);
-            return (
-              <div
-                key={p.id}
-                className="flex items-center gap-2.5 rounded-lg border bg-card p-2.5 text-sm ring-1 ring-foreground/5"
-              >
-                <span className="w-14 shrink-0 tabular-nums text-xs text-muted-foreground">
-                  {p.completion_date ? p.completion_date.slice(2).replaceAll("-", ".") : ""}
-                </span>
-                {grade ? (
-                  <span className={cn("shrink-0 rounded border px-1 text-[10px] font-semibold", grade.className)}>
-                    {grade.label}
-                  </span>
-                ) : null}
-                {p.usage ? (
-                  <span className="shrink-0 rounded bg-muted px-1.5 text-[11px] text-muted-foreground">
-                    {USAGE_LABEL[p.usage] ?? p.usage}
-                  </span>
-                ) : null}
-                <span className="min-w-0 flex-1 truncate" title={p.title}>
-                  {p.title}
-                </span>
-                {p.floor_area ? (
-                  <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                    {Math.round(p.floor_area).toLocaleString("ko-KR")}㎡
-                  </span>
-                ) : null}
-                <span className="shrink-0 inline-flex items-center gap-0.5 text-xs text-muted-foreground">
-                  <TruckIcon className="size-3" />
-                  {DELIVERY_LABEL[tier]}
-                </span>
-                <span className="shrink-0 text-xs text-muted-foreground">{RADAR_REGION_LABEL[p.region]}</span>
-              </div>
-            );
-          })
-        )}
-      </div>
+      <BuySection
+        icon={RecycleIcon}
+        iconClass="text-emerald-600"
+        title="나라장터 철거·해체"
+        hint="낙찰사(철거업체) = 매입처"
+        projects={demo}
+        empty="이 권역의 철거·해체 발주가 없습니다."
+      />
+      <BuySection
+        icon={Building2Icon}
+        iconClass="text-muted-foreground"
+        title="민간 준공 현장"
+        hint="남은 철근 정리"
+        projects={done}
+        empty="이 권역의 준공 현장이 없습니다."
+      />
     </div>
+  );
+}
+
+/** 매입 뷰 섹션 — 아이콘·제목·힌트 + 매입 카드 그리드(판매 ProjectSection과 동일 레이아웃). */
+function BuySection({
+  icon: Icon,
+  iconClass,
+  title,
+  hint,
+  projects,
+  empty,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  iconClass: string;
+  title: string;
+  hint: string;
+  projects: RadarProjectRow[];
+  empty: string;
+}) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+        <Icon className={cn("size-4", iconClass)} /> {title}
+        <span className="text-muted-foreground">{projects.length}</span>
+        <span className="text-xs font-normal text-muted-foreground">· {hint}</span>
+      </h3>
+      {projects.length === 0 ? (
+        <p className="rounded-lg border border-dashed bg-muted/30 p-5 text-center text-xs text-muted-foreground">
+          {empty}
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {projects.map((p) => (
+            <BuyCard key={p.id} p={p} />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
