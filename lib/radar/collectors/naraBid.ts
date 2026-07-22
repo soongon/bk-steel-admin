@@ -84,11 +84,24 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** 공고번호+차수 = 입찰공고 ↔ 낙찰 조인키. */
+/**
+ * 조인·중복키 = 공고번호(bidNtceNo)만. 차수(bidNtceOrd)는 제외한다.
+ * 같은 공고의 재공고·정정은 차수가 늘지만 실체는 한 건 — 차수를 키에 넣으면 000/001/002…가
+ * 각각 다른 행이 되고, 낙찰은 마지막 차수에만 붙어 "낙찰 vs 입찰공고" 중복이 생겼다.
+ * 공고번호 단위로 합치고 낙찰을 우선(preferAwarded)해 한 건으로 만든다.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function bidKey(item: Record<string, any>): string | null {
   if (!item.bidNtceNo) return null;
-  return `${item.bidNtceNo}-${item.bidNtceOrd ?? "000"}`;
+  return String(item.bidNtceNo).trim();
+}
+
+/** 같은 공고번호가 여러 번 오면 낙찰 우선, 같은 단계면 최신 stage_date 우선(윈도우 순서 무관). */
+function preferAwarded(existing: CollectedProject | undefined, incoming: CollectedProject): CollectedProject {
+  if (!existing) return incoming;
+  const rank = (p: CollectedProject) => (p.stage === "awarded" ? 1 : 0);
+  if (rank(incoming) !== rank(existing)) return rank(incoming) > rank(existing) ? incoming : existing;
+  return (incoming.stage_date ?? "") >= (existing.stage_date ?? "") ? incoming : existing;
 }
 
 const p2 = (n: number) => String(n).padStart(2, "0");
@@ -251,12 +264,12 @@ export const naraBidCollector: Collector = {
           const k = bidKey(b);
           const award = k ? awardByKey.get(k) : null;
           const p = award ? normalizeAward(award, region) : normalizeBid(b);
-          if (p) out.set(p.source_key, p);
+          if (p) out.set(p.source_key, preferAwarded(out.get(p.source_key), p));
         }
         // 낙찰 자체가 지역 매칭되지만 입찰공고에서 못 잡은 것(공고가 기간 밖) 보강.
         for (const a of awardByKey.values()) {
           const p = normalizeAward(a);
-          if (p && !out.has(p.source_key)) out.set(p.source_key, p);
+          if (p) out.set(p.source_key, preferAwarded(out.get(p.source_key), p));
         }
       } catch (e) {
         console.error(`[radar] 관급 수집 실패 (${bgn}~${end}):`, (e as Error).message);
