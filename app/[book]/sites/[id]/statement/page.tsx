@@ -7,10 +7,10 @@ import { buttonVariants } from "@/components/ui/button";
 import { BookBadge } from "@/components/admin/book-badge";
 import { PrintButton } from "@/components/admin/print-button";
 import {
-  TradingStatement,
   type StatementData,
   type StatementLine,
 } from "@/components/admin/trading-statement";
+import { SiteStatementView } from "./statement-view";
 import { fetchCompanyProfile } from "@/lib/company-profile";
 import { rebarSpecLabel } from "@/lib/rebar";
 import { fmtKrw } from "@/lib/format";
@@ -271,12 +271,14 @@ export default async function SiteStatementPage({
         <PrintButton />
       </div>
 
-      {/* 거래명세표 본체 — 매출 상세 모달과 동일 형태(공급받는자 보관용 1매) */}
-      <section className="bg-zinc-100 px-4 py-6 dark:bg-zinc-900 print:bg-white print:p-0">
-        <div className="mx-auto max-w-[800px] rounded-md bg-white p-6 text-zinc-900 shadow-md print:max-w-none print:rounded-none print:p-0 print:shadow-none">
-          <TradingStatement data={data} company={company} recipientOnly />
-        </div>
-      </section>
+      {/* 거래명세표 본체(공급받는자 보관용 1매) + 문자(MMS) 전송 */}
+      <SiteStatementView
+        data={data}
+        company={company}
+        siteId={site.id}
+        book={supplierBook}
+        defaultPhone={uniqPartners.length === 1 || groupMode ? (mainPartner?.phone ?? null) : null}
+      />
     </div>
   );
 }
