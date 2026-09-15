@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeftIcon, FileSpreadsheetIcon, FileTextIcon, MapPinIcon } from "lucide-react";
@@ -357,12 +358,11 @@ export default async function SiteDetailPage({
                   <Stat label="중량 합계" value={`${fmtNum(g.total_weight_kg)} kg`} />
                 </dl>
 
-                {/* 매출 라인 (라이트) */}
+                {/* 매출 라인 — 매출(일자) 단위 구분 행 + 품목 라인 */}
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead className="bg-muted/40">
                       <tr>
-                        <th className="px-2 py-1 text-left">매출 / 일자</th>
                         <th className="px-2 py-1 text-left">품목</th>
                         <th className="px-2 py-1 text-right">수량</th>
                         <th className="px-2 py-1 text-right">중량(kg)</th>
@@ -370,47 +370,58 @@ export default async function SiteDetailPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {g.sales.flatMap((s) =>
-                        s.sale_line.map((l) => (
-                          <tr key={l.id} className="border-t border-border/40">
-                            <td className="px-2 py-1">
+                      {g.sales.map((s) => (
+                        <Fragment key={s.id}>
+                          {/* 매출(일자) 구분 행 — 일자·전표·건 합계 */}
+                          <tr className="border-t-2 border-border/70 bg-muted/30">
+                            <td colSpan={3} className="px-2 py-1.5">
+                              <span className="font-semibold tabular-nums">{s.ordered_on}</span>
                               <Link
                                 href={`/${bookParam}/sales/${s.id}`}
-                                className="font-mono hover:underline"
+                                className="ml-2 font-mono text-[11px] text-muted-foreground hover:underline"
                               >
                                 {s.doc_no}
                               </Link>
-                              <div className="text-[10px] text-muted-foreground">
-                                {s.ordered_on}
-                              </div>
-                            </td>
-                            <td className="px-2 py-1">
-                              {l.item?.name ?? "—"}
-                              {l.item?.rebar_spec_code ? (
-                                <span className="ml-1 text-[10px] text-muted-foreground">
-                                  {l.item.rebar_spec_code} {l.item.rebar_grade_code}{" "}
-                                  {l.item.length_m ? `${l.item.length_m}M` : ""}
+                              {!s.is_documented ? (
+                                <span className="ml-1.5 rounded bg-amber-100 px-1 text-[10px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                                  무자료
                                 </span>
                               ) : null}
                             </td>
-                            <td className="px-2 py-1 text-right tabular-nums">
-                              {fmtNum(Number(l.qty))} {l.unit}
-                            </td>
-                            <td className="px-2 py-1 text-right tabular-nums">
-                              {l.theoretical_weight_kg ?? l.weight_kg
-                                ? fmtNum(
-                                    Number(l.theoretical_weight_kg ?? l.weight_kg),
-                                  )
-                                : ""}
-                            </td>
-                            <td className="px-2 py-1 text-right tabular-nums">
-                              {l.line_subtotal_krw
-                                ? fmtNum(Number(l.line_subtotal_krw))
-                                : ""}
+                            <td className="px-2 py-1.5 text-right font-semibold tabular-nums">
+                              {fmtKrw(Number(s.total_krw))}
                             </td>
                           </tr>
-                        )),
-                      )}
+                          {s.sale_line.map((l) => (
+                            <tr key={l.id} className="border-t border-border/30">
+                              <td className="px-2 py-1 pl-4">
+                                {l.item?.name ?? "—"}
+                                {l.item?.rebar_spec_code ? (
+                                  <span className="ml-1 text-[10px] text-muted-foreground">
+                                    {l.item.rebar_spec_code} {l.item.rebar_grade_code}{" "}
+                                    {l.item.length_m ? `${l.item.length_m}M` : ""}
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td className="px-2 py-1 text-right tabular-nums">
+                                {fmtNum(Number(l.qty))} {l.unit}
+                              </td>
+                              <td className="px-2 py-1 text-right tabular-nums">
+                                {l.theoretical_weight_kg ?? l.weight_kg
+                                  ? fmtNum(
+                                      Number(l.theoretical_weight_kg ?? l.weight_kg),
+                                    )
+                                  : ""}
+                              </td>
+                              <td className="px-2 py-1 text-right tabular-nums">
+                                {l.line_subtotal_krw
+                                  ? fmtNum(Number(l.line_subtotal_krw))
+                                  : ""}
+                              </td>
+                            </tr>
+                          ))}
+                        </Fragment>
+                      ))}
                     </tbody>
                   </table>
                 </div>
