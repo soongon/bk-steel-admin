@@ -24,7 +24,7 @@ import { DeliveryCertButton } from "./delivery-cert-button";
 import { TaxInvoiceButton, type SaleTaxInvoice, type BuyerPartner } from "./tax-invoice-button";
 import { SettleDialog, type BankAccount } from "../settle-dialog";
 import { taxDocMode } from "@/lib/tax-invoice";
-import { markSaleDelivered, toggleSaleStatementSent } from "../actions";
+import { markSaleDelivered, toggleSaleStatementSent, toggleSaleTaxInvoiceIssued } from "../actions";
 
 export type LifecycleSale = {
   id: string;
@@ -106,6 +106,14 @@ export function SaleLifecyclePanel({
       if (!r.ok) toast.error(r.error);
     });
   }
+  // 별도 발행(홈택스·세무사 등 시스템 밖) 수동 완료 토글 — 명세표 송부와 동일 방식.
+  // ASP(팝빌)·수기 기록으로 발행된 활성 계산서가 있으면 그 흐름이 관리하므로 숨김.
+  function toggleInvoice() {
+    startTransition(async () => {
+      const r = await toggleSaleTaxInvoiceIssued(sale.id, !sale.tax_invoice_issued_on);
+      if (!r.ok) toast.error(r.error);
+    });
+  }
   return (
     <section className="rounded-lg border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -180,15 +188,22 @@ export function SaleLifecyclePanel({
                 ) : null}
 
                 {s.key === "invoice" && !s.na ? (
-                  <TaxInvoiceButton
-                    saleId={sale.id}
-                    mode={invoiceMode}
-                    taxInvoice={taxInvoice}
-                    statementData={statementData}
-                    company={company}
-                    partners={partners}
-                    defaultBuyerPartnerId={sale.partner_id}
-                  />
+                  <>
+                    <TaxInvoiceButton
+                      saleId={sale.id}
+                      mode={invoiceMode}
+                      taxInvoice={taxInvoice}
+                      statementData={statementData}
+                      company={company}
+                      partners={partners}
+                      defaultBuyerPartnerId={sale.partner_id}
+                    />
+                    {!taxInvoice ? (
+                      <Button size="xs" variant={s.done ? "secondary" : "outline"} onClick={toggleInvoice} disabled={pending}>
+                        {s.done ? "발행 해제" : "발행 완료"}
+                      </Button>
+                    ) : null}
+                  </>
                 ) : null}
 
                 {s.key === "settle" && !s.done ? (
