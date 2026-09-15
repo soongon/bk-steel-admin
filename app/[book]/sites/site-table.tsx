@@ -105,12 +105,7 @@ export function SiteTable({
                       </Link>
                     </TableCell>
                     <TableCell className="font-medium">
-                      {/* 현장명 → 누적 명세서 (코드 클릭은 현장 상세 유지) */}
-                      <Link
-                        href={`/${book}/sites/${s.id}/statement`}
-                        title="현장 누적 명세서 보기"
-                        className="hover:underline"
-                      >
+                      <Link href={`/${book}/sites/${s.id}`} className="hover:underline">
                         {s.name}
                       </Link>
                     </TableCell>

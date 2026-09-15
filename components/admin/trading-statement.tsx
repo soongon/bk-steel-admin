@@ -151,7 +151,22 @@ function StatementCopy({
   // 철근 라인은 품목칸에 '철근'을 첫 행만 표기하고 이후는 비움(중복 제거). 철제는 각 라인 품명 표시.
   // is_rebar 미제공(옛 경로)이면 규격 유무로 판정(하위호환).
   const isRebarLine = (l: StatementLine) => l.is_rebar ?? !!l.spec;
-  const firstRebarIdx = data.lines.findIndex(isRebarLine);
+  // 날짜 그룹 — 누적 명세표는 라인 날짜(ordered_on)가 바뀌는 행에만 월/일 표시(연속 중복 생략),
+  // 철근 '철근' 라벨도 날짜 그룹마다 첫 철근 행에 표시. 단건(라인 ordered_on 없음)은 기존과 동일
+  // (첫 행 날짜 1회·철근 라벨 1회).
+  let prevGroupDate: string | null = null;
+  let groupHasRebar = false;
+  const lineMeta = data.lines.map((l) => {
+    const d = l.ordered_on ?? data.ordered_on;
+    const newGroup = d !== prevGroupDate;
+    if (newGroup) {
+      prevGroupDate = d;
+      groupHasRebar = false;
+    }
+    const showRebarLabel = isRebarLine(l) && !groupHasRebar;
+    if (isRebarLine(l)) groupHasRebar = true;
+    return { showDate: newGroup, showRebarLabel, date: d };
+  });
   // 입금계좌 '농협 [번호] 최원식' — bank_default_name 이 '은행/예금주' 포맷이면 분리해 번호를 사이에.
   const bankParts = (company.bank_default_name ?? "").split("/").map((x) => x.trim());
   const bankLine = [bankParts[0], company.bank_default_no, bankParts[1] || company.representative]
@@ -282,16 +297,16 @@ function StatementCopy({
             line ? (
               <tr key={i}>
                 <td className={`border ${baseClass} px-1 py-0.5 text-center text-xs`}>
-                  {i === 0
+                  {lineMeta[i]?.showDate
                     ? (() => {
-                        const d = line.ordered_on ? new Date(line.ordered_on) : null;
-                        return d ? `${d.getMonth() + 1}/${d.getDate()}` : `${dateMonth}/${dateDay}`;
+                        const d = new Date(lineMeta[i].date);
+                        return Number.isNaN(d.getTime()) ? `${dateMonth}/${dateDay}` : `${d.getMonth() + 1}/${d.getDate()}`;
                       })()
                     : ""}
                 </td>
                 <td className={`border ${baseClass} px-1 py-0.5`}>
                   {isRebarLine(line)
-                    ? i === firstRebarIdx
+                    ? lineMeta[i]?.showRebarLabel
                       ? line.display_name ?? "철근"
                       : ""
                     : line.display_name ?? line.item_name}

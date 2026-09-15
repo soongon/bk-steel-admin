@@ -311,8 +311,7 @@ export function SaleTable({
                         <div className="text-xs text-muted-foreground">
                           {s.site?.id ? (
                             <Link
-                              href={`/${view}/sites/${s.site.id}/statement`}
-                              title="현장 누적 명세서 보기"
+                              href={`/${view}/sites/${s.site.id}`}
                               className="hover:underline"
                             >
                               {s.site.name}

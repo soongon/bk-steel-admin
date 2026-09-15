@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeftIcon, FileTextIcon, MapPinIcon } from "lucide-react";
+import { ArrowLeftIcon, FileSpreadsheetIcon, FileTextIcon, MapPinIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { type Book, type BookView } from "@/lib/book";
 import { buttonVariants } from "@/components/ui/button";
@@ -223,6 +223,14 @@ export default async function SiteDetailPage({
           현장 목록
         </Link>
         <div className="flex items-center gap-2">
+          {/* 현장 전체 매출 누적 명세서 (날짜 오름차순) */}
+          <Link
+            href={`/${bookParam}/sites/${id}/statement`}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <FileSpreadsheetIcon className="size-4" />
+            거래명세표
+          </Link>
           <QuoteButton
             sources={{
               partners: (partnersRes.data ?? []) as QuotePartner[],
