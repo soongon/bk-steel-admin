@@ -36,6 +36,7 @@ type RawSale = {
   tax_doc_type: string;
   partner_id: string;
   delivery_cert_id: string | null;
+  notes: string | null;
   partner: {
     id: string;
     name: string;
@@ -51,6 +52,7 @@ type RawSale = {
     weight_kg: number | string | null;
     theoretical_weight_kg: number | string | null;
     line_subtotal_krw: number | string | null;
+    notes: string | null;
     item: {
       id: string;
       name: string;
@@ -106,10 +108,10 @@ export default async function SiteDetailPage({
       `
       id, book, doc_no, ordered_on, delivered_on, status,
       subtotal_krw, vat_krw, total_krw, is_documented, tax_doc_type,
-      partner_id, delivery_cert_id,
+      partner_id, delivery_cert_id, notes,
       partner:partner(id, name, code, business_no, representative, address),
       sale_line(
-        id, qty, unit, weight_kg, theoretical_weight_kg, line_subtotal_krw,
+        id, qty, unit, weight_kg, theoretical_weight_kg, line_subtotal_krw, notes,
         item:item(id, name, category, rebar_spec_code, rebar_grade_code, length_m)
       )
     `,
@@ -193,6 +195,60 @@ export default async function SiteDetailPage({
       companyMap.set(g.book, await fetchCompanyProfile(supabase, g.book));
     }
   }
+
+  // 6. 현장 메모 이력 — 매출·매출 라인·견적 메모를 날짜순 통합 (현장 자체 비고는 상단 메타에 표시)
+  type SiteMemo = { date: string; kind: "매출" | "라인" | "견적"; text: string; href: string; ref: string };
+  let quotesQ = supabase
+    .from("quote")
+    .select("id, doc_no, quote_date, notes, prospect_name, partner:partner(name)")
+    .eq("site_id", id)
+    .is("deleted_at", null)
+    .not("notes", "is", null);
+  if (view !== "all") quotesQ = quotesQ.eq("book", view);
+  const { data: rawQuotes } = await quotesQ;
+
+  const memos: SiteMemo[] = [];
+  for (const s of sales) {
+    if (s.notes?.trim()) {
+      memos.push({
+        date: s.ordered_on,
+        kind: "매출",
+        text: s.notes.trim(),
+        href: `/${bookParam}/sales/${s.id}`,
+        ref: `${s.doc_no} · ${s.partner?.name ?? "—"}`,
+      });
+    }
+    for (const l of s.sale_line) {
+      if (l.notes?.trim()) {
+        memos.push({
+          date: s.ordered_on,
+          kind: "라인",
+          text: l.notes.trim(),
+          href: `/${bookParam}/sales/${s.id}`,
+          ref: `${s.doc_no} · ${l.item?.name ?? "품목"}`,
+        });
+      }
+    }
+  }
+  for (const q of (rawQuotes ?? []) as unknown as Array<{
+    id: string;
+    doc_no: string;
+    quote_date: string;
+    notes: string | null;
+    prospect_name: string | null;
+    partner: { name: string } | null;
+  }>) {
+    if (q.notes?.trim()) {
+      memos.push({
+        date: q.quote_date,
+        kind: "견적",
+        text: q.notes.trim(),
+        href: `/${bookParam}/quotes/${q.id}`,
+        ref: `${q.doc_no} · ${q.partner?.name ?? q.prospect_name ?? "—"}`,
+      });
+    }
+  }
+  memos.sort((a, b) => a.date.localeCompare(b.date));
 
   // 견적서용 데이터 (거래처·품목·규격 + SL 공급자 명의)
   const [partnersRes, itemsRes, rebarSpecsRes, quoteCompany] = await Promise.all([
@@ -437,6 +493,47 @@ export default async function SiteDetailPage({
           })
         )}
       </section>
+
+      {/* 현장 메모 이력 — 매출·라인·견적 메모 날짜순 */}
+      {memos.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold">
+            메모{" "}
+            <span className="text-sm font-normal text-muted-foreground">
+              {memos.length}건 · 날짜순
+            </span>
+          </h2>
+          <div className="divide-y divide-border/40 rounded-xl border bg-card ring-1 ring-foreground/5">
+            {memos.map((m, i) => (
+              <div key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                <span className="w-[4.6rem] shrink-0 pt-0.5 font-mono text-xs tabular-nums text-muted-foreground">
+                  {m.date}
+                </span>
+                <span
+                  className={`mt-0.5 shrink-0 rounded px-1.5 text-[10px] ${
+                    m.kind === "매출"
+                      ? "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                      : m.kind === "견적"
+                        ? "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300"
+                        : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300"
+                  }`}
+                >
+                  {m.kind}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="whitespace-pre-wrap">{m.text}</p>
+                  <Link
+                    href={m.href}
+                    className="font-mono text-[11px] text-muted-foreground hover:underline"
+                  >
+                    {m.ref}
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
