@@ -30,9 +30,9 @@ jobs:
           DATA_GO_KR_BUILDING_KEY: ${{ secrets.DATA_GO_KR_BUILDING_KEY }}
           # NARA 키 별도 미발급 시 BUILDING 키로 fallback (동일 data.go.kr 계정). 빈 문자열 방지 위해 Actions ||.
           DATA_GO_KR_NARA_KEY: ${{ secrets.DATA_GO_KR_NARA_KEY || secrets.DATA_GO_KR_BUILDING_KEY }}
-          # notice·building_permit 제외하고 나라장터만 (기본 배열에 notice 포함됨)
+          # building_permit 제외하고 나라장터만
           RADAR_SOURCES: nara_bid
-          # 나라장터 수집 윈도(일) — naraBid 가 실제로 읽는 키
-          RADAR_NARA_DAYS: '14'
+          # 나라장터 수집 윈도(일) — 14→30(v2): 공고 선적재 행의 낙찰 전환 지연을 상시 흡수(28+2일 두 창, 10,000콜/일 한도 내)
+          RADAR_NARA_DAYS: '30'
           KAKAOWORK_WEBHOOK_URL: ${{ secrets.KAKAOWORK_WEBHOOK_URL }}
           APP_BASE_URL: ${{ secrets.APP_BASE_URL }}

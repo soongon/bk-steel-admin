@@ -46,3 +46,6 @@ supabase/.branches/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 발주 레이더 v2 D0 내보내기(개인정보 포함) — 커밋 금지
+radar-v2-*.csv

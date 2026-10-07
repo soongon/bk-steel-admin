@@ -205,7 +205,9 @@ export const buildingPermitCollector: Collector = {
               if (page * PAGE_SIZE >= total) break;
             }
           } catch (e) {
-            console.error(`[radar] 민간 수집 실패 ${sg.code}/${bjdongCd}:`, (e as Error).message);
+            const msg = `민간 수집 실패 ${sg.code}/${bjdongCd}: ${(e as Error).message}`;
+            console.error(`[radar] ${msg}`);
+            ctx.onError?.("building_permit", msg);
           }
         }
       }

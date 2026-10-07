@@ -1,0 +1,492 @@
+/**
+ * 발주 레이더 v2 데이터 로더 — 화면(app/radar/page.tsx)·알림(scripts/radar-collect)·CSV(radar-v2-export)·
+ * 측정(radar-v2-measure)·정리 검증(radar-v2-cleanup)이 같은 쿼리·규칙으로 같은 숫자를 낸다.
+ * 클라이언트는 주입(화면 = 사용자 세션 RLS, 스크립트 = service_role). 읽기 전용 + linkSalesLogNotes 만 쓰기.
+ */
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { digits, telValid } from "./nara-rules";
+import {
+  PHONE_WINDOW_RC_DAYS,
+  RESULT_REFUSED,
+  RESULT_UNREACHABLE,
+  VISIT_WINDOW_DAYS,
+  extractRadarId,
+  isDismissResult,
+  normalizeResultCode,
+  phoneRuleMatch,
+  naraLabelOf,
+  type PhoneMatch,
+  type TouchLog,
+} from "./v2-rules";
+import { buildVisitRows, type VisitSourceRow, type VisitViewRow } from "./visit-view";
+
+const MS_DAY = 86_400_000;
+/** URL 길이(PostgREST GET) 보호 — UUID 36자 × 100 ≈ 3.7KB. */
+const IN_CHUNK = 100;
+const PAGE = 1000;
+/** 완료 탭 노출 기간(제외 시각 기준). */
+export const DONE_DAYS = 90;
+
+/** 오늘(KST) YYYY-MM-DD. */
+export function kstToday(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(now);
+}
+
+type Res<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
+async function fetchAllPages<T>(build: (from: number, to: number) => Res<T>): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    out.push(...(data ?? []));
+    if (!data || data.length < PAGE) break;
+  }
+  return out;
+}
+function chunks<T>(xs: T[], n: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
+  return out;
+}
+
+// ── 방문 탭 ───────────────────────────────────────────────────
+const VISIT_COLS =
+  "id, source, region, stage, floor_area, usage, address, title, permit_date, start_date, stage_changed_at, created_at, dismissed_at, dismiss_reason, main_purps:raw->>mainPurpsCdNm, arch_gb:raw->>archGbCdNm, block:raw->>block";
+const LOG_COLS = "project_id, created_at, contacted_on, follow_up_on, result, contact_person, contact_phone, notes, channel";
+
+/**
+ * 방문 탭 행 — ① 미처분 ∧ 단계 반영 60일(+여유) ② 최근 90일 제외 행 ③ 기록(sales_log.project_id)이 있는 행(창 밖이어도
+ * 처분될 때까지 남음; 단 90일 넘은 제외 행은 제외). 정밀 판정·상태 파생은 buildVisitRows.
+ */
+export async function loadVisitRows(sb: SupabaseClient, today: string): Promise<VisitViewRow[]> {
+  const todayMs = Date.parse(`${today}T00:00:00Z`);
+  const sinceWindow = new Date(todayMs - (VISIT_WINDOW_DAYS + 2) * MS_DAY).toISOString();
+  const sinceDone = new Date(todayMs - DONE_DAYS * MS_DAY).toISOString();
+  const base = () =>
+    sb
+      .from("construction_project")
+      .select(VISIT_COLS)
+      .eq("source", "building_permit")
+      .eq("region", "gyeongju")
+      .in("stage", ["permit", "construction_start"])
+      .is("deleted_at", null);
+
+  const [inWindow, dismissed, logs] = await Promise.all([
+    fetchAllPages<VisitSourceRow>((a, b) =>
+      base()
+        .is("dismissed_at", null)
+        .or(`stage_changed_at.gte.${sinceWindow},and(stage_changed_at.is.null,created_at.gte.${sinceWindow})`)
+        .order("id")
+        .range(a, b) as unknown as Res<VisitSourceRow>,
+    ),
+    fetchAllPages<VisitSourceRow>((a, b) =>
+      base().not("dismissed_at", "is", null).gte("dismissed_at", sinceDone).order("id").range(a, b) as unknown as Res<VisitSourceRow>,
+    ),
+    // 방문(민간) 행에 붙은 기록만 — 전화 캠페인 기록이 쌓여도 이 쿼리는 커지지 않는다.
+    fetchAllPages<TouchLog & { project_id: string }>((a, b) =>
+      sb
+        .from("sales_log")
+        .select(`${LOG_COLS}, construction_project!inner(source)`)
+        .eq("construction_project.source", "building_permit")
+        .not("project_id", "is", null)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .range(a, b) as unknown as Res<TouchLog & { project_id: string }>,
+    ),
+  ]);
+
+  const rowsById = new Map<string, VisitSourceRow>();
+  for (const r of [...inWindow, ...dismissed]) rowsById.set(r.id, r);
+  const logsByProject = new Map<string, TouchLog[]>();
+  for (const l of logs) {
+    if (!logsByProject.has(l.project_id)) logsByProject.set(l.project_id, []);
+    logsByProject.get(l.project_id)!.push(l);
+  }
+  // 기록이 있는데 ①·②에 없는 행(창 밖 미처분·준공 전환 전) 보강 — 90일 넘은 제외 행은 다시 살리지 않는다.
+  const missing = [...logsByProject.keys()].filter((id) => !rowsById.has(id));
+  for (const ids of chunks(missing, IN_CHUNK)) {
+    const { data, error } = await base().in("id", ids).or(`dismissed_at.is.null,dismissed_at.gte.${sinceDone}`);
+    if (error) throw new Error(`방문 행 보강 조회 실패: ${error.message}`);
+    for (const r of (data ?? []) as unknown as VisitSourceRow[]) rowsById.set(r.id, r);
+  }
+  return buildVisitRows([...rowsById.values()], logsByProject, today);
+}
+
+// ── 전화 탭(낙찰사 계정) ──────────────────────────────────────
+export interface PhoneAward {
+  id: string;
+  title: string;
+  ordering_org: string | null;
+  stage_date: string | null;
+  est_amount: number | null;
+  rc: boolean;
+}
+export interface PhoneAccount {
+  bizno: string; // 숫자만(없으면 낙찰사명)
+  company: string | null;
+  ceo: string | null;
+  tel: string | null;
+  addr: string | null;
+  match: PhoneMatch;
+  partnerName: string | null; // ★ 기존 거래처
+  awards: PhoneAward[]; // 규칙에 걸린 낙찰, 최신순
+  missing: string[]; // 필수 5필드 공란(낙찰사명·대표·전화·사업자번호·소재지)
+  lastTouch: { contacted_on: string; result: string | null } | null; // 이 계정의 마지막 접촉(영업내역)
+}
+export interface PhoneLoad {
+  accounts: PhoneAccount[];
+  /** 창 안인데 전화 마스킹만으로 빠진 계정 수(전국건설업체정보 API 보완 대상) */
+  maskedInWindow: number;
+  /** 사업자번호(10자리)가 있는 거래처 수 / 전체 */
+  partnersWithBizno: number;
+  partnersTotal: number;
+}
+
+type AwardRow = {
+  id: string;
+  title: string;
+  ordering_org: string | null;
+  stage_date: string | null;
+  est_amount: number | null;
+  awarded_company: string | null;
+  awardee_bizno: string | null;
+  linked_partner_id: string | null;
+  tel: string | null;
+  addr: string | null;
+  ceo: string | null;
+  cnstwk: string | null;
+};
+
+type Touch = { contacted_on: string; result: string | null; created_at: string };
+
+/**
+ * 계정 숨김 판정(순수) — 수신거부('거절')가 이력에 한 번이라도 있거나, 최신 기록이 연락 불가(현장 없음·폐업)일 때.
+ * 연락 불가는 복구 가능한 사유라 최신 기록 기준(뒤에 '견적 요청'이 오면 다시 보임) — 방문 탭 deriveStatus 와 같은 의미.
+ */
+export function hiddenByTouches(ts: Touch[]): boolean {
+  if (ts.length === 0) return false;
+  if (ts.some((t) => normalizeResultCode(t.result) === RESULT_REFUSED)) return true;
+  const latest = ts.reduce((x, y) => (x.created_at >= y.created_at ? x : y));
+  return normalizeResultCode(latest.result) === RESULT_UNREACHABLE;
+}
+
+/**
+ * 관급 계정별 접촉 기록 — 영업내역(project_id 연결분 + 메모 "레이더 {id}" 미연결분).
+ * 계정 키 = 사업자번호, 없으면 행 id(회사명으로 묶으면 동명 타사가 합쳐진다).
+ */
+async function loadNaraTouches(sb: SupabaseClient): Promise<Map<string, Touch[]>> {
+  type L = Touch & { project_id: string | null; notes: string | null };
+  type Linked = L & { construction_project: { id: string; awardee_bizno: string | null } };
+  const [linked, noted] = await Promise.all([
+    fetchAllPages<Linked>((a, b) =>
+      sb
+        .from("sales_log")
+        .select("contacted_on, result, created_at, project_id, notes, construction_project!inner(id, awardee_bizno, source)")
+        .eq("construction_project.source", "nara_bid")
+        .not("project_id", "is", null)
+        .is("deleted_at", null)
+        .order("created_at")
+        .range(a, b) as unknown as Res<Linked>,
+    ),
+    fetchAllPages<L>((a, b) =>
+      sb
+        .from("sales_log")
+        .select("contacted_on, result, created_at, project_id, notes")
+        .is("project_id", null)
+        .is("deleted_at", null)
+        .ilike("notes", "%레이더%")
+        .order("created_at")
+        .range(a, b) as unknown as Res<L>,
+    ),
+  ]);
+  const out = new Map<string, Touch[]>();
+  const add = (key: string | null | undefined, l: L) => {
+    if (!key) return;
+    if (!out.has(key)) out.set(key, []);
+    out.get(key)!.push({ contacted_on: l.contacted_on, result: l.result, created_at: l.created_at });
+  };
+  for (const l of linked) add(l.construction_project?.awardee_bizno ?? l.construction_project?.id, l);
+  // 메모에만 id 가 있는(아직 연결 전) 기록 — 다음 수집 cron 전에도 거절이 즉시 반영되게
+  const ids = [...new Set(noted.map((l) => extractRadarId(l.notes)).filter((x): x is string => !!x))];
+  const keyById = new Map<string, string>();
+  for (const part of chunks(ids, IN_CHUNK)) {
+    const { data, error } = await sb.from("construction_project").select("id, awardee_bizno").eq("source", "nara_bid").in("id", part);
+    if (error) throw new Error(`메모 기록 계정 조회 실패: ${error.message}`);
+    for (const r of (data ?? []) as Array<{ id: string; awardee_bizno: string | null }>) keyById.set(r.id, r.awardee_bizno ?? r.id);
+  }
+  for (const l of noted) add(keyById.get(extractRadarId(l.notes) ?? ""), l);
+  return out;
+}
+
+export async function loadPhoneAccounts(sb: SupabaseClient, today: string): Promise<PhoneLoad> {
+  const todayMs = Date.parse(`${today}T00:00:00Z`);
+  const since = new Date(todayMs - (PHONE_WINDOW_RC_DAYS + 2) * MS_DAY).toISOString().slice(0, 10);
+  const [awards, partners, dismissedBiz, touches] = await Promise.all([
+    fetchAllPages<AwardRow>((a, b) =>
+      sb
+        .from("construction_project")
+        .select(
+          "id, title, ordering_org, stage_date, est_amount, awarded_company, awardee_bizno, linked_partner_id, tel:raw->>bidwinnrTelNo, addr:raw->>bidwinnrAdrs, ceo:raw->>bidwinnrCeoNm, cnstwk:raw->>mtltyAdvcPsblYnCnstwkNm",
+        )
+        .eq("source", "nara_bid")
+        .eq("stage", "awarded")
+        .is("deleted_at", null)
+        .is("dismissed_at", null)
+        .gte("stage_date", since)
+        .order("stage_date", { ascending: false })
+        .order("id")
+        .range(a, b) as unknown as Res<AwardRow>,
+    ),
+    fetchAllPages<{ id: string; name: string; business_no: string | null }>((a, b) =>
+      sb.from("partner").select("id, name, business_no").is("deleted_at", null).order("id").range(a, b) as unknown as Res<{ id: string; name: string; business_no: string | null }>,
+    ),
+    // [제외]는 계정(사업자번호) 전체 — 제외 뒤 새로 들어온 낙찰 행도 숨긴다.
+    // soft delete 여부와 무관(제외는 사람의 결정 — 정리 스크립트가 행을 지워도 수신거부는 유지).
+    fetchAllPages<{ awardee_bizno: string | null }>((a, b) =>
+      sb
+        .from("construction_project")
+        .select("awardee_bizno")
+        .not("dismissed_at", "is", null)
+        .not("awardee_bizno", "is", null)
+        .order("id")
+        .range(a, b) as unknown as Res<{ awardee_bizno: string | null }>,
+    ),
+    loadNaraTouches(sb),
+  ]);
+  const partnerByBizno = new Map<string, string>();
+  for (const p of partners) {
+    const d = digits(p.business_no);
+    if (d.length === 10) partnerByBizno.set(d, p.name);
+  }
+  const partnerById = new Map(partners.map((p) => [p.id, p.name]));
+  const hidden = new Set(dismissedBiz.map((r) => r.awardee_bizno!).filter(Boolean));
+  // 영업내역 기록으로도 숨김 — 거절은 이력 어디든, 연락 불가는 최신 기록일 때(CSV 수기 기록: 연결·제외 처리 전에도 즉시)
+  for (const [key, ts] of touches) if (hiddenByTouches(ts)) hidden.add(key);
+
+  const byKey = new Map<string, PhoneAccount>();
+  const masked = new Set<string>();
+  for (const r of awards) {
+    const key = r.awardee_bizno ?? r.id; // 사업자번호 없으면 행 단위(회사명으로 묶지 않음)
+    if (hidden.has(key)) continue;
+    const input = {
+      source: "nara_bid" as const,
+      stage: "awarded" as const,
+      stage_date: r.stage_date,
+      title: r.title,
+      cnstwk_type: r.cnstwk,
+      awarded_company: r.awarded_company,
+      awardee_tel: r.tel,
+      awardee_addr: r.addr,
+    };
+    const m = phoneRuleMatch(input, today);
+    if (!m) {
+      if (!telValid(r.tel) && phoneRuleMatch({ ...input, awardee_tel: "0540000000" }, today)) masked.add(key);
+      continue;
+    }
+    let acc = byKey.get(key);
+    if (!acc) {
+      const missing: string[] = [];
+      if (!r.awarded_company) missing.push("낙찰사명");
+      if (!r.ceo) missing.push("대표");
+      if (!telValid(r.tel)) missing.push("전화");
+      if (!r.awardee_bizno) missing.push("사업자번호");
+      if (!(r.addr ?? "").trim()) missing.push("소재지");
+      acc = {
+        bizno: key,
+        company: r.awarded_company,
+        ceo: r.ceo,
+        tel: r.tel,
+        addr: r.addr,
+        match: m,
+        partnerName:
+          (r.linked_partner_id ? partnerById.get(r.linked_partner_id) : undefined) ??
+          (r.awardee_bizno ? partnerByBizno.get(r.awardee_bizno) : undefined) ??
+          null,
+        awards: [],
+        missing,
+        lastTouch: (() => {
+          const ts = touches.get(key);
+          if (!ts || ts.length === 0) return null;
+          const last = ts.reduce((x, y) => (x.created_at >= y.created_at ? x : y));
+          return { contacted_on: last.contacted_on, result: normalizeResultCode(last.result) ?? last.result };
+        })(),
+      };
+      byKey.set(key, acc);
+    } else if (acc.match !== m) {
+      acc.match = "both";
+    }
+    acc.awards.push({
+      id: r.id,
+      title: r.title,
+      ordering_org: r.ordering_org,
+      stage_date: r.stage_date,
+      est_amount: r.est_amount,
+      rc: naraLabelOf(r.title, r.cnstwk) === "rc",
+    });
+    if (!acc.partnerName && r.linked_partner_id) acc.partnerName = partnerById.get(r.linked_partner_id) ?? null;
+  }
+  for (const k of byKey.keys()) masked.delete(k); // 다른 낙찰로 이미 걸 수 있는 계정은 마스킹 집계에서 뺀다
+  const rank = (a: PhoneAccount) => (a.partnerName ? 0 : 2) + (a.match === "local" ? 1 : 0);
+  const accounts = [...byKey.values()].sort(
+    (a, b) => rank(a) - rank(b) || (b.awards[0]?.stage_date ?? "").localeCompare(a.awards[0]?.stage_date ?? ""),
+  );
+  return {
+    accounts,
+    maskedInWindow: masked.size,
+    partnersWithBizno: partnerByBizno.size,
+    partnersTotal: partners.length,
+  };
+}
+
+// ── 동기화 시각 ───────────────────────────────────────────────
+/** 소스별 마지막 수집 시각 = max(last_seen_at). 수집기만 쓰는 컬럼이라 [제외]·정리 스크립트에 흔들리지 않는다(0070). */
+export async function lastSeenBySource(sb: SupabaseClient): Promise<{ building: string | null; nara: string | null }> {
+  const one = async (source: string) => {
+    const { data, error } = await sb
+      .from("construction_project")
+      .select("last_seen_at")
+      .eq("source", source)
+      .is("deleted_at", null)
+      .not("last_seen_at", "is", null)
+      .order("last_seen_at", { ascending: false })
+      .limit(1);
+    if (error) throw new Error(`동기화 시각 조회 실패: ${error.message}`);
+    return (data?.[0] as { last_seen_at: string } | undefined)?.last_seen_at ?? null;
+  };
+  const [building, nara] = await Promise.all([one("building_permit"), one("nara_bid")]);
+  return { building, nara };
+}
+
+// ── 수기 기록 연결(쓰기) ──────────────────────────────────────
+
+export interface LinkResult {
+  found: number; // 메모에서 레이더 id 를 찾은 기록
+  linked: number;
+  dismissed: number; // 제외 결과(거절·현장 없음)로 제외 처리한 레이더 행
+  failed: Array<{ log_id: string; reason: string }>;
+  noId: number; // '레이더'는 있는데 id 가 없는 메모
+}
+
+/**
+ * 영업내역 페이지에서 수기로 남긴 기록(메모에 "레이더 {id}")을 sales_log.project_id 로 연결 — 멱등.
+ * 결과가 '거절'·'현장 없음'(정규화)이면 radar_touch 와 같은 범위로 제외 처리(사업자번호 있으면 계정 전체,
+ * '철근 안 씀·거절'은 기존 복구 가능 사유도 영구로 승격). 제외가 실패하면 연결하지 않아 다음 실행에서 재시도.
+ * D0 CSV 콜 캠페인 기록이 D10 판정·수신거부에 들어오게 한다. 수집 cron 이 매일 호출(service_role).
+ */
+export async function linkSalesLogNotes(sb: SupabaseClient, opts: { dryRun?: boolean } = {}): Promise<LinkResult> {
+  const logs = await fetchAllPages<{ id: string; notes: string | null; result: string | null }>((a, b) =>
+    sb
+      .from("sales_log")
+      .select("id, notes, result")
+      .is("project_id", null)
+      .is("deleted_at", null)
+      .ilike("notes", "%레이더%")
+      .order("id")
+      .range(a, b) as unknown as Res<{ id: string; notes: string | null; result: string | null }>,
+  );
+  const res: LinkResult = { found: 0, linked: 0, dismissed: 0, failed: [], noId: 0 };
+  for (const l of logs) {
+    const pid = extractRadarId(l.notes);
+    if (!pid) {
+      res.noId += 1;
+      continue;
+    }
+    res.found += 1;
+    if (opts.dryRun) continue;
+    const { data: proj, error: pe } = await sb
+      .from("construction_project")
+      .select("id, awardee_bizno, dismiss_reason")
+      .eq("id", pid)
+      .maybeSingle();
+    if (pe || !proj) {
+      res.failed.push({ log_id: l.id, reason: pe?.message ?? `레이더 행 없음(${pid})` });
+      continue;
+    }
+    const code = normalizeResultCode(l.result);
+    if (code && isDismissResult(code)) {
+      const patch = { dismissed_at: new Date().toISOString(), dismiss_reason: code };
+      let q = sb.from("construction_project").update(patch);
+      q = proj.awardee_bizno ? q.eq("awardee_bizno", proj.awardee_bizno) : q.eq("id", proj.id);
+      // 미제외 행 + ('거절'이면) 복구 가능 사유로 제외된 행도 영구로 승격
+      q = code === RESULT_REFUSED
+        ? q.or(`dismissed_at.is.null,dismiss_reason.is.null,dismiss_reason.neq."${RESULT_REFUSED}"`)
+        : q.is("dismissed_at", null);
+      const { data: changed, error: de } = await q.select("id");
+      if (de) {
+        res.failed.push({ log_id: l.id, reason: `제외 실패: ${de.message}` });
+        continue; // 연결하지 않음 → 다음 실행에서 재시도
+      }
+      res.dismissed += changed?.length ?? 0;
+    }
+    const { error } = await sb.from("sales_log").update({ project_id: pid }).eq("id", l.id).is("project_id", null);
+    if (error) res.failed.push({ log_id: l.id, reason: error.message });
+    else res.linked += 1;
+  }
+
+  // 조정 패스 — 이미 연결된 기록의 결과를 영업내역에서 '거절'로 고친 경우도 영구 제외로(멱등).
+  // (연락 불가는 [복구]를 존중해 연결 시점에만 적용)
+  if (!opts.dryRun) {
+    const linked = await fetchAllPages<{ id: string; result: string | null; project_id: string }>((a, b) =>
+      sb
+        .from("sales_log")
+        .select("id, result, project_id")
+        .not("project_id", "is", null)
+        .is("deleted_at", null)
+        .order("id")
+        .range(a, b) as unknown as Res<{ id: string; result: string | null; project_id: string }>,
+    );
+    const refusedPids = [...new Set(linked.filter((l) => normalizeResultCode(l.result) === RESULT_REFUSED).map((l) => l.project_id))];
+    for (const ids of chunks(refusedPids, IN_CHUNK)) {
+      const { data: projs, error: pe } = await sb.from("construction_project").select("id, awardee_bizno, dismiss_reason").in("id", ids);
+      if (pe) {
+        res.failed.push({ log_id: "-", reason: `조정 조회 실패: ${pe.message}` });
+        continue;
+      }
+      for (const p of (projs ?? []) as Array<{ id: string; awardee_bizno: string | null; dismiss_reason: string | null }>) {
+        let q = sb.from("construction_project").update({ dismissed_at: new Date().toISOString(), dismiss_reason: RESULT_REFUSED });
+        q = p.awardee_bizno ? q.eq("awardee_bizno", p.awardee_bizno) : q.eq("id", p.id);
+        const { data: changed, error } = await q
+          .or(`dismissed_at.is.null,dismiss_reason.is.null,dismiss_reason.neq."${RESULT_REFUSED}"`)
+          .select("id");
+        if (error) res.failed.push({ log_id: "-", reason: `조정 실패(${p.id}): ${error.message}` });
+        else res.dismissed += changed?.length ?? 0;
+      }
+    }
+  }
+  return res;
+}
+
+/** (읽기) '레이더' 메모 중 계정에 연결할 수 없는 기록 — CSV 내보내기 직전 경고용. */
+export async function findUnmappedRadarNotes(
+  sb: SupabaseClient,
+): Promise<Array<{ log_id: string; contacted_on: string; prospect_name: string | null; result: string | null; reason: string }>> {
+  type N = { id: string; notes: string | null; result: string | null; contacted_on: string; prospect_name: string | null };
+  const logs = await fetchAllPages<N>((a, b) =>
+    sb
+      .from("sales_log")
+      .select("id, notes, result, contacted_on, prospect_name")
+      .is("project_id", null)
+      .is("deleted_at", null)
+      .ilike("notes", "%레이더%")
+      .order("id")
+      .range(a, b) as unknown as Res<N>,
+  );
+  const withId = logs.map((l) => ({ l, pid: extractRadarId(l.notes) }));
+  const ids = [...new Set(withId.map((x) => x.pid).filter((x): x is string => !!x))];
+  const known = new Set<string>();
+  for (const part of chunks(ids, IN_CHUNK)) {
+    const { data, error } = await sb.from("construction_project").select("id").in("id", part);
+    if (error) throw new Error(error.message);
+    for (const r of (data ?? []) as Array<{ id: string }>) known.add(r.id);
+  }
+  return withId
+    .filter((x) => !x.pid || !known.has(x.pid))
+    .map((x) => ({
+      log_id: x.l.id,
+      contacted_on: x.l.contacted_on,
+      prospect_name: x.l.prospect_name,
+      result: x.l.result,
+      reason: x.pid ? `레이더 행 없음(${x.pid})` : "메모에 레이더 id 없음",
+    }));
+}

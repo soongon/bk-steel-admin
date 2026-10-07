@@ -11,7 +11,11 @@
     "migrate:may-data:dry": "tsx scripts/migrate-may-data.ts --dry-run",
     "radar:collect": "tsx scripts/radar-collect.ts",
     "radar:collect:dry": "tsx scripts/radar-collect.ts --dry-run",
-    "radar:check": "tsx scripts/radar-scoring-check.ts",
+    "radar:check": "tsx scripts/radar-v2-check.ts",
+    "radar:v2:measure": "tsx scripts/radar-v2-measure.ts",
+    "radar:v2:export": "tsx scripts/radar-v2-export.ts",
+    "radar:v2:cleanup": "tsx scripts/radar-v2-cleanup.ts",
+    "radar:v2:cleanup:dry": "tsx scripts/radar-v2-cleanup.ts --dry-run",
     "notify:overdue": "tsx scripts/notify-overdue.ts",
     "cleanup:notify-images": "tsx scripts/cleanup-notify-images.ts"
   },
