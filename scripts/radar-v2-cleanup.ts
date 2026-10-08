@@ -18,8 +18,8 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" });
 loadEnv({ path: ".env.development" });
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { digits, matchRegionV2, naraLabel, regionSuspect } from "../lib/radar/nara-rules";
-import { kstToday, linkSalesLogNotes, loadPhoneAccounts, loadVisitRows } from "../lib/radar/radar-data";
+import { matchRegionV2, naraLabel, regionSuspect } from "../lib/radar/nara-rules";
+import { kstToday, linkPartnersByBizno, linkSalesLogNotes, loadPhoneAccounts, loadVisitRows } from "../lib/radar/radar-data";
 
 const DRY = process.argv.includes("--dry-run");
 const RESTORE_AT = process.argv.find((a) => a.startsWith("--restore-deleted-at="))?.split("=")[1] ?? null;
@@ -117,26 +117,10 @@ async function main() {
   const removed = new Set([...suspectIds, ...nonConstruction]);
   const kept = nara.filter((r) => !removed.has(r.id));
 
-  // ── 3) ★ 백필 ─────────────────────────────────────────────
-  const partners = await fetchAll<{ id: string; name: string; business_no: string | null }>((a, b) =>
-    sb.from("partner").select("id, name, business_no").is("deleted_at", null).order("id").range(a, b) as unknown as Res<{ id: string; name: string; business_no: string | null }>,
-  );
-  const byBizno = new Map<string, { id: string; name: string }>();
-  for (const p of partners) {
-    const d = digits(p.business_no);
-    if (d.length === 10) byBizno.set(d, { id: p.id, name: p.name });
-  }
-  const starTargets = kept.filter((r) => r.awardee_bizno && byBizno.has(r.awardee_bizno) && !r.linked_partner_id);
-  console.log(`\n3) ★ 백필 — ${starTargets.length}행 / 거래처 ${new Set(starTargets.map((r) => byBizno.get(r.awardee_bizno!)!.name)).size}곳`);
-  if (!DRY) {
-    const byPartner = new Map<string, string[]>();
-    for (const r of starTargets) {
-      const pid = byBizno.get(r.awardee_bizno!)!.id;
-      if (!byPartner.has(pid)) byPartner.set(pid, []);
-      byPartner.get(pid)!.push(r.id);
-    }
-    for (const [pid, ids] of byPartner) await updateIn(sb, { linked_partner_id: pid }, ids);
-  }
+  // ── 3) ★ 백필 — 수집 cron·거래처 저장과 같은 함수(linkPartnersByBizno) ─────────
+  void kept;
+  const star = await linkPartnersByBizno(sb, { dryRun: DRY });
+  console.log(`\n3) ★ 백필 — 사업자번호 보유 거래처 ${star.partners}곳 · ${DRY ? "연결 대상" : "연결"} ${star.linked}행`);
 
   // ── 4) 수기 기록 연결 ────────────────────────────────────
   const link = await linkSalesLogNotes(sb, { dryRun: DRY });

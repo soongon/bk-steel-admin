@@ -90,6 +90,10 @@ function readQuoteInput(formData: FormData) {
     delivery_terms: str("delivery_terms") || null,
     payment_terms: str("payment_terms") || null,
     notes: str("notes") || null,
+    // 발주 레이더 행에서 만든 견적의 출처(0073) — 문자 가드·레이더 유래 매출 집계용. UUID 형식만 받는다.
+    source_project_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str("source_project_id"))
+      ? str("source_project_id")
+      : null,
     lines,
   };
 }
@@ -100,6 +104,13 @@ export async function createQuote(formData: FormData): Promise<QuoteActionResult
 
   const supabase = await createClient();
   const docNo = parsed.doc_no ?? (await generateQuoteDocNo(parsed.quote_date));
+
+  // 레이더 출처는 실제 행이 있을 때만 남긴다 — 영업내역 메모에서 읽은 id 가 틀려도 FK 위반으로 저장이 막히지 않게.
+  let sourceProjectId = parsed.source_project_id;
+  if (sourceProjectId) {
+    const { data: proj } = await supabase.from("construction_project").select("id").eq("id", sourceProjectId).maybeSingle();
+    if (!proj) sourceProjectId = null;
+  }
 
   const lines = parsed.lines.map((l) => {
     const manual = l.manual_amount != null && l.manual_amount > 0;
@@ -151,12 +162,14 @@ export async function createQuote(formData: FormData): Promise<QuoteActionResult
       delivery_terms: parsed.delivery_terms,
       payment_terms: parsed.payment_terms,
       notes: parsed.notes,
+      source_project_id: sourceProjectId,
     },
     p_lines: lines,
   });
   if (error) return { ok: false, error: friendly(error.message) };
 
   revalidatePath(`/${parsed.book}/quotes`);
+  if (sourceProjectId) revalidatePath("/radar");
   return { ok: true, id: data as string };
 }
 

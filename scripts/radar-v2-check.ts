@@ -7,6 +7,8 @@
  */
 
 import assert from "node:assert/strict";
+import { normalizePartnerName } from "../lib/partner";
+import { isExactQuoteRequest, isRefusalForMms } from "../lib/radar/radar-data";
 import {
   matchRegionV2,
   regionFromText,
@@ -33,6 +35,7 @@ import {
   DISMISS_REASONS,
   normalizeResultCode,
   extractRadarId,
+  companyHintFromLogs,
   type VisitInput,
   type PhoneInput,
 } from "../lib/radar/v2-rules";
@@ -474,6 +477,14 @@ check("[복구] 가능 조건 — 영구 거절·거절 기록·창 밖 미접�
   assert.equal(one({ ...base, dismiss_reason: "철근 안 씀·거절" }).restorable, false); // 영구 거절
   assert.equal(one(base, [{ result: "거절" }]).restorable, false); // 영업내역 거절 기록
 });
+check("방문 기록에서 확보한 업체명 — 주소·제목과 같은 prospect_name 은 업체명이 아님, 최신 우선", () => {
+  const L = (prospect_name: string, created_at: string) => ({ created_at, contacted_on: created_at.slice(0, 10), follow_up_on: null, result: "다음에", prospect_name });
+  const addr = "경상북도 경주시 황성동 290-13번지";
+  assert.equal(companyHintFromLogs([L(addr, "2026-10-01T00:00:00Z")], addr, "황성동 290-13"), null);
+  assert.equal(companyHintFromLogs([L("황성동 290-13", "2026-10-01T00:00:00Z")], addr, "황성동 290-13"), null);
+  assert.equal(companyHintFromLogs([L("○○종합건설", "2026-10-01T00:00:00Z"), L("△△건설", "2026-10-03T00:00:00Z")], addr, "황성동 290-13"), "△△건설");
+  assert.equal(companyHintFromLogs([], addr, null), null);
+});
 check("결과 코드 4종·제외 사유 3종·기본 기한 +7", () => {
   assert.equal(RESULT_CODES.length, 4);
   assert.equal(DISMISS_REASONS.length, 3);
@@ -481,6 +492,25 @@ check("결과 코드 4종·제외 사유 3종·기본 기한 +7", () => {
   assert.equal(defaultFollowUp("다음에", "2026-10-06"), "2026-10-13");
   assert.equal(defaultFollowUp("철근 안 씀·거절", "2026-10-06"), null);
   assert.equal(addDays("2026-12-30", 3), "2027-01-02");
+});
+
+check("문자 가드: 동의는 정확히 '견적 요청'(괄호 메모 허용), 거절은 보수적으로", () => {
+  for (const ok of ["견적 요청", "견적요청", " 견적·요청 ", "견적 요청(박 소장)", "견적 요청 [010-1234-5678]"]) {
+    assert.equal(isExactQuoteRequest(ok), true, ok);
+  }
+  for (const no of ["견적 필요 없음", "견적서 발송", "견적 요청했다가 거절", "다음에 견적 요청 예정", "견적", "", null]) {
+    assert.equal(isExactQuoteRequest(no), false, String(no));
+  }
+  for (const r of ["철근 안 씀·거절", "거절", "견적 요청했다가 거절", "견적 필요 없음", "수신거부", "연락하지 말라고 함", "철근 안 써요"]) {
+    assert.equal(isRefusalForMms(r), true, r);
+  }
+  for (const r of ["견적 요청", "다음에", "현장 없음·연락 불가·폐업", null]) assert.equal(isRefusalForMms(r), false, String(r));
+});
+check("거래처명 정규화: (주)·주식회사·㈜·공백 무시", () => {
+  assert.equal(normalizePartnerName("(주)엠에스 스틸"), normalizePartnerName("엠에스스틸 주식회사"));
+  assert.equal(normalizePartnerName("㈜대동종합건설"), "대동종합건설");
+  assert.notEqual(normalizePartnerName("대동건설"), normalizePartnerName("대동종합건설"));
+  assert.equal(normalizePartnerName(null), "");
 });
 
 console.log(`\n✓ ${passed}개 통과`);

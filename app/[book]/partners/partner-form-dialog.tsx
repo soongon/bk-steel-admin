@@ -30,14 +30,19 @@ export type PartnerRow = {
   is_active: boolean;
 };
 
-/** 명함에서 거래처로 이관 시 prefill 시드 데이터 */
+/** 명함·발주 레이더에서 거래처로 이관 시 prefill 시드 데이터 (출처 id 둘 중 하나) */
 export type PartnerPrefill = {
   name?: string | null;
   phone?: string | null;
   email?: string | null;
   address?: string | null;
   notes?: string | null;
-  from_card_id: string;
+  representative?: string | null;
+  business_no?: string | null;
+  industry?: string | null;
+  from_card_id?: string;
+  /** 발주 레이더 행 — 저장 후 그 행(낙찰이면 같은 사업자번호 계정)에 거래처 연결(★) */
+  from_radar_id?: string;
 };
 
 export function PartnerFormDialog({
@@ -66,7 +71,8 @@ export function PartnerFormDialog({
         : await createPartner(formData);
 
       if (result.ok) {
-        toast.success(editing ? "거래처가 수정되었습니다" : "거래처가 추가되었습니다");
+        toast.success(result.message ?? (editing ? "거래처가 수정되었습니다" : "거래처가 추가되었습니다"));
+        if (result.warning) toast.warning(result.warning);
         onOpenChange(false);
       } else {
         setError(result.error);
@@ -82,11 +88,19 @@ export function PartnerFormDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {editing ? "거래처 수정" : isPrefill ? "신규 거래처 등록 (명함 기반)" : "신규 거래처 등록"}
+            {editing
+              ? "거래처 수정"
+              : isPrefill
+                ? prefill?.from_radar_id
+                  ? "신규 거래처 등록 (발주 레이더)"
+                  : "신규 거래처 등록 (명함 기반)"
+                : "신규 거래처 등록"}
           </DialogTitle>
           <DialogDescription>
             {isPrefill
-              ? "명함 정보로 채워진 폼입니다. 검토 후 저장하면 명함에 자동 매핑됩니다."
+              ? prefill?.from_radar_id
+                ? "레이더 기록으로 채워진 폼입니다. 저장하면 레이더 행에 거래처로 연결됩니다(★). 같은 이름·사업자번호의 거래처가 이미 있으면 새로 만들지 않고 그 거래처에 연결합니다."
+                : "명함 정보로 채워진 폼입니다. 검토 후 저장하면 명함에 자동 매핑됩니다."
               : "공유 마스터 — 매출·매입에서 거래처명 정합성의 기준이 됩니다."}
           </DialogDescription>
         </DialogHeader>
@@ -95,10 +109,13 @@ export function PartnerFormDialog({
           action={handleSubmit}
           className="flex flex-col gap-3"
           // key로 dialog 새로 열릴 때마다 form state 리셋
-          key={editing?.id ?? prefill?.from_card_id ?? "new"}
+          key={editing?.id ?? prefill?.from_card_id ?? prefill?.from_radar_id ?? "new"}
         >
           {prefill?.from_card_id ? (
             <input type="hidden" name="from_card" value={prefill.from_card_id} />
+          ) : null}
+          {prefill?.from_radar_id ? (
+            <input type="hidden" name="from_radar" value={prefill.from_radar_id} />
           ) : null}
 
           <div className="grid grid-cols-2 gap-3">
@@ -113,15 +130,15 @@ export function PartnerFormDialog({
             <Field label="거래처명 *" name="name" defaultValue={initial?.name ?? undefined} placeholder="(주)엠에스스틸" required />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="대표자" name="representative" defaultValue={editing?.representative ?? undefined} />
-            <Field label="사업자번호" name="business_no" defaultValue={formatBusinessNo(editing?.business_no)} placeholder="000-00-00000" />
+            <Field label="대표자" name="representative" defaultValue={initial?.representative ?? undefined} />
+            <Field label="사업자번호" name="business_no" defaultValue={formatBusinessNo(initial?.business_no)} placeholder="000-00-00000" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="연락처" name="phone" defaultValue={formatPhone(initial?.phone)} placeholder="010-0000-0000" />
             <Field label="이메일 (세금계산서 수신)" name="email" type="email" defaultValue={initial?.email ?? undefined} placeholder="contact@partner.com" />
           </div>
           <Field label="이메일 2 (선택 · 계산서 추가 수신)" name="email2" type="email" defaultValue={editing?.email2 ?? undefined} placeholder="담당자2@partner.com" />
-          <Field label="업종" name="industry" defaultValue={editing?.industry ?? undefined} placeholder="철근 대리점" />
+          <Field label="업종" name="industry" defaultValue={initial?.industry ?? undefined} placeholder="철근 대리점" />
           <Field label="주소" name="address" defaultValue={initial?.address ?? undefined} />
           <Field label="메모" name="notes" defaultValue={initial?.notes ?? undefined} />
 

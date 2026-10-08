@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { PencilIcon, PlusIcon, RadarIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import {
   Table,
@@ -21,6 +22,7 @@ import {
   type PartnerOption,
 } from "./sales-log-form-dialog";
 import { QuoteButton, type QuoteSources } from "@/components/admin/quote-dialog";
+import { extractRadarId } from "@/lib/radar/v2-rules";
 import { deleteSalesLog } from "./actions";
 
 type Row = SalesLogRow & {
@@ -152,6 +154,16 @@ export function SalesLogTable({
                         {r.prospect_name ?? "—"}
                       </span>
                     )}
+                    {r.project_id ? (
+                      <Link
+                        href={`/radar?focus=${r.project_id}`}
+                        className="ml-1.5 inline-flex items-center gap-0.5 rounded border border-rose-500/30 px-1 text-[10px] text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                        title="발주 레이더에서 보기"
+                      >
+                        <RadarIcon className="size-3" />
+                        레이더
+                      </Link>
+                    ) : null}
                   </TableCell>
                   <TableCell>{r.contact_person ?? "—"}</TableCell>
                   <TableCell>{r.channel ? CHANNEL_LABEL[r.channel] ?? r.channel : "—"}</TableCell>
@@ -174,6 +186,7 @@ export function SalesLogTable({
                         sources={quoteSources}
                         book="all"
                         defaultPartnerName={r.partner?.name ?? r.prospect_name ?? ""}
+                        sourceProjectId={r.project_id ?? extractRadarId(r.notes) ?? undefined}
                         label="견적"
                         variant="outline"
                       />

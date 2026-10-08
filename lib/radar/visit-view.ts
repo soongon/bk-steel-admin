@@ -8,6 +8,7 @@ import {
   RESULT_REFUSED,
   normalizeResultCode,
   bandOf,
+  companyHintFromLogs,
   daysSince,
   deriveStatus,
   effectiveStageTime,
@@ -40,6 +41,8 @@ export interface VisitSourceRow {
   main_purps: string | null; // raw->>mainPurpsCdNm
   arch_gb: string | null; //    raw->>archGbCdNm (신축/증축)
   block: string | null; //      raw->>block
+  linked_partner_id?: string | null;
+  linked_partner?: { name: string; deleted_at?: string | null } | null; // 연결된 거래처(★) — 삭제된 거래처는 미연결로 본다
 }
 
 export interface VisitViewRow {
@@ -66,6 +69,11 @@ export interface VisitViewRow {
   /** [복구] 가능 — 영구 제외가 아니고, 복구 뒤에도 목록에 남는 행(기록이 있거나 규칙·60일 창 안). */
   restorable: boolean;
   mapUrl: string;
+  /** 연결된 거래처(★) — [거래처로] 저장 또는 사업자번호 자동 연결 */
+  partnerId: string | null;
+  partnerName: string | null;
+  /** 방문 기록에서 확보한 시공사·업체명([견적]·[거래처로] 미리 채우기) */
+  companyHint: string | null;
 }
 
 export function buildVisitRows(
@@ -113,6 +121,9 @@ export function buildVisitRows(
         !logs.some((l) => normalizeResultCode(l.result) === RESULT_REFUSED) && // 영업내역 '거절' = 수신거부
         (contacted || inRule), // 복구 뒤에도 목록에 남는 행만
       mapUrl: `https://map.kakao.com/link/search/${encodeURIComponent(address)}`,
+      partnerId: r.linked_partner && !r.linked_partner.deleted_at ? (r.linked_partner_id ?? null) : null,
+      partnerName: r.linked_partner && !r.linked_partner.deleted_at ? r.linked_partner.name : null,
+      companyHint: companyHintFromLogs(logs, r.address, r.title),
     });
   }
   // 밴드 → 착공 먼저 → 날짜 최신순

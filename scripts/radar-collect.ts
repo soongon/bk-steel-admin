@@ -26,7 +26,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { existingNaraLookup, runCollectors, upsertProjects } from "../lib/radar/collectors";
 import { notifyKakaoWork, adminUrl } from "../lib/kakaowork";
 import { RADAR_REGIONS, RADAR_SOURCES, type RadarRegion, type RadarSource } from "../lib/radar/types";
-import { kstToday, linkSalesLogNotes, loadVisitRows } from "../lib/radar/radar-data";
+import { kstToday, linkPartnersByBizno, linkSalesLogNotes, loadVisitRows } from "../lib/radar/radar-data";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 const SINCE_DAYS = Number(process.env.RADAR_SINCE_DAYS ?? 30);
@@ -106,6 +106,14 @@ async function main() {
 
   const stats = await upsertProjects(supabase, collected);
   console.log(`[radar] upsert 완료:`, stats);
+
+  // ★ 거래처 자동 연결 — 사업자번호가 같은 거래처를 새 낙찰 행에 연결(멱등)
+  try {
+    const star = await linkPartnersByBizno(supabase);
+    if (star.linked > 0) console.log(`[radar] ★ 거래처 연결: ${star.linked}행`);
+  } catch (e) {
+    console.warn("[radar] ★ 연결 실패(계속):", (e as Error).message);
+  }
 
   // 영업내역 페이지 수기 기록(메모 "레이더 {id}") → project_id 연결(멱등). D10 판정 집계·수신거부용.
   let linkWarn = "";

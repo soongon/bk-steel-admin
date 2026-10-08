@@ -5,6 +5,7 @@ import { getMessageProvider } from "@/lib/message";
 import { fetchCompanyProfile } from "@/lib/company-profile";
 import { type Book, BOOK_LABEL } from "@/lib/book";
 import { notifyKakaoWorkWithImage } from "@/lib/kakaowork";
+import { quoteMmsConsent } from "@/lib/radar/radar-data";
 
 export type SmsActionResult = { ok: true } | { ok: false; error: string };
 
@@ -29,13 +30,22 @@ export async function sendQuoteMms(
   // P0: 유료 발송 전 권한·존재 확인 — RLS 가 책별 권한(viewer)을 강제하고, 삭제건은 제외.
   const { data: quote, error: quoteErr } = await supabase
     .from("quote")
-    .select("id, book, doc_no, partner:partner(name), prospect_name")
+    .select("id, book, doc_no, partner_id, partner:partner(name), prospect_name, source_project_id")
     .eq("id", quoteId)
     .is("deleted_at", null)
     .single();
   if (quoteErr || !quote) {
     return { ok: false, error: "권한이 없거나 존재하지 않는 견적입니다." };
   }
+
+  // 발주 레이더에서 나온 상대(레이더 출처 견적·레이더에 연결된 거래처)는 '견적 요청' 기록이 있을 때만 문자 발송 —
+  // 공공데이터·현장에서 얻은 번호에 먼저 광고성 문자를 보내지 않는다(정보통신망법 §50 취지, 기획안 §6·§12).
+  // 거절(수신거부)은 차단, 매출 이력이 있는 거래처(거래관계)는 통과.
+  const consent = await quoteMmsConsent(supabase, {
+    sourceProjectId: (quote.source_project_id as string | null) ?? null,
+    partnerId: (quote.partner_id as string | null) ?? null,
+  });
+  if (!consent.ok) return { ok: false, error: consent.reason };
 
   // 이미지 검증: MIME prefix + 크기(MMS 상한). 발송 전에 막아 비용·413 방지.
   if (!imageDataUrl.startsWith("data:image/")) {

@@ -30,6 +30,8 @@ export type SalesLogRow = {
   result: string | null;
   follow_up_on: string | null;
   notes: string | null;
+  /** 발주 레이더 행(construction_project) — 레이더 [기록] 또는 메모 "레이더 {id}" 연결분 */
+  project_id?: string | null;
 };
 
 /**

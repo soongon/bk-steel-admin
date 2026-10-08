@@ -16,6 +16,8 @@
     "radar:v2:export": "tsx scripts/radar-v2-export.ts",
     "radar:v2:cleanup": "tsx scripts/radar-v2-cleanup.ts",
     "radar:v2:cleanup:dry": "tsx scripts/radar-v2-cleanup.ts --dry-run",
+    "radar:v2:judge": "tsx scripts/radar-v2-judge.ts",
+    "radar:v2:kiscon": "tsx scripts/radar-v2-kiscon.ts",
     "notify:overdue": "tsx scripts/notify-overdue.ts",
     "cleanup:notify-images": "tsx scripts/cleanup-notify-images.ts"
   },

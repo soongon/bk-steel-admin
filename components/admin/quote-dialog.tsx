@@ -96,6 +96,7 @@ export function QuoteDialog({
   defaultSiteName = "",
   defaultPartnerName = "",
   editing,
+  sourceProjectId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -105,6 +106,8 @@ export function QuoteDialog({
   defaultSiteName?: string;
   defaultPartnerName?: string;
   editing?: EditingQuote | null; // 있으면 수정 모드(프리필 + updateQuote)
+  /** 발주 레이더 행에서 열었을 때 그 행 id — 신규 견적에 출처로 저장(문자 가드·레이더 유래 매출 집계). */
+  sourceProjectId?: string;
 }) {
   const { partners, items, rebarSpecs } = sources;
   const saveMode = book !== undefined; // 저장 모드(견적 메뉴) vs 미리보기(현장 진입)
@@ -313,6 +316,7 @@ export function QuoteDialog({
     if (deliveryTerms) fd.set("delivery_terms", deliveryTerms);
     if (paymentTerms) fd.set("payment_terms", paymentTerms);
     if (notes) fd.set("notes", notes);
+    if (!editing && sourceProjectId) fd.set("source_project_id", sourceProjectId);
     fd.set("lines", serializeLines(items, rebarSpecs, allLines));
     startSaving(async () => {
       const r = editing ? await updateQuote(editing.id, fd) : await createQuote(fd);
@@ -647,6 +651,7 @@ export function QuoteButton({
   onSaved,
   defaultSiteName,
   defaultPartnerName,
+  sourceProjectId,
   label = "견적서 작성",
   variant = "default",
   size = "sm",
@@ -656,6 +661,7 @@ export function QuoteButton({
   onSaved?: (id: string) => void;
   defaultSiteName?: string;
   defaultPartnerName?: string;
+  sourceProjectId?: string;
   label?: string;
   variant?: "default" | "outline" | "secondary";
   size?: "sm" | "default";
@@ -675,6 +681,7 @@ export function QuoteButton({
         onSaved={onSaved}
         defaultSiteName={defaultSiteName}
         defaultPartnerName={defaultPartnerName}
+        sourceProjectId={sourceProjectId}
       />
     </>
   );

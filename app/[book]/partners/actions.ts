@@ -3,8 +3,73 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { digitsOnly } from "@/lib/format";
+import { normalizePartnerName } from "@/lib/partner";
+import { linkPartnersByBizno, linkRadarRowToPartner, unlinkRadarPartner } from "@/lib/radar/radar-data";
 
-export type PartnerActionResult = { ok: true } | { ok: false; error: string };
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type Sb = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * 거래처 저장 후 발주 레이더 연결(★) — 거래처 저장은 이미 끝났으므로 실패는 경고로 돌려준다.
+ *  fromRadarId: [거래처로]의 그 행(낙찰이면 같은 사업자번호 계정) · businessNo: 같은 번호 낙찰 행 자동 연결.
+ */
+async function linkRadar(sb: Sb, partnerId: string, businessNo: string | null, fromRadarId: string | null): Promise<string | null> {
+  let warning: string | null = null;
+  try {
+    if (fromRadarId) {
+      const r = await linkRadarRowToPartner(sb, fromRadarId, partnerId);
+      if (r.error) warning = `레이더 연결(★) 실패: ${r.error}`;
+    }
+    if (businessNo) await linkPartnersByBizno(sb, { bizno: businessNo });
+  } catch (e) {
+    warning = `레이더 연결(★) 실패: ${e instanceof Error ? e.message : String(e)}`;
+  }
+  if (fromRadarId || businessNo) revalidatePath("/radar");
+  return warning;
+}
+
+/**
+ * [거래처로] 중복 방지 — 같은 사업자번호, 또는 같은 이름((주)·주식회사·공백 무시)이면서 사업자번호가 충돌하지 않는
+ * 활성 거래처를 찾는다(여럿이면 가장 먼저 만든 것 — resolvePartnerId 관례).
+ */
+async function findExistingPartner(
+  sb: Sb,
+  name: string,
+  businessNo: string | null,
+): Promise<{ partner: { id: string; code: string; name: string } | null; error?: string }> {
+  if (businessNo) {
+    const { data, error } = await sb
+      .from("partner")
+      .select("id, code, name")
+      .eq("business_no", businessNo)
+      .is("deleted_at", null)
+      .order("created_at")
+      .limit(1);
+    if (error) return { partner: null, error: error.message };
+    if (data?.[0]) return { partner: data[0] };
+  }
+  const key = normalizePartnerName(name);
+  if (!key) return { partner: null };
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await sb
+      .from("partner")
+      .select("id, code, name, business_no")
+      .is("deleted_at", null)
+      .order("created_at")
+      .order("id")
+      .range(from, from + 999);
+    if (error) return { partner: null, error: error.message };
+    const rows = (data ?? []) as Array<{ id: string; code: string; name: string; business_no: string | null }>;
+    const hit = rows.find(
+      (p) => normalizePartnerName(p.name) === key && (!businessNo || !p.business_no || p.business_no === businessNo),
+    );
+    if (hit) return { partner: { id: hit.id, code: hit.code, name: hit.name } };
+    if (rows.length < 1000) return { partner: null };
+  }
+}
+
+export type PartnerActionResult = { ok: true; message?: string; warning?: string } | { ok: false; error: string };
 
 type PartnerInput = {
   code: string;
@@ -70,12 +135,32 @@ export async function createPartner(formData: FormData): Promise<PartnerActionRe
   // 명함에서 이관된 경우 — 신규 partner 생성 후 business_card.partner_id 자동 매핑
   const fromCard = formData.get("from_card");
   const fromCardId = typeof fromCard === "string" && fromCard ? fromCard : null;
+  // 발주 레이더에서 이관된 경우 — 신규 partner 생성 후 레이더 행 linked_partner_id 연결
+  const fromRadar = formData.get("from_radar");
+  const fromRadarId = typeof fromRadar === "string" && UUID_RE.test(fromRadar) ? fromRadar : null;
 
   // 코드 비어있으면 DB 시퀀스로 자동 생성 → insert payload에서 제거
   const payload: Partial<PartnerInput> = { ...input };
   if (!input.code) delete payload.code;
 
   const supabase = await createClient();
+
+  // 레이더 [거래처로] — 같은 이름·사업자번호 거래처가 이미 있으면 새로 만들지 않고 그 거래처에 연결(마스터 중복 방지)
+  if (fromRadarId) {
+    const found = await findExistingPartner(supabase, input.name, input.business_no);
+    if (found.error) return { ok: false, error: friendlyError(found.error) };
+    if (found.partner) {
+      const r = await linkRadarRowToPartner(supabase, fromRadarId, found.partner.id);
+      revalidatePath("/radar");
+      if (r.error) return { ok: false, error: `기존 거래처 ${found.partner.name}(${found.partner.code})에 연결하지 못했습니다: ${r.error}` };
+      bumpRevalidation();
+      return {
+        ok: true,
+        message: `기존 거래처 ${found.partner.name}(${found.partner.code})에 연결했습니다 — 새 거래처는 만들지 않았습니다.`,
+      };
+    }
+  }
+
   const { data, error } = await supabase
     .from("partner")
     .insert(payload)
@@ -90,9 +175,10 @@ export async function createPartner(formData: FormData): Promise<PartnerActionRe
       .update({ partner_id: data.id })
       .eq("id", fromCardId);
   }
+  const warning = data ? await linkRadar(supabase, data.id, input.business_no, fromRadarId) : null;
 
   bumpRevalidation();
-  return { ok: true };
+  return warning ? { ok: true, warning } : { ok: true };
 }
 
 export async function updatePartner(
@@ -104,18 +190,34 @@ export async function updatePartner(
   if (!input.name) return { ok: false, error: "거래처명은 필수입니다." };
 
   const supabase = await createClient();
+  const { data: before } = await supabase.from("partner").select("business_no").eq("id", id).maybeSingle();
   const { error } = await supabase
     .from("partner")
     .update(input)
     .eq("id", id);
   if (error) return { ok: false, error: friendlyError(error.message) };
 
+  // 사업자번호를 바꾸거나 지우면 이전 번호로 걸린 ★(낙찰 행)를 풀고, 그 번호의 다른 거래처가 있으면 그쪽으로 다시 연결.
+  let warning: string | null = null;
+  const oldNo = before?.business_no ? digitsOnly(before.business_no) : null;
+  if (oldNo && oldNo !== input.business_no) {
+    try {
+      await unlinkRadarPartner(supabase, id, oldNo);
+      await linkPartnersByBizno(supabase, { bizno: oldNo });
+      revalidatePath("/radar");
+    } catch (e) {
+      warning = `이전 사업자번호의 레이더 연결(★) 정리 실패: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+  if (input.business_no) warning = (await linkRadar(supabase, id, input.business_no, null)) ?? warning;
+
   bumpRevalidation();
-  return { ok: true };
+  return warning ? { ok: true, warning } : { ok: true };
 }
 
 export async function deletePartner(id: string): Promise<PartnerActionResult> {
   const supabase = await createClient();
+  const { data: before } = await supabase.from("partner").select("business_no").eq("id", id).maybeSingle();
   // soft delete — audit/이력 보존
   const { error } = await supabase
     .from("partner")
@@ -123,6 +225,16 @@ export async function deletePartner(id: string): Promise<PartnerActionResult> {
     .eq("id", id);
   if (error) return { ok: false, error: friendlyError(error.message) };
 
+  // 레이더 ★ 정리 — 삭제한 거래처에 걸린 연결을 풀고, 같은 사업자번호의 다른 거래처가 있으면 그쪽으로 다시 연결.
+  let warning: string | null = null;
+  try {
+    const n = await unlinkRadarPartner(supabase, id);
+    if (before?.business_no) await linkPartnersByBizno(supabase, { bizno: before.business_no });
+    if (n > 0) revalidatePath("/radar");
+  } catch (e) {
+    warning = `레이더 연결(★) 해제 실패: ${e instanceof Error ? e.message : String(e)}`;
+  }
+
   bumpRevalidation();
-  return { ok: true };
+  return warning ? { ok: true, warning } : { ok: true };
 }

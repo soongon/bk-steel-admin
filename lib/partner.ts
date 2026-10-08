@@ -32,3 +32,10 @@ export async function resolvePartnerId(
     .maybeSingle();
   return created?.id ?? null;
 }
+
+/** 거래처명 비교용 정규화 — (주)·주식회사·㈜·유한회사·합자회사·공백 제거, 소문자. 중복 거래처 판정에 쓴다. */
+export function normalizePartnerName(name: string | null | undefined): string {
+  return String(name ?? "")
+    .replace(/주식회사|\(주\)|㈜|유한회사|\(유\)|합자회사|\(합자\)|\(합\)|\s/g, "")
+    .toLowerCase();
+}

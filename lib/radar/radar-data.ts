@@ -52,8 +52,8 @@ function chunks<T>(xs: T[], n: number): T[][] {
 
 // ── 방문 탭 ───────────────────────────────────────────────────
 const VISIT_COLS =
-  "id, source, region, stage, floor_area, usage, address, title, permit_date, start_date, stage_changed_at, created_at, dismissed_at, dismiss_reason, main_purps:raw->>mainPurpsCdNm, arch_gb:raw->>archGbCdNm, block:raw->>block";
-const LOG_COLS = "project_id, created_at, contacted_on, follow_up_on, result, contact_person, contact_phone, notes, channel";
+  "id, source, region, stage, floor_area, usage, address, title, permit_date, start_date, stage_changed_at, created_at, dismissed_at, dismiss_reason, main_purps:raw->>mainPurpsCdNm, arch_gb:raw->>archGbCdNm, block:raw->>block, linked_partner_id, linked_partner:partner(name, deleted_at)";
+const LOG_COLS = "project_id, created_at, contacted_on, follow_up_on, result, contact_person, contact_phone, notes, channel, prospect_name";
 
 /**
  * 방문 탭 행 — ① 미처분 ∧ 단계 반영 60일(+여유) ② 최근 90일 제외 행 ③ 기록(sales_log.project_id)이 있는 행(창 밖이어도
@@ -489,4 +489,222 @@ export async function findUnmappedRadarNotes(
       result: x.l.result,
       reason: x.pid ? `레이더 행 없음(${x.pid})` : "메모에 레이더 id 없음",
     }));
+}
+
+// ── 거래처 연결(★) ────────────────────────────────────────────
+
+/**
+ * 사업자번호가 같은 거래처를 레이더 낙찰 행에 연결(linked_partner_id) — 멱등, 미연결 행만.
+ * 수집 cron·정리 스크립트·거래처 저장 시 호출. bizno 를 주면 그 사업자번호만.
+ */
+export async function linkPartnersByBizno(
+  sb: SupabaseClient,
+  opts: { bizno?: string | null; dryRun?: boolean } = {},
+): Promise<{ partners: number; linked: number }> {
+  const only = opts.bizno ? digits(opts.bizno) : null;
+  if (opts.bizno !== undefined && (!only || only.length !== 10)) return { partners: 0, linked: 0 };
+  if (opts.bizno === undefined) {
+    // 전체 동기화 — 삭제된 거래처에 걸린 ★ 부터 푼다(같은 번호의 다른 거래처가 아래에서 다시 잡도록).
+    const { data: gone, error: ge } = await sb.from("partner").select("id").not("deleted_at", "is", null);
+    if (ge) throw new Error(`삭제 거래처 조회 실패: ${ge.message}`);
+    const goneIds = ((gone ?? []) as Array<{ id: string }>).map((g) => g.id);
+    for (const part of chunks(goneIds, IN_CHUNK)) {
+      if (opts.dryRun) continue;
+      const { error: ue } = await sb.from("construction_project").update({ linked_partner_id: null }).in("linked_partner_id", part);
+      if (ue) throw new Error(`삭제 거래처 ★ 해제 실패: ${ue.message}`);
+    }
+  }
+  let q = sb.from("partner").select("id, business_no, created_at").is("deleted_at", null).not("business_no", "is", null);
+  if (only) q = q.eq("business_no", only);
+  const { data, error } = await q.order("created_at");
+  if (error) throw new Error(`거래처 조회 실패: ${error.message}`);
+  const byBizno = new Map<string, string>(); // 같은 번호 중복 거래처면 가장 먼저 만든 것
+  for (const p of (data ?? []) as Array<{ id: string; business_no: string | null }>) {
+    const d = digits(p.business_no);
+    if (d.length === 10 && !byBizno.has(d)) byBizno.set(d, p.id);
+  }
+  let linked = 0;
+  for (const [bizno, pid] of byBizno) {
+    if (opts.dryRun) {
+      const { count } = await sb
+        .from("construction_project")
+        .select("id", { count: "exact", head: true })
+        .eq("awardee_bizno", bizno)
+        .is("linked_partner_id", null);
+      linked += count ?? 0;
+      continue;
+    }
+    const { data: changed, error: e2 } = await sb
+      .from("construction_project")
+      .update({ linked_partner_id: pid })
+      .eq("awardee_bizno", bizno)
+      .is("linked_partner_id", null)
+      .select("id");
+    if (e2) throw new Error(`★ 연결 실패(${bizno}): ${e2.message}`);
+    linked += changed?.length ?? 0;
+  }
+  return { partners: byBizno.size, linked };
+}
+
+/**
+ * [거래처로]·[기존 거래처에 연결] — 그 레이더 행(낙찰이면 같은 사업자번호 계정 전체)을 거래처에 연결.
+ * 미연결 행만(다른 사용자가 건 ★를 덮지 않음). 실패는 error 로 돌려준다.
+ */
+export async function linkRadarRowToPartner(
+  sb: SupabaseClient,
+  projectId: string,
+  partnerId: string,
+): Promise<{ linked: number; error: string | null }> {
+  const { data: proj, error } = await sb
+    .from("construction_project")
+    .select("id, awardee_bizno, linked_partner_id, linked_partner:partner(name, deleted_at)")
+    .eq("id", projectId)
+    .maybeSingle();
+  if (error) return { linked: 0, error: error.message };
+  if (!proj) return { linked: 0, error: "레이더 행을 찾지 못했습니다." };
+  const cur = proj.linked_partner as unknown as { name: string; deleted_at: string | null } | null;
+  if (proj.linked_partner_id && proj.linked_partner_id !== partnerId && cur && !cur.deleted_at) {
+    return { linked: 0, error: `이 레이더 행은 이미 다른 거래처(${cur.name})에 연결돼 있습니다.` };
+  }
+  if (proj.linked_partner_id && proj.linked_partner_id !== partnerId) {
+    // 삭제된 거래처에 걸린 ★ — 풀고 새로 연결
+    await sb.from("construction_project").update({ linked_partner_id: null }).eq("linked_partner_id", proj.linked_partner_id);
+  }
+  let q = sb.from("construction_project").update({ linked_partner_id: partnerId });
+  q = proj.awardee_bizno ? q.eq("awardee_bizno", proj.awardee_bizno) : q.eq("id", proj.id);
+  const { data: changed, error: e2 } = await q.is("linked_partner_id", null).select("id");
+  if (e2) return { linked: 0, error: e2.message };
+  return { linked: changed?.length ?? 0, error: null };
+}
+
+/**
+ * 거래처 삭제·사업자번호 변경 시 ★ 정리 — 그 거래처에 걸린 연결을 푼다(bizno 를 주면 그 번호 행만).
+ * 그 뒤 호출부가 linkPartnersByBizno 로 같은 번호의 다른 거래처에 다시 연결한다.
+ */
+export async function unlinkRadarPartner(sb: SupabaseClient, partnerId: string, onlyBizno?: string | null): Promise<number> {
+  let q = sb.from("construction_project").update({ linked_partner_id: null }).eq("linked_partner_id", partnerId);
+  if (onlyBizno) q = q.eq("awardee_bizno", onlyBizno);
+  const { data, error } = await q.select("id");
+  if (error) throw new Error(`★ 해제 실패: ${error.message}`);
+  return data?.length ?? 0;
+}
+
+// ── 문자(MMS) 가드 ────────────────────────────────────────────
+
+/**
+ * 동의 = 결과가 정확히 '견적 요청'(공백·가운뎃점 무시, 뒤에 붙은 괄호 메모 허용 — 예: "견적 요청(박 소장)").
+ * 자유 텍스트의 '견적 필요 없음'·'견적서 발송'·'견적 요청했다가 거절' 등은 동의가 아니다.
+ */
+export function isExactQuoteRequest(result: string | null | undefined): boolean {
+  const s = String(result ?? "").replace(/[(\[（【][\s\S]*$/, "").replace(/[\s·ㆍ.・]/g, "");
+  return s === "견적요청";
+}
+
+/** 문자 가드용 거절 판정 — 정규화 코드보다 보수적으로(자유 텍스트의 거절·거부·필요 없음 등도 거절로 본다). */
+const REFUSAL_LIKE = /거절|거부|사절|안\s*씀|안\s*써|필요\s*없|수신\s*거부|연락\s*(하지|말)/;
+export function isRefusalForMms(result: string | null | undefined): boolean {
+  return normalizeResultCode(result) === RESULT_REFUSED || REFUSAL_LIKE.test(String(result ?? ""));
+}
+
+type Consent = { ok: true } | { ok: false; reason: string };
+
+/** 레이더 행 묶음(행 또는 계정)에 대한 문자 동의 판정 — 거절이 하나라도 있으면 차단, '견적 요청'이 있어야 허용. */
+async function consentForRows(sb: SupabaseClient, rows: Array<{ id: string; dismiss_reason: string | null }>): Promise<Consent> {
+  if (rows.some((r) => r.dismiss_reason === RESULT_REFUSED)) {
+    return { ok: false, reason: "이 업체는 '철근 안 씀·거절'(수신거부)로 제외돼 문자를 보낼 수 없습니다." };
+  }
+  const ids = rows.map((r) => r.id);
+  const results: Array<string | null> = [];
+  for (const part of chunks(ids, IN_CHUNK)) {
+    const { data, error } = await sb.from("sales_log").select("result").in("project_id", part).is("deleted_at", null);
+    if (error) return { ok: false, reason: `영업내역 조회 실패: ${error.message}` };
+    for (const l of (data ?? []) as Array<{ result: string | null }>) results.push(l.result);
+  }
+  // 미연결 기록 — radar_touch(0072)와 같은 범위: 메모 어디든 행 id 가 들어 있으면('레이더' 글자 없어도) 본다.
+  let noted: Array<{ result: string | null; notes: string | null }>;
+  try {
+    noted = await fetchAllPages<{ result: string | null; notes: string | null }>((a, b) =>
+      sb
+        .from("sales_log")
+        .select("result, notes")
+        .is("project_id", null)
+        .is("deleted_at", null)
+        .filter("notes", "imatch", "[0-9a-f]{8}-[0-9a-f]{4}-")
+        .order("id")
+        .range(a, b) as unknown as Res<{ result: string | null; notes: string | null }>,
+    );
+  } catch (e) {
+    return { ok: false, reason: `영업내역 조회 실패: ${(e as Error).message}` };
+  }
+  for (const l of noted) {
+    const n = (l.notes ?? "").toLowerCase();
+    if (ids.some((id) => n.includes(id))) results.push(l.result);
+  }
+  if (results.some(isRefusalForMms)) {
+    return {
+      ok: false,
+      reason:
+        "영업내역에 거절·거부(수신거부)로 읽히는 기록이 있어 문자를 보낼 수 없습니다. 번복된 기록이면 그 기록의 결과 문구를 고치세요.",
+    };
+  }
+  if (!results.some(isExactQuoteRequest)) {
+    return {
+      ok: false,
+      reason:
+        "레이더에서 나온 상대에게는 견적을 요청한 기록('견적 요청')이 있어야 문자를 보낼 수 있습니다(수신자 요청 원칙). 먼저 통화·방문 결과를 '견적 요청'으로 기록하세요.",
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * 레이더 발 견적의 문자 발송 동의 — 그 행 또는 같은 계정(사업자번호)에 '견적 요청' 기록이 있고 '거절'이 없어야 한다.
+ * (수신자가 요청한 견적만 문자로 보낸다 — 정보통신망법 §50 취지, 기획안 §6·§12. 법률 자문 아님)
+ */
+export async function radarQuoteConsent(sb: SupabaseClient, projectId: string): Promise<Consent> {
+  const { data: proj, error } = await sb
+    .from("construction_project")
+    .select("id, awardee_bizno, dismiss_reason")
+    .eq("id", projectId)
+    .maybeSingle();
+  if (error) return { ok: false, reason: `레이더 행 조회 실패: ${error.message}` };
+  if (!proj) return { ok: false, reason: "견적의 출처 레이더 행을 찾지 못했습니다." };
+  let rows: Array<{ id: string; dismiss_reason: string | null }> = [{ id: proj.id, dismiss_reason: proj.dismiss_reason }];
+  if (proj.awardee_bizno) {
+    const { data: acc, error: e2 } = await sb.from("construction_project").select("id, dismiss_reason").eq("awardee_bizno", proj.awardee_bizno);
+    if (e2) return { ok: false, reason: `계정 조회 실패: ${e2.message}` };
+    rows = (acc ?? []) as typeof rows;
+  }
+  return consentForRows(sb, rows);
+}
+
+/**
+ * 견적서 문자(MMS) 발송 동의 — 발주 레이더에서 나온 상대에게는 '견적 요청' 기록이 있어야 보낸다.
+ *  - 견적 거래처에 매출 이력이 있으면(거래관계) 통과.
+ *  - 레이더 출처 = 견적의 source_project_id(레이더 카드·영업내역 [견적]) → 그 행·계정 기준.
+ *  - 출처가 없어도 거래처가 레이더 행에 연결(★)돼 있으면 그 행들 기준([거래처로] 뒤 견적 메뉴에서 만든 견적).
+ *  - 둘 다 아니면(레이더와 무관한 견적) 통과.
+ */
+export async function quoteMmsConsent(
+  sb: SupabaseClient,
+  q: { sourceProjectId: string | null; partnerId: string | null },
+): Promise<Consent> {
+  if (q.partnerId) {
+    const { count, error } = await sb
+      .from("sale")
+      .select("id", { count: "exact", head: true })
+      .eq("partner_id", q.partnerId)
+      .is("deleted_at", null);
+    if (error) return { ok: false, reason: `매출 이력 조회 실패: ${error.message}` };
+    if ((count ?? 0) > 0) return { ok: true };
+  }
+  if (q.sourceProjectId) return radarQuoteConsent(sb, q.sourceProjectId);
+  if (!q.partnerId) return { ok: true };
+  const { data: rows, error } = await sb
+    .from("construction_project")
+    .select("id, dismiss_reason")
+    .eq("linked_partner_id", q.partnerId);
+  if (error) return { ok: false, reason: `레이더 연결 조회 실패: ${error.message}` };
+  if (!rows || rows.length === 0) return { ok: true };
+  return consentForRows(sb, rows as Array<{ id: string; dismiss_reason: string | null }>);
 }

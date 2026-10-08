@@ -31,11 +31,11 @@ export function PartnerTable({
   const [, startTransition] = useTransition();
 
   useEffect(() => {
-    if (prefill?.from_card_id) {
+    if (prefill?.from_card_id || prefill?.from_radar_id) {
       setEditing(null);
       setOpen(true);
     }
-  }, [prefill?.from_card_id]);
+  }, [prefill?.from_card_id, prefill?.from_radar_id]);
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
@@ -56,8 +56,10 @@ export function PartnerTable({
     if (!window.confirm(`거래처 [${p.name}]를 삭제하시겠습니까?`)) return;
     startTransition(async () => {
       const result = await deletePartner(p.id);
-      if (result.ok) toast.success("삭제되었습니다");
-      else toast.error(result.error);
+      if (result.ok) {
+        toast.success("삭제되었습니다");
+        if (result.warning) toast.warning(result.warning);
+      } else toast.error(result.error);
     });
   }
 

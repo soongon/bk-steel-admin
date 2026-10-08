@@ -17,7 +17,7 @@ export default async function SalesLogPage({
     supabase
       .from("sales_log")
       .select(
-        "id, contacted_on, partner_id, prospect_name, contact_person, channel, result, follow_up_on, notes, partner:partner_id(code, name)",
+        "id, contacted_on, partner_id, prospect_name, contact_person, channel, result, follow_up_on, notes, project_id, partner:partner_id(code, name)",
       )
       .is("deleted_at", null)
       .order("contacted_on", { ascending: false })

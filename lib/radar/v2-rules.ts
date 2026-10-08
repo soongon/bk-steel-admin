@@ -201,6 +201,25 @@ export interface TouchLog {
   contact_phone?: string | null;
   notes?: string | null;
   channel?: string | null;
+  prospect_name?: string | null; // radar_touch: 시공사·업체명(입력 시) 또는 주소
+}
+
+/**
+ * 방문 기록에서 확보한 시공사·업체명 — radar_touch 는 prospect_name 에 '입력한 업체명 ?? 주소'를 넣으므로
+ * 주소·제목과 다른 값만 업체명으로 본다(가장 최근 것).
+ */
+export function companyHintFromLogs(logs: TouchLog[], address: string | null, title: string | null): string | null {
+  const same = (x: string) => {
+    const a = (address ?? "").trim();
+    const t = (title ?? "").trim();
+    return x === a || x === t || (a !== "" && (a.includes(x) || x.includes(a)));
+  };
+  const sorted = [...logs].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  for (const l of sorted) {
+    const p = (l.prospect_name ?? "").trim();
+    if (p && !same(p)) return p;
+  }
+  return null;
 }
 
 /** 다음 행동일 기본값(일) — 결과 코드 '견적 요청'·'다음에' 공통. 기한 없는 기록도 이 날짜에 다시 '오늘'로 온다. */

@@ -1,14 +1,18 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
+  Building2Icon,
   CarFrontIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ExternalLinkIcon,
   PhoneCallIcon,
   RotateCcwIcon,
+  StarIcon,
 } from "lucide-react";
+import { QuoteButton, type QuoteSources } from "@/components/admin/quote-dialog";
+import { PartnerFormDialog, type PartnerPrefill } from "@/app/[book]/partners/partner-form-dialog";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,17 +67,38 @@ export function RadarV2({
   rows,
   today,
   synced,
+  quoteSources,
+  quoteSourcesError,
+  focusId,
 }: {
   rows: VisitViewRow[];
   today: string;
   synced: { building: string | null; nara: string | null };
+  quoteSources: QuoteSources;
+  /** [견적] 폼 데이터 조회 실패 — 있으면 [견적]을 잠그고 안내 */
+  quoteSourcesError?: string | null;
+  /** 영업내역 '레이더' 링크(?focus=) — 그 행의 상태 칩을 열고 펼쳐서 보여준다 */
+  focusId?: string | null;
 }) {
+  const focusRow = focusId ? (rows.find((r) => r.id === focusId) ?? null) : null;
   const [tab, setTab] = useState<Tab>("visit");
-  const [status, setStatus] = useState<RowStatus>("today");
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const [permitOpen, setPermitOpen] = useState<ReadonlySet<DistanceBand>>(new Set());
+  const [status, setStatus] = useState<RowStatus>(focusRow?.status ?? "today");
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(focusRow ? new Set([focusRow.id]) : new Set());
+  const [permitOpen, setPermitOpen] = useState<ReadonlySet<DistanceBand>>(
+    focusRow && focusRow.stage === "permit" ? new Set([focusRow.band]) : new Set(),
+  );
   const [touch, setTouch] = useState<TouchTarget | null>(null);
   const [dismiss, setDismiss] = useState<TouchTarget | null>(null);
+  const [partnerPrefill, setPartnerPrefill] = useState<PartnerPrefill | null>(null);
+
+  // 포커스 행으로 스크롤 — 처음 한 번만(다른 행 저장으로 목록이 갱신돼도 화면을 되돌리지 않음)
+  const focusRowId = focusRow?.id ?? null;
+  const scrolledRef = useRef(false);
+  useEffect(() => {
+    if (!focusRowId || scrolledRef.current) return;
+    scrolledRef.current = true;
+    document.getElementById(`radar-row-${focusRowId}`)?.scrollIntoView({ block: "center" });
+  }, [focusRowId]);
 
   const counts = useMemo(() => {
     const c: Record<RowStatus, number> = { today: 0, waiting: 0, done: 0 };
@@ -116,6 +141,18 @@ export function RadarV2({
           <div className="text-[11px] text-muted-foreground">오늘</div>
         </div>
       </div>
+
+      {quoteSourcesError ? (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          견적 데이터(거래처·품목)를 불러오지 못해 [견적]을 잠시 쓸 수 없습니다: {quoteSourcesError}
+        </p>
+      ) : null}
+
+      {focusId && !focusRow ? (
+        <p className="rounded-lg border border-dashed bg-muted/30 p-3 text-xs text-muted-foreground">
+          링크한 레이더 행이 방문 목록에 없습니다 — 전화(낙찰사) 기록이거나 목록 기간이 지난 행입니다.
+        </p>
+      ) : null}
 
       {tab === "phone" ? (
         <PhonePlaceholder />
@@ -171,6 +208,10 @@ export function RadarV2({
                       onToggle={() => setExpanded(toggle(expanded, r.id))}
                       onTouch={() => setTouch({ id: r.id, label: r.address, channel: "visit" })}
                       onDismiss={() => setDismiss({ id: r.id, label: r.address, channel: "visit" })}
+                      onPartner={() => setPartnerPrefill(partnerPrefillOf(r))}
+                      quoteSources={quoteSources}
+                      quoteDisabled={!!quoteSourcesError}
+                      focused={r.id === focusRow?.id}
                     />
                   ))}
                   {g.permit.length > 0 ? (
@@ -192,6 +233,10 @@ export function RadarV2({
                               onToggle={() => setExpanded(toggle(expanded, r.id))}
                               onTouch={() => setTouch({ id: r.id, label: r.address, channel: "visit" })}
                               onDismiss={() => setDismiss({ id: r.id, label: r.address, channel: "visit" })}
+                              onPartner={() => setPartnerPrefill(partnerPrefillOf(r))}
+                              quoteSources={quoteSources}
+                              quoteDisabled={!!quoteSourcesError}
+                              focused={r.id === focusRow?.id}
                             />
                           ))
                         : null}
@@ -207,8 +252,25 @@ export function RadarV2({
       {/* key 로 대상별 새 인스턴스 → 폼 상태 초기화(effect 없이) */}
       <TouchDialog key={touch?.id ?? "touch-none"} target={touch} today={today} onOpenChange={(o) => !o && setTouch(null)} />
       <DismissDialog key={dismiss?.id ?? "dismiss-none"} target={dismiss} onOpenChange={(o) => !o && setDismiss(null)} />
+      <PartnerFormDialog
+        open={!!partnerPrefill}
+        onOpenChange={(o) => !o && setPartnerPrefill(null)}
+        editing={null}
+        prefill={partnerPrefill}
+      />
     </div>
   );
+}
+
+/** [거래처로] 미리 채우기 — 방문 기록에서 확보한 업체명·담당자 전화, 메모에 현장 주소. */
+function partnerPrefillOf(r: VisitViewRow): PartnerPrefill {
+  return {
+    from_radar_id: r.id,
+    name: r.companyHint ?? "",
+    phone: r.contactPhone,
+    industry: "건설업",
+    notes: `발주 레이더 현장: ${r.address}${r.contactName ? ` · 담당 ${r.contactName}` : ""}`,
+  };
 }
 
 function TabBtn({
@@ -249,12 +311,20 @@ function VisitCard({
   onToggle,
   onTouch,
   onDismiss,
+  onPartner,
+  quoteSources,
+  quoteDisabled,
+  focused,
 }: {
   r: VisitViewRow;
   expanded: boolean;
   onToggle: () => void;
   onTouch: () => void;
   onDismiss: () => void;
+  onPartner: () => void;
+  quoteSources: QuoteSources;
+  quoteDisabled?: boolean;
+  focused?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const isStart = r.stage === "construction_start";
@@ -273,7 +343,14 @@ function VisitCard({
   }
 
   return (
-    <div className={cn("flex flex-col gap-1.5 rounded-xl border bg-card p-3 text-sm ring-1 ring-foreground/5", isDone && "opacity-70")}>
+    <div
+      id={`radar-row-${r.id}`}
+      className={cn(
+        "flex flex-col gap-1.5 rounded-xl border bg-card p-3 text-sm ring-1 ring-foreground/5",
+        isDone && "opacity-70",
+        focused && "ring-2 ring-sky-500/60",
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="font-medium leading-snug">
@@ -284,6 +361,11 @@ function VisitCard({
             {r.address}
           </div>
           {r.titleHint ? <div className="truncate text-xs text-muted-foreground">{r.titleHint}</div> : null}
+          {r.partnerName ? (
+            <div className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+              <StarIcon className="size-3" /> 거래처 {r.partnerName}
+            </div>
+          ) : null}
           <div className="text-xs text-muted-foreground">
             {[r.mainPurps, fmtArea(r.floorArea), r.archGb].filter(Boolean).join(" · ")}
             <span className="mx-1">·</span>누구: <span className={r.contactName || r.contactPhone ? "text-foreground" : ""}>{who}</span>
@@ -346,6 +428,27 @@ function VisitCard({
               <ExternalLinkIcon className="size-3" /> 지도 검색
             </a>
           </div>
+          {!isDone ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {quoteDisabled ? null : (
+                <QuoteButton
+                  sources={quoteSources}
+                  book="all"
+                  defaultPartnerName={r.partnerName ?? r.companyHint ?? ""}
+                  defaultSiteName={r.address}
+                  sourceProjectId={r.id}
+                  label="견적"
+                  variant="outline"
+                />
+              )}
+              {r.partnerName ? null : (
+                <Button type="button" size="sm" variant="outline" onClick={onPartner}>
+                  <Building2Icon className="size-3.5" /> 거래처로
+                </Button>
+              )}
+              <span className="text-[11px]">견적 문자는 상대가 요청한 경우(“견적 요청” 기록 뒤)에만 보낼 수 있습니다.</span>
+            </div>
+          ) : null}
           {r.logs.length > 0 ? (
             <ul className="flex flex-col gap-0.5">
               {r.logs.map((l, i) => (
