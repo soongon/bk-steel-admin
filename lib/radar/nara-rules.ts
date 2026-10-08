@@ -23,6 +23,31 @@ export function telValid(v: unknown): boolean {
   return d.length >= 9 && d.length <= 11;
 }
 
+/**
+ * 전화번호 비교 키 — 형식(대시·공백·괄호·전각 숫자·국가번호 +82) 무시한 국내 번호 숫자.
+ * 마스킹·자릿수 이상이면 null(어떤 번호와도 같지 않음). 문자 발송 어댑터는 숫자만 뽑아 보내므로 같은 번호를 같은 키로 본다.
+ */
+export function phoneKey(v: unknown): string | null {
+  const s = String(v ?? "").normalize("NFKC");
+  if (s.includes("*")) return null;
+  let d = digits(s);
+  if (d.startsWith("82") && d.length >= 10 && d.length <= 12) d = `0${d.slice(2)}`;
+  return d.length >= 9 && d.length <= 11 && d.startsWith("0") ? d : null;
+}
+
+/**
+ * 저장된 번호(stored)가 받는 번호 키(key)와 같은가 — 한 칸에 번호를 여러 개 이어 적었거나 내선을 붙여 숫자만 12자리 이상으로
+ * 저장된 값은 그 안에 key 가 들어 있으면 같은 번호로 본다(보수적: 문자 가드가 더 막는 쪽). 마스킹 값은 어떤 번호와도 다르다.
+ */
+export function phoneMatches(stored: unknown, key: string): boolean {
+  const k = phoneKey(stored);
+  if (k) return k === key;
+  const s = String(stored ?? "").normalize("NFKC");
+  if (s.includes("*")) return false;
+  const d = digits(s);
+  return d.length > 11 && d.includes(key);
+}
+
 // ── 권역 판정 ─────────────────────────────────────────────────
 /**
  * 텍스트 → 권역. 부분문자열 버그 수정판:

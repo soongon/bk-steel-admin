@@ -5,6 +5,8 @@ import { getMessageProvider } from "@/lib/message";
 import { fetchCompanyProfile } from "@/lib/company-profile";
 import { type Book, BOOK_LABEL } from "@/lib/book";
 import { notifyKakaoWorkWithImage } from "@/lib/kakaowork";
+import { digitsOnly, formatPhone } from "@/lib/format";
+import { phoneKey } from "@/lib/radar/nara-rules";
 import { quoteMmsConsent } from "@/lib/radar/radar-data";
 
 export type SmsActionResult = { ok: true } | { ok: false; error: string };
@@ -38,12 +40,18 @@ export async function sendQuoteMms(
     return { ok: false, error: "권한이 없거나 존재하지 않는 견적입니다." };
   }
 
-  // 발주 레이더에서 나온 상대(레이더 출처 견적·레이더에 연결된 거래처)는 '견적 요청' 기록이 있을 때만 문자 발송 —
-  // 공공데이터·현장에서 얻은 번호에 먼저 광고성 문자를 보내지 않는다(정보통신망법 §50 취지, 기획안 §6·§12).
+  // 받는 번호는 여기서 한 번만 정규화하고, 검사한 그 번호로 발송한다(문자 어댑터는 숫자만 뽑아 보내므로 같은 규칙으로 맞춤 —
+  // '*'·전각 문자·내선 등으로 검사와 발송 번호가 갈리지 않게). 국내 번호 하나가 아니면 막는다.
+  const to = phoneKey(digitsOnly(toPhone));
+  if (!to) return { ok: false, error: "수신 전화번호가 올바르지 않습니다 — 국내 번호 하나만 입력하세요." };
+
+  // 발주 레이더에서 나온 상대(레이더 출처 견적·레이더에 연결된 거래처·레이더가 보여준 받는 번호)는 '견적 요청' 기록이 있을 때만
+  // 문자 발송 — 공공데이터·현장에서 얻은 번호에 먼저 광고성 문자를 보내지 않는다(정보통신망법 §50 취지, 기획안 §6·§12).
   // 거절(수신거부)은 차단, 매출 이력이 있는 거래처(거래관계)는 통과.
   const consent = await quoteMmsConsent(supabase, {
     sourceProjectId: (quote.source_project_id as string | null) ?? null,
     partnerId: (quote.partner_id as string | null) ?? null,
+    toPhone: to,
   });
   if (!consent.ok) return { ok: false, error: consent.reason };
 
@@ -65,7 +73,7 @@ export async function sendQuoteMms(
   const text = `[${companyName || "신라철강"}] ${siteName ? siteName + " " : ""}견적서를 보내드립니다.`;
   const r = await getMessageProvider().sendImageMms({
     corpNum: company?.business_no ?? null,
-    to: toPhone,
+    to,
     subject: "견적서",
     text,
     imageJpeg,
@@ -92,7 +100,7 @@ export async function sendQuoteMms(
     `quote-${quoteId}`,
     `📄 견적서 송부 · ${BOOK_LABEL[quote.book as Book]}\n` +
       `거래처: ${(quote.partner as { name?: string } | null)?.name ?? quote.prospect_name ?? "—"} · 문서 ${quote.doc_no}\n` +
-      `수신: ${toPhone}`,
+      `수신: ${formatPhone(to)}`,
   );
   return { ok: true };
 }

@@ -5,7 +5,8 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { digits, telValid } from "./nara-rules";
+import { formatPhone } from "../format";
+import { digits, phoneKey, phoneMatches, telValid } from "./nara-rules";
 import {
   PHONE_WINDOW_RC_DAYS,
   RESULT_REFUSED,
@@ -614,12 +615,12 @@ type ConsentRow = { id: string; dismiss_reason: string | null };
 /**
  * 레이더 행 묶음(행·계정·★ 행)에 대한 문자 동의 판정 — 거절이 하나라도 있으면 차단.
  * requireRequest(기본 true)면 '견적 요청' 기록도 있어야 허용 — 끄면 거절만 본다(레이더 이전부터 있던 거래처).
- * partnerId 를 주면 영업내역에서 그 거래처를 골라 남긴 기록(레이더 연결 없음)도 함께 본다.
+ * partnerIds 를 주면 영업내역에서 그 거래처를 골라 남긴 기록(레이더 연결 없음)도 함께 본다.
  */
 async function consentForRows(
   sb: SupabaseClient,
   rows: ConsentRow[],
-  opts: { requireRequest?: boolean; partnerId?: string | null } = {},
+  opts: { requireRequest?: boolean; partnerIds?: Array<string | null | undefined> } = {},
 ): Promise<Consent> {
   if (rows.some((r) => r.dismiss_reason === RESULT_REFUSED)) {
     return { ok: false, reason: "이 업체는 '철근 안 씀·거절'(수신거부)로 제외돼 문자를 보낼 수 없습니다." };
@@ -631,8 +632,9 @@ async function consentForRows(
     if (error) return { ok: false, reason: `영업내역 조회 실패: ${error.message}` };
     for (const l of (data ?? []) as Array<{ result: string | null }>) results.push(l.result);
   }
-  if (opts.partnerId) {
-    const { data, error } = await sb.from("sales_log").select("result").eq("partner_id", opts.partnerId).is("deleted_at", null);
+  const partnerIds = [...new Set((opts.partnerIds ?? []).filter((x): x is string => !!x))];
+  for (const part of chunks(partnerIds, IN_CHUNK)) {
+    const { data, error } = await sb.from("sales_log").select("result").in("partner_id", part).is("deleted_at", null);
     if (error) return { ok: false, reason: `영업내역 조회 실패: ${error.message}` };
     for (const l of (data ?? []) as Array<{ result: string | null }>) results.push(l.result);
   }
@@ -695,11 +697,24 @@ async function accountRows(sb: SupabaseClient, projectId: string): Promise<{ row
 export async function radarQuoteConsent(sb: SupabaseClient, projectId: string, partnerId: string | null = null): Promise<Consent> {
   const acc = await accountRows(sb, projectId);
   if ("error" in acc) return { ok: false, reason: acc.error };
-  return consentForRows(sb, acc.rows, { partnerId });
+  return consentForRows(sb, acc.rows, { partnerIds: [partnerId] });
 }
 
 /**
  * 견적서 문자(MMS) 발송 동의 — 발주 레이더에서 나온 상대에게는 '견적 요청' 기록이 있어야 보낸다.
+ * 견적·거래처 기준(quoteSideConsent)과 받는 번호 기준(recipientPhoneConsent)을 모두 통과해야 한다.
+ */
+export async function quoteMmsConsent(
+  sb: SupabaseClient,
+  q: { sourceProjectId: string | null; partnerId: string | null; toPhone?: string | null },
+): Promise<Consent> {
+  const byQuote = await quoteSideConsent(sb, q);
+  if (!byQuote.ok) return byQuote;
+  return q.toPhone ? recipientPhoneConsent(sb, q.toPhone) : { ok: true };
+}
+
+/**
+ * 견적·거래처 기준 동의.
  *  - 견적 거래처에 매출 이력이 있으면(거래관계) 통과.
  *  - 레이더 출처 = 견적의 source_project_id(레이더 카드·영업내역 [견적]) → 그 행·계정 기준.
  *  - 출처가 없어도 거래처를 [거래처로]로 레이더에서 만들었으면(partner.source_project_id, 0074)
@@ -710,7 +725,7 @@ export async function radarQuoteConsent(sb: SupabaseClient, projectId: string, p
  *  - 거래처가 있으면 영업내역에서 그 거래처를 골라 남긴 기록도 본다(거절이면 차단, '견적 요청'이면 동의).
  *  - 그 밖(레이더와 무관한 견적)은 통과.
  */
-export async function quoteMmsConsent(
+async function quoteSideConsent(
   sb: SupabaseClient,
   q: { sourceProjectId: string | null; partnerId: string | null },
 ): Promise<Consent> {
@@ -744,9 +759,131 @@ export async function quoteMmsConsent(
     const rows: ConsentRow[] = [...starred];
     const seen = new Set(rows.map((r) => r.id));
     for (const r of acc.rows) if (!seen.has(r.id)) rows.push(r);
-    return consentForRows(sb, rows, { partnerId: q.partnerId });
+    return consentForRows(sb, rows, { partnerIds: [q.partnerId] });
   }
   if (starred.length === 0) return { ok: true };
   const preRadar = preRadarPartner(partner?.created_at as string | null | undefined, starred.map((r) => r.created_at));
-  return consentForRows(sb, starred, { requireRequest: !preRadar, partnerId: q.partnerId });
+  return consentForRows(sb, starred, { requireRequest: !preRadar, partnerIds: [q.partnerId] });
+}
+
+type PhoneRow = ConsentRow & { created_at: string | null; linked_partner_id: string | null; awardee_bizno: string | null };
+const PHONE_ROW_COLS = "id, dismiss_reason, created_at, linked_partner_id, awardee_bizno";
+
+/**
+ * 받는 번호를 발주 레이더가 보여준 행 — 낙찰사 전화(raw.bidwinnrTelNo, 마스킹 제외)·방문 기록 담당자 전화
+ * (sales_log.contact_phone, 레이더에 연결된 기록만), 그리고 같은 사업자번호 계정의 행 전체(동의·거절은 계정 단위).
+ * 끝 4자리로 후보를 좁힌 뒤 숫자로 비교한다(phoneMatches — 형식 무시, 한 칸에 여러 번호·내선을 적은 값은 포함 여부).
+ * 레이더가 번호를 새로 얻는 곳이 생기면(예: 키스콘으로 마스킹 번호 채우기) 그 번호도 여기서 찾아야 한다.
+ */
+async function radarRowsByPhone(sb: SupabaseClient, phone: string): Promise<{ rows: PhoneRow[] } | { error: string }> {
+  const d = phoneKey(phone);
+  if (!d) return { rows: [] };
+  const tail = `%${d.slice(-4)}%`;
+  const byId = new Map<string, PhoneRow>();
+  try {
+    const awards = await fetchAllPages<PhoneRow & { tel: string | null }>((a, b) =>
+      sb
+        .from("construction_project")
+        .select(`${PHONE_ROW_COLS}, tel:raw->>bidwinnrTelNo`)
+        .eq("source", "nara_bid")
+        .ilike("raw->>bidwinnrTelNo", tail)
+        .order("id")
+        .range(a, b) as unknown as Res<PhoneRow & { tel: string | null }>,
+    );
+    for (const r of awards) if (phoneMatches(r.tel, d)) byId.set(r.id, r);
+    const logs = await fetchAllPages<{ project_id: string | null; notes: string | null; contact_phone: string | null }>((a, b) =>
+      sb
+        .from("sales_log")
+        .select("project_id, notes, contact_phone")
+        .is("deleted_at", null)
+        .ilike("contact_phone", tail)
+        .order("id")
+        .range(a, b) as unknown as Res<{ project_id: string | null; notes: string | null; contact_phone: string | null }>,
+    );
+    const ids = new Set<string>();
+    for (const l of logs) {
+      if (!phoneMatches(l.contact_phone, d)) continue;
+      const pid = l.project_id ?? extractRadarId(l.notes);
+      if (pid && !byId.has(pid)) ids.add(pid);
+    }
+    for (const part of chunks([...ids], IN_CHUNK)) {
+      const { data, error } = await sb.from("construction_project").select(PHONE_ROW_COLS).in("id", part);
+      if (error) return { error: `레이더 행 조회 실패: ${error.message}` };
+      for (const r of (data ?? []) as PhoneRow[]) byId.set(r.id, r);
+    }
+    const biznos = [...new Set([...byId.values()].map((r) => r.awardee_bizno).filter((x): x is string => !!x))];
+    for (const part of chunks(biznos, IN_CHUNK)) {
+      const { data, error } = await sb.from("construction_project").select(PHONE_ROW_COLS).in("awardee_bizno", part);
+      if (error) return { error: `계정 조회 실패: ${error.message}` };
+      for (const r of (data ?? []) as PhoneRow[]) byId.set(r.id, r);
+    }
+  } catch (e) {
+    return { error: `레이더 번호 조회 실패: ${(e as Error).message}` };
+  }
+  return { rows: [...byId.values()] };
+}
+
+/**
+ * 받는 번호 기준 동의 — 레이더가 보여준 번호(낙찰사 전화·방문 기록 담당자 전화)로 보내는 견적 문자는 견적 출처·거래처와
+ * 무관하게 그 번호의 레이더 행·계정으로 판정한다(잠재 거래처명만 넣은 견적, 사업자번호 없이 등록한 거래처, 다른 거래처 견적에
+ * 레이더 번호를 넣은 경우 포함). 레이더에 없는 번호는 통과.
+ *  - 이 번호를 쓰는 거래처(전화가 같은 거래처, 그 행에 ★ 연결된 거래처) 중 매출 이력이 있으면 통과(거래관계).
+ *  - 그 행에 ★ 연결된 거래처가 레이더 이전 거래처(출처 없음 + 그 거래처의 ★ 행 전체로 preRadarPartner)면 거절 기록만 막는다.
+ *  - 그 밖은 그 행·계정, 또는 이 번호를 쓰는 거래처를 골라 남긴 영업내역에 '견적 요청'이 있어야 보낸다. 거절이면 막는다.
+ */
+export async function recipientPhoneConsent(sb: SupabaseClient, toPhone: string): Promise<Consent> {
+  const found = await radarRowsByPhone(sb, toPhone);
+  if ("error" in found) return { ok: false, reason: found.error };
+  const rows = found.rows;
+  const d = phoneKey(toPhone);
+  if (rows.length === 0 || !d) return { ok: true };
+  type Holder = { id: string; created_at: string; source_project_id: string | null; starred: boolean };
+  const holders = new Map<string, Holder>();
+  const { data: byPhone, error: pe } = await sb
+    .from("partner")
+    .select("id, phone, created_at, source_project_id")
+    .ilike("phone", `%${d.slice(-4)}%`);
+  if (pe) return { ok: false, reason: `거래처 조회 실패: ${pe.message}` };
+  for (const p of (byPhone ?? []) as Array<Omit<Holder, "starred"> & { phone: string | null }>) {
+    if (phoneMatches(p.phone, d)) holders.set(p.id, { id: p.id, created_at: p.created_at, source_project_id: p.source_project_id, starred: false });
+  }
+  const starIds = [...new Set(rows.map((r) => r.linked_partner_id).filter((x): x is string => !!x))];
+  for (const part of chunks(starIds, IN_CHUNK)) {
+    const { data, error } = await sb.from("partner").select("id, created_at, source_project_id").in("id", part);
+    if (error) return { ok: false, reason: `거래처 조회 실패: ${error.message}` };
+    for (const p of (data ?? []) as Array<Omit<Holder, "starred">>) holders.set(p.id, { ...p, starred: true });
+  }
+  const holderIds = [...holders.keys()];
+  for (const part of chunks(holderIds, IN_CHUNK)) {
+    const { count, error } = await sb
+      .from("sale")
+      .select("id", { count: "exact", head: true })
+      .in("partner_id", part)
+      .is("deleted_at", null);
+    if (error) return { ok: false, reason: `매출 이력 조회 실패: ${error.message}` };
+    if ((count ?? 0) > 0) return { ok: true };
+  }
+  // 레이더 이전 판정은 견적·거래처 기준과 같은 입력 — 그 거래처의 ★ 행 전체(이 번호로 찾은 행만이 아니라)
+  const starredAt = new Map<string, Array<string | null>>();
+  try {
+    for (const part of chunks(starIds, IN_CHUNK)) {
+      const linked = await fetchAllPages<{ linked_partner_id: string; created_at: string | null }>((a, b) =>
+        sb
+          .from("construction_project")
+          .select("linked_partner_id, created_at")
+          .in("linked_partner_id", part)
+          .order("id")
+          .range(a, b) as unknown as Res<{ linked_partner_id: string; created_at: string | null }>,
+      );
+      for (const r of linked) starredAt.set(r.linked_partner_id, [...(starredAt.get(r.linked_partner_id) ?? []), r.created_at]);
+    }
+  } catch (e) {
+    return { ok: false, reason: `레이더 연결 조회 실패: ${(e as Error).message}` };
+  }
+  const preRadar = [...holders.values()].some(
+    (h) => h.starred && !h.source_project_id && preRadarPartner(h.created_at, starredAt.get(h.id) ?? []),
+  );
+  const r = await consentForRows(sb, rows, { requireRequest: !preRadar, partnerIds: holderIds });
+  if (r.ok) return r;
+  return { ok: false, reason: `받는 번호(${formatPhone(d)})는 발주 레이더에서 나온 번호입니다(낙찰사 전화·방문 기록). ${r.reason}` };
 }

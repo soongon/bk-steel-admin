@@ -18,6 +18,8 @@ import {
   isRcTitle,
   hasNonSteelTrade,
   telValid,
+  phoneKey,
+  phoneMatches,
   addrRegion,
   otherPlaceIn,
 } from "../lib/radar/nara-rules";
@@ -532,6 +534,37 @@ check("레이더 행 ↔ 거래처 embed 는 관계 이름 명시(0074 이후 FK
     const src = readFileSync(f, "utf8");
     assert.equal(/[:,\s"`]partner\(/.test(src), false, `${f}: partner(...) embed 에 !construction_project_linked_partner_id_fkey 힌트 필요`);
   }
+});
+
+check("받는 번호 비교: 형식(대시·공백·괄호) 무시, 마스킹·자릿수 이상은 어떤 번호와도 같지 않음", () => {
+  assert.equal(phoneKey("054-123-4567"), "0541234567");
+  assert.equal(phoneKey("(054) 123 4567"), phoneKey("0541234567"));
+  assert.equal(phoneKey("02-1234-5678"), "0212345678");
+  assert.equal(phoneKey("010-1234-5678"), "01012345678");
+  assert.equal(phoneKey("+82 10-1234-5678"), "01012345678"); // 국가번호
+  assert.equal(phoneKey("+82-54-999-0741"), "0549990741");
+  assert.equal(phoneKey("０５４-１２３-４５６７"), "0541234567"); // 전각 숫자
+  assert.equal(phoneKey("054-***-4567"), null);
+  assert.equal(phoneKey("***********"), null);
+  assert.equal(phoneKey("1234-5678"), null); // 8자리(대표번호)는 레이더 낙찰사 전화 형식 아님
+  assert.equal(phoneKey(""), null);
+  assert.equal(phoneKey(null), null);
+});
+
+check("받는 번호: 저장값에 번호 여러 개·내선이면 포함 매칭, 서버는 발송할 숫자 그대로 검사", () => {
+  assert.equal(phoneMatches("010-1234-5678", "01012345678"), true);
+  assert.equal(phoneMatches("0101234567801022223333", "01022223333"), true); // 한 칸에 두 번호
+  assert.equal(phoneMatches("054-123-4567 내선 203", "0541234567"), true); // 내선
+  assert.equal(phoneMatches("054-***-4567", "0541234567"), false); // 마스킹
+  assert.equal(phoneMatches("010-1234-5679", "01012345678"), false);
+  assert.equal(phoneMatches(null, "01012345678"), false);
+  // 문자 어댑터는 digitsOnly(to) 로 보낸다 → 서버 정규화(phoneKey(digitsOnly))가 발송 번호와 같아야 검사가 새지 않는다
+  const dialed = (s: string) => s.replace(/\D/g, "");
+  for (const typed of ["010-1234-5678*", "＊010-1234-5678", "010-1234-5678 ①", "010-1234-5678²", "010-1234-5678５"]) {
+    const key = phoneKey(dialed(typed));
+    assert.equal(key, dialed(typed), typed);
+  }
+  assert.equal(phoneKey(dialed("+82 10-1234-5678")), "01012345678"); // 국가번호는 국내 번호로 바꿔 발송
 });
 
 check("문자 가드: 캠페인(10-07 KST) 중 등록된 거래처는 ★ 행 시각과 무관하게 레이더 유래", () => {
