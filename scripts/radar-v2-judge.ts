@@ -8,7 +8,9 @@
  * [전화] 관급 낙찰사 계정 — 영업내역(레이더 연결 + 메모 "레이더 {id}" 미연결) 결과를 정규화해 계정 단위로 집계.
  *   판정: 견적 요청 계정 ≥3 → 전화 탭 구현(D11) / 2 → 2주 연장 / 0~1 → A규칙(경주 소재) 폐기, ★·RC만.
  * [방문] 민간 현장 — '현장 없음' 비율(표지판 가정), 담당자 확보율, 단독주택 60~150㎡ 제외율(하한 재조정).
- * [전환] 레이더 유래 견적(quote.source_project_id)·매출(sale.source_quote_id) — 4주 말 '레이더 유래 매출 ≥1' 아니면 A규칙 축소.
+ * [전환] 레이더 유래 견적(quote.source_project_id)·매출(취소 제외) = 레이더 견적 경유(sale.source_quote_id)
+ *   + [거래처로]로 만든 거래처(partner.source_project_id) + 캠페인 중, 레이더가 먼저 보여준 뒤 등록된 ★ 거래처의 캠페인 기간 매출
+ *   — 4주 말 '레이더 유래 매출 ≥1' 아니면 A규칙 축소. 출처 기록 없는 마지막 묶음은 거래처별로 보여주고 뺀 보수 기준도 함께 낸다.
  */
 
 import { config as loadEnv } from "dotenv";
@@ -17,7 +19,9 @@ loadEnv({ path: ".env.development" });
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { addrRegion } from "../lib/radar/nara-rules";
 import { kstToday } from "../lib/radar/radar-data";
-import { RESULT_REFUSED, RESULT_UNREACHABLE, extractRadarId, normalizeResultCode } from "../lib/radar/v2-rules";
+import {
+  RADAR_CAMPAIGN_START, RESULT_REFUSED, RESULT_UNREACHABLE, extractRadarId, normalizeResultCode, registeredBeforeRadar,
+} from "../lib/radar/v2-rules";
 
 type Log = {
   id: string; project_id: string | null; notes: string | null; result: string | null; contacted_on: string; created_at: string;
@@ -44,7 +48,7 @@ async function main() {
   const sb: SupabaseClient = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const start = process.env.RADAR_CAMPAIGN_START ?? "2026-10-07";
+  const start = process.env.RADAR_CAMPAIGN_START ?? RADAR_CAMPAIGN_START;
   const today = kstToday();
   const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000);
   console.log(`발주 레이더 판정 집계 — 캠페인 ${start} ~ ${today} (${days}일째)\n`);
@@ -107,6 +111,7 @@ async function main() {
   console.log(`  제외율: 단독주택 60~150㎡ ${pct(excl(small), small.length)}(${small.length}곳) vs 그 외 ${pct(excl(other), other.length)}(${other.length}곳) — 하한 재조정 근거\n`);
 
   // ── 전환 ──
+  // 매출은 취소(status cancelled) 제외 — 앱의 매출·미수 뷰와 같은 기준
   // 견적: 출처가 레이더인 견적(삭제 포함 — 수주 뒤 견적을 지워도 그 매출은 레이더 유래로 센다)
   const allQuotes = await fetchAll<{ id: string; status: string; deleted_at: string | null }>((a, b) =>
     sb.from("quote").select("id, status, deleted_at").not("source_project_id", "is", null).order("id").range(a, b) as never,
@@ -115,27 +120,100 @@ async function main() {
   const sales: Array<{ id: string; total_krw: number }> = [];
   for (let i = 0; i < allQuotes.length; i += 100) {
     const part = allQuotes.slice(i, i + 100).map((q) => q.id);
-    const { data, error } = await sb.from("sale").select("id, total_krw").in("source_quote_id", part).is("deleted_at", null);
+    const { data, error } = await sb.from("sale").select("id, total_krw").in("source_quote_id", part).is("deleted_at", null).neq("status", "cancelled");
     if (error) throw new Error(error.message);
     sales.push(...((data ?? []) as typeof sales));
   }
-  // 참고: 레이더에 연결된(★) 거래처의 캠페인 기간 매출 — 견적 없이 평소 매출 폼으로 들어온 경우(연결 시점은 기록 안 됨)
-  const linked = await fetchAll<{ linked_partner_id: string }>((a, b) =>
-    sb.from("construction_project").select("linked_partner_id").not("linked_partner_id", "is", null).order("id").range(a, b) as never,
-  );
-  const linkedPids = [...new Set(linked.map((l) => l.linked_partner_id))];
+  const quoteSales = sales.length;
   const saleIds = new Set(sales.map((x) => x.id));
-  let linkedSales = 0;
-  for (let i = 0; i < linkedPids.length; i += 100) {
-    const { data, error } = await sb.from("sale").select("id").in("partner_id", linkedPids.slice(i, i + 100)).is("deleted_at", null).gte("ordered_on", start);
-    if (error) throw new Error(error.message);
-    linkedSales += ((data ?? []) as Array<{ id: string }>).filter((x) => !saleIds.has(x.id)).length;
+
+  // 레이더 유래 거래처 — ① [거래처로]로 만든 거래처(partner.source_project_id, 0074, 삭제 포함)
+  //   ② 출처 기록은 없지만 캠페인 중에, 레이더가 그 업체를 먼저 보여준 뒤 등록된 ★ 거래처(전화 캠페인 뒤 거래처 메뉴 등록 등 —
+  //      전화 탭엔 [거래처로]가 없다). '먼저 보여준 시각' = 삭제 안 된 ★ 행의 최초 수집, 낙찰 행은 낙찰 반영 시각(공고 땐 업체 미정).
+  //   나머지 ★ 거래처는 참고(판정 제외).
+  type Partner = { id: string; code: string; name: string; created_at: string };
+  const radarPartners = await fetchAll<Partner>((a, b) =>
+    sb.from("partner").select("id, code, name, created_at").not("source_project_id", "is", null).order("id").range(a, b) as never,
+  );
+  const radarPids = new Set(radarPartners.map((p) => p.id));
+  type Star = { linked_partner_id: string; created_at: string; source: string; stage: string; stage_changed_at: string | null; deleted_at: string | null };
+  const linked = await fetchAll<Star>((a, b) =>
+    sb.from("construction_project").select("linked_partner_id, created_at, source, stage, stage_changed_at, deleted_at")
+      .not("linked_partner_id", "is", null).order("id").range(a, b) as never,
+  );
+  const seenBy = new Map<string, string[]>();
+  for (const l of linked) {
+    if (radarPids.has(l.linked_partner_id)) continue;
+    const seen = seenBy.get(l.linked_partner_id) ?? [];
+    if (!l.deleted_at) seen.push(l.source === "nara_bid" && l.stage === "awarded" && l.stage_changed_at ? l.stage_changed_at : l.created_at);
+    seenBy.set(l.linked_partner_id, seen);
   }
+  const startMs = Date.parse(`${start}T00:00:00+09:00`);
+  const campaignPs: Array<Partner & { firstSeen: string }> = [];
+  const earlierPids: string[] = [];
+  const starIds = [...seenBy.keys()];
+  for (let i = 0; i < starIds.length; i += 100) {
+    const { data, error } = await sb.from("partner").select("id, code, name, created_at").in("id", starIds.slice(i, i + 100));
+    if (error) throw new Error(error.message);
+    for (const p of (data ?? []) as Partner[]) {
+      const seen = seenBy.get(p.id) ?? [];
+      if (Date.parse(p.created_at) >= startMs && seen.length > 0 && !registeredBeforeRadar(p.created_at, seen)) {
+        campaignPs.push({ ...p, firstSeen: seen.reduce((m, x) => (Date.parse(x) < Date.parse(m) ? x : m)) });
+      } else earlierPids.push(p.id);
+    }
+  }
+  // 거래처들의 캠페인 기간 매출(견적 경유분과 중복 제외) — add 면 레이더 유래 매출에 더한다. 거래처별 건수·금액도 돌려준다.
+  const partnerSales = async (pids: string[], add: boolean) => {
+    const per = new Map<string, { n: number; krw: number }>();
+    let n = 0;
+    for (let i = 0; i < pids.length; i += 100) {
+      const part = pids.slice(i, i + 100);
+      const rows = await fetchAll<{ id: string; total_krw: number; partner_id: string }>((a, b) =>
+        sb.from("sale").select("id, total_krw, partner_id").in("partner_id", part)
+          .is("deleted_at", null).neq("status", "cancelled").gte("ordered_on", start).order("id").range(a, b) as never,
+      );
+      for (const x of rows) {
+        if (saleIds.has(x.id)) continue;
+        n += 1;
+        const e = per.get(x.partner_id) ?? { n: 0, krw: 0 };
+        e.n += 1;
+        e.krw += Number(x.total_krw);
+        per.set(x.partner_id, e);
+        if (!add) continue;
+        saleIds.add(x.id);
+        sales.push(x);
+      }
+    }
+    return { n, per };
+  };
+  const made = await partnerSales([...radarPids], true);
+  const campaign = await partnerSales(campaignPs.map((p) => p.id), true);
+  const earlier = await partnerSales(earlierPids, false);
+
+  const won = (n: number) => Math.round(n).toLocaleString("ko-KR");
+  const kstDate = (iso: string) => new Date(Date.parse(iso) + 9 * 3_600_000).toISOString().slice(0, 10);
+  const keepA = (n: number) => (n >= 1 ? "≥1 — 유지" : "0 — A규칙 축소 검토");
   const st = (s: string) => quotes.filter((q) => q.status === s).length;
   console.log("[전환 — 레이더 유래]");
-  console.log(`  견적 ${quotes.length}건(작성 ${st("draft")} · 발송 ${st("sent")} · 수주 ${st("won")}) · 매출 ${sales.length}건 ${Math.round(sales.reduce((s, x) => s + Number(x.total_krw), 0)).toLocaleString("ko-KR")}원`);
-  console.log(`  참고: ★ 연결 거래처(${linkedPids.length}곳)의 캠페인 기간 매출(견적 경유 제외) ${linkedSales}건 — 기존 거래처 매출이 섞일 수 있어 판정엔 넣지 않음`);
-  console.log(`  ▶ 4주 말 기준: 레이더 유래 매출 ${sales.length >= 1 ? "≥1 — 유지" : "0 — A규칙 축소 검토"}${days < 28 ? `  ※ 아직 ${days}일째` : ""}`);
+  console.log(`  견적 ${quotes.length}건(작성 ${st("draft")} · 발송 ${st("sent")} · 수주 ${st("won")})`);
+  console.log(`  거래처: 레이더에서 만든 ${radarPids.size}곳 · 캠페인 중 등록된 ★ ${campaignPs.length}곳 · 그 밖의 ★ ${earlierPids.length}곳`);
+  console.log(
+    `  매출 ${sales.length}건 ${won(sales.reduce((s, x) => s + Number(x.total_krw), 0))}원` +
+      ` (레이더 견적 경유 ${quoteSales} · 레이더에서 만든 거래처 ${made.n} · 캠페인 중 등록된 ★ 거래처 ${campaign.n}, 취소 제외)`,
+  );
+  for (const p of radarPartners) {
+    const e = made.per.get(p.id);
+    if (e) console.log(`    · 레이더에서 만든 ${p.code} ${p.name} (${kstDate(p.created_at)} 등록) — 매출 ${e.n}건 ${won(e.krw)}원`);
+  }
+  for (const p of campaignPs) {
+    const e = campaign.per.get(p.id);
+    if (e) console.log(`    · 캠페인 중 등록된 ★ ${p.code} ${p.name} (${kstDate(p.created_at)} 등록, 레이더 첫 표시 ${kstDate(p.firstSeen)}) — 매출 ${e.n}건 ${won(e.krw)}원`);
+  }
+  console.log(`  참고: 그 밖의 ★ 거래처(캠페인 전 등록·레이더가 보여주기 전부터 거래처·★ 행 모두 삭제)의 캠페인 기간 매출 ${earlier.n}건 — 판정엔 넣지 않음`);
+  console.log(`  ▶ 4주 말 기준: 레이더 유래 매출 ${keepA(sales.length)}${days < 28 ? `  ※ 아직 ${days}일째` : ""}`);
+  if (campaign.n > 0) {
+    console.log(`    보수 기준(캠페인 중 등록된 ★ 거래처 제외 — 출처 기록 없이 우연히 겹친 곳일 수 있음): ${keepA(quoteSales + made.n)}`);
+  }
   if (unmapped) console.log(`\n⚠ 레이더 행에 연결할 수 없는 기록 ${unmapped}건(메모의 id 확인) — radar:v2:export 경고 참고`);
 }
 

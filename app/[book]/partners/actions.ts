@@ -135,12 +135,12 @@ export async function createPartner(formData: FormData): Promise<PartnerActionRe
   // 명함에서 이관된 경우 — 신규 partner 생성 후 business_card.partner_id 자동 매핑
   const fromCard = formData.get("from_card");
   const fromCardId = typeof fromCard === "string" && fromCard ? fromCard : null;
-  // 발주 레이더에서 이관된 경우 — 신규 partner 생성 후 레이더 행 linked_partner_id 연결
+  // 발주 레이더에서 이관된 경우 — 신규 partner 생성(출처 source_project_id) 후 레이더 행 linked_partner_id 연결
   const fromRadar = formData.get("from_radar");
   const fromRadarId = typeof fromRadar === "string" && UUID_RE.test(fromRadar) ? fromRadar : null;
 
   // 코드 비어있으면 DB 시퀀스로 자동 생성 → insert payload에서 제거
-  const payload: Partial<PartnerInput> = { ...input };
+  const payload: Partial<PartnerInput> & { source_project_id?: string } = { ...input };
   if (!input.code) delete payload.code;
 
   const supabase = await createClient();
@@ -159,6 +159,15 @@ export async function createPartner(formData: FormData): Promise<PartnerActionRe
         message: `기존 거래처 ${found.partner.name}(${found.partner.code})에 연결했습니다 — 새 거래처는 만들지 않았습니다.`,
       };
     }
+    // 새로 만드는 거래처 — 출처 레이더 행을 남긴다(0074: 문자 가드가 레이더에서 만든 거래처를 기존 거래처와 구분, 판정 집계)
+    const { data: src, error: srcErr } = await supabase
+      .from("construction_project")
+      .select("id")
+      .eq("id", fromRadarId)
+      .maybeSingle();
+    if (srcErr) return { ok: false, error: friendlyError(srcErr.message) };
+    if (!src) return { ok: false, error: "출처 레이더 행을 찾지 못했습니다. 레이더 화면을 새로고침한 뒤 다시 시도하세요." };
+    payload.source_project_id = fromRadarId;
   }
 
   const { data, error } = await supabase

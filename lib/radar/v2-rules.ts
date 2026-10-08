@@ -313,6 +313,42 @@ export function extractRadarId(notes: string | null | undefined): string | null 
   return all.length === 1 ? all[0].toLowerCase() : null;
 }
 
+/** 발주 레이더 v2 콜·방문 캠페인 시작일(KST, 기획안 D0) — 판정 집계 기본값·문자 가드 기준. */
+export const RADAR_CAMPAIGN_START = "2026-10-07";
+
+/**
+ * 출처(partner.source_project_id) 없는 ★ 거래처가 ★ 행이 처음 수집되기 전에 등록됐는가 — 그 뒤에 등록된 거래처
+ * (전화 캠페인 뒤 거래처 메뉴 등록, 명함 등록 뒤 [거래처로] 연결 등)는 레이더가 먼저 안 상대라 false.
+ * 날짜가 없거나 깨져도 false(보수적).
+ */
+export function registeredBeforeRadar(
+  partnerCreatedAt: string | null | undefined,
+  rowCreatedAts: Array<string | null | undefined>,
+): boolean {
+  const registered = Date.parse(String(partnerCreatedAt ?? ""));
+  if (!Number.isFinite(registered) || rowCreatedAts.length === 0) return false;
+  let firstSeen = Infinity;
+  for (const c of rowCreatedAts) {
+    const t = Date.parse(String(c ?? ""));
+    if (!Number.isFinite(t)) return false;
+    if (t < firstSeen) firstSeen = t;
+  }
+  return registered < firstSeen;
+}
+
+/**
+ * 문자 가드용 '레이더 이전부터' 거래처 — 캠페인 시작 전에, 그리고 ★ 행이 처음 수집되기 전에 등록된 곳만 true.
+ * 캠페인 중 등록된 거래처는 ★ 행 시각과 무관하게 레이더 유래로 본다(처음 연락한 행은 연결되지 않고 나중 행만 연결돼도 새지 않게).
+ */
+export function preRadarPartner(
+  partnerCreatedAt: string | null | undefined,
+  rowCreatedAts: Array<string | null | undefined>,
+  campaignStart: string = RADAR_CAMPAIGN_START,
+): boolean {
+  if (!registeredBeforeRadar(partnerCreatedAt, rowCreatedAts)) return false;
+  return Date.parse(String(partnerCreatedAt)) < Date.parse(`${campaignStart}T00:00:00+09:00`);
+}
+
 export function resultCodeOf(code: string | null | undefined): ResultCode | null {
   return RESULT_CODES.find((r) => r.code === code) ?? null;
 }

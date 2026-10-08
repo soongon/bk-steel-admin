@@ -7,6 +7,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { normalizePartnerName } from "../lib/partner";
 import { isExactQuoteRequest, isRefusalForMms } from "../lib/radar/radar-data";
 import {
@@ -36,6 +37,8 @@ import {
   normalizeResultCode,
   extractRadarId,
   companyHintFromLogs,
+  registeredBeforeRadar,
+  preRadarPartner,
   type VisitInput,
   type PhoneInput,
 } from "../lib/radar/v2-rules";
@@ -511,6 +514,33 @@ check("거래처명 정규화: (주)·주식회사·㈜·공백 무시", () => {
   assert.equal(normalizePartnerName("㈜대동종합건설"), "대동종합건설");
   assert.notEqual(normalizePartnerName("대동건설"), normalizePartnerName("대동종합건설"));
   assert.equal(normalizePartnerName(null), "");
+});
+
+check("문자 가드: 출처 없는 ★ 거래처는 레이더가 처음 수집하기 전에 등록됐을 때만 '레이더 이전부터'", () => {
+  const rows = ["2026-07-30T01:00:00+00:00", "2026-09-01T00:00:00.5+00:00"];
+  assert.equal(registeredBeforeRadar("2026-06-17T04:00:00+00:00", rows), true); // 수집 전 등록(기존 거래처)
+  assert.equal(registeredBeforeRadar("2026-08-25T04:00:00+00:00", rows), false); // 수집 뒤 등록(전화 캠페인 뒤 등록 등)
+  assert.equal(registeredBeforeRadar("2026-07-30T01:00:00+00:00", rows), false); // 같은 시각 = 레이더가 먼저
+  assert.equal(registeredBeforeRadar("2026-07-30T01:00:00.000001+00:00", ["2026-07-30T01:00:00.7+00:00"]), true); // 소수 자릿수 달라도 시각 비교
+  assert.equal(registeredBeforeRadar(null, rows), false);
+  assert.equal(registeredBeforeRadar("2026-06-17T04:00:00+00:00", []), false);
+  assert.equal(registeredBeforeRadar("2026-06-17T04:00:00+00:00", [...rows, null]), false); // 날짜 깨지면 보수적으로
+});
+
+check("레이더 행 ↔ 거래처 embed 는 관계 이름 명시(0074 이후 FK 두 개 — 힌트 없으면 PGRST201)", () => {
+  for (const f of ["lib/radar/radar-data.ts", "app/radar/page.tsx"]) {
+    const src = readFileSync(f, "utf8");
+    assert.equal(/[:,\s"`]partner\(/.test(src), false, `${f}: partner(...) embed 에 !construction_project_linked_partner_id_fkey 힌트 필요`);
+  }
+});
+
+check("문자 가드: 캠페인(10-07 KST) 중 등록된 거래처는 ★ 행 시각과 무관하게 레이더 유래", () => {
+  const later = ["2026-10-20T00:00:00+00:00"]; // 나중에 수집된 행만 ★ 연결된 경우
+  assert.equal(preRadarPartner("2026-09-01T00:00:00+00:00", later), true); // 캠페인 전·수집 전 등록 = 레이더 이전부터
+  assert.equal(preRadarPartner("2026-10-09T00:00:00+00:00", later), false); // 캠페인 중 등록 — 처음 연락한 행이 연결 안 돼도 레이더 유래
+  assert.equal(preRadarPartner("2026-10-06T14:59:59+00:00", later), true); // 10-06 23:59:59 KST = 캠페인 전
+  assert.equal(preRadarPartner("2026-10-06T15:00:00+00:00", later), false); // 10-07 00:00 KST = 캠페인 시작
+  assert.equal(preRadarPartner("2026-09-01T00:00:00+00:00", ["2026-08-01T00:00:00+00:00"]), false); // 수집 뒤 등록
 });
 
 console.log(`\n✓ ${passed}개 통과`);

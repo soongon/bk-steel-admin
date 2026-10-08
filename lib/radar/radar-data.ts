@@ -16,6 +16,7 @@ import {
   normalizeResultCode,
   phoneRuleMatch,
   naraLabelOf,
+  preRadarPartner,
   type PhoneMatch,
   type TouchLog,
 } from "./v2-rules";
@@ -52,7 +53,7 @@ function chunks<T>(xs: T[], n: number): T[][] {
 
 // ── 방문 탭 ───────────────────────────────────────────────────
 const VISIT_COLS =
-  "id, source, region, stage, floor_area, usage, address, title, permit_date, start_date, stage_changed_at, created_at, dismissed_at, dismiss_reason, main_purps:raw->>mainPurpsCdNm, arch_gb:raw->>archGbCdNm, block:raw->>block, linked_partner_id, linked_partner:partner(name, deleted_at)";
+  "id, source, region, stage, floor_area, usage, address, title, permit_date, start_date, stage_changed_at, created_at, dismissed_at, dismiss_reason, main_purps:raw->>mainPurpsCdNm, arch_gb:raw->>archGbCdNm, block:raw->>block, linked_partner_id, linked_partner:partner!construction_project_linked_partner_id_fkey(name, deleted_at)";
 const LOG_COLS = "project_id, created_at, contacted_on, follow_up_on, result, contact_person, contact_phone, notes, channel, prospect_name";
 
 /**
@@ -557,7 +558,7 @@ export async function linkRadarRowToPartner(
 ): Promise<{ linked: number; error: string | null }> {
   const { data: proj, error } = await sb
     .from("construction_project")
-    .select("id, awardee_bizno, linked_partner_id, linked_partner:partner(name, deleted_at)")
+    .select("id, awardee_bizno, linked_partner_id, linked_partner:partner!construction_project_linked_partner_id_fkey(name, deleted_at)")
     .eq("id", projectId)
     .maybeSingle();
   if (error) return { linked: 0, error: error.message };
@@ -608,8 +609,18 @@ export function isRefusalForMms(result: string | null | undefined): boolean {
 
 type Consent = { ok: true } | { ok: false; reason: string };
 
-/** 레이더 행 묶음(행 또는 계정)에 대한 문자 동의 판정 — 거절이 하나라도 있으면 차단, '견적 요청'이 있어야 허용. */
-async function consentForRows(sb: SupabaseClient, rows: Array<{ id: string; dismiss_reason: string | null }>): Promise<Consent> {
+type ConsentRow = { id: string; dismiss_reason: string | null };
+
+/**
+ * 레이더 행 묶음(행·계정·★ 행)에 대한 문자 동의 판정 — 거절이 하나라도 있으면 차단.
+ * requireRequest(기본 true)면 '견적 요청' 기록도 있어야 허용 — 끄면 거절만 본다(레이더 이전부터 있던 거래처).
+ * partnerId 를 주면 영업내역에서 그 거래처를 골라 남긴 기록(레이더 연결 없음)도 함께 본다.
+ */
+async function consentForRows(
+  sb: SupabaseClient,
+  rows: ConsentRow[],
+  opts: { requireRequest?: boolean; partnerId?: string | null } = {},
+): Promise<Consent> {
   if (rows.some((r) => r.dismiss_reason === RESULT_REFUSED)) {
     return { ok: false, reason: "이 업체는 '철근 안 씀·거절'(수신거부)로 제외돼 문자를 보낼 수 없습니다." };
   }
@@ -617,6 +628,11 @@ async function consentForRows(sb: SupabaseClient, rows: Array<{ id: string; dism
   const results: Array<string | null> = [];
   for (const part of chunks(ids, IN_CHUNK)) {
     const { data, error } = await sb.from("sales_log").select("result").in("project_id", part).is("deleted_at", null);
+    if (error) return { ok: false, reason: `영업내역 조회 실패: ${error.message}` };
+    for (const l of (data ?? []) as Array<{ result: string | null }>) results.push(l.result);
+  }
+  if (opts.partnerId) {
+    const { data, error } = await sb.from("sales_log").select("result").eq("partner_id", opts.partnerId).is("deleted_at", null);
     if (error) return { ok: false, reason: `영업내역 조회 실패: ${error.message}` };
     for (const l of (data ?? []) as Array<{ result: string | null }>) results.push(l.result);
   }
@@ -647,7 +663,7 @@ async function consentForRows(sb: SupabaseClient, rows: Array<{ id: string; dism
         "영업내역에 거절·거부(수신거부)로 읽히는 기록이 있어 문자를 보낼 수 없습니다. 번복된 기록이면 그 기록의 결과 문구를 고치세요.",
     };
   }
-  if (!results.some(isExactQuoteRequest)) {
+  if ((opts.requireRequest ?? true) && !results.some(isExactQuoteRequest)) {
     return {
       ok: false,
       reason:
@@ -657,33 +673,42 @@ async function consentForRows(sb: SupabaseClient, rows: Array<{ id: string; dism
   return { ok: true };
 }
 
-/**
- * 레이더 발 견적의 문자 발송 동의 — 그 행 또는 같은 계정(사업자번호)에 '견적 요청' 기록이 있고 '거절'이 없어야 한다.
- * (수신자가 요청한 견적만 문자로 보낸다 — 정보통신망법 §50 취지, 기획안 §6·§12. 법률 자문 아님)
- */
-export async function radarQuoteConsent(sb: SupabaseClient, projectId: string): Promise<Consent> {
+/** 레이더 행과, 낙찰이면 같은 사업자번호 계정의 행 전체. */
+async function accountRows(sb: SupabaseClient, projectId: string): Promise<{ rows: ConsentRow[] } | { error: string }> {
   const { data: proj, error } = await sb
     .from("construction_project")
     .select("id, awardee_bizno, dismiss_reason")
     .eq("id", projectId)
     .maybeSingle();
-  if (error) return { ok: false, reason: `레이더 행 조회 실패: ${error.message}` };
-  if (!proj) return { ok: false, reason: "견적의 출처 레이더 행을 찾지 못했습니다." };
-  let rows: Array<{ id: string; dismiss_reason: string | null }> = [{ id: proj.id, dismiss_reason: proj.dismiss_reason }];
-  if (proj.awardee_bizno) {
-    const { data: acc, error: e2 } = await sb.from("construction_project").select("id, dismiss_reason").eq("awardee_bizno", proj.awardee_bizno);
-    if (e2) return { ok: false, reason: `계정 조회 실패: ${e2.message}` };
-    rows = (acc ?? []) as typeof rows;
-  }
-  return consentForRows(sb, rows);
+  if (error) return { error: `레이더 행 조회 실패: ${error.message}` };
+  if (!proj) return { error: "출처 레이더 행을 찾지 못했습니다." };
+  if (!proj.awardee_bizno) return { rows: [{ id: proj.id, dismiss_reason: proj.dismiss_reason }] };
+  const { data: acc, error: e2 } = await sb.from("construction_project").select("id, dismiss_reason").eq("awardee_bizno", proj.awardee_bizno);
+  if (e2) return { error: `계정 조회 실패: ${e2.message}` };
+  return { rows: (acc ?? []) as ConsentRow[] };
+}
+
+/**
+ * 레이더 발 견적의 문자 발송 동의 — 그 행 또는 같은 계정(사업자번호)에 '견적 요청' 기록이 있고 '거절'이 없어야 한다.
+ * (수신자가 요청한 견적만 문자로 보낸다 — 정보통신망법 §50 취지, 기획안 §6·§12. 법률 자문 아님)
+ */
+export async function radarQuoteConsent(sb: SupabaseClient, projectId: string, partnerId: string | null = null): Promise<Consent> {
+  const acc = await accountRows(sb, projectId);
+  if ("error" in acc) return { ok: false, reason: acc.error };
+  return consentForRows(sb, acc.rows, { partnerId });
 }
 
 /**
  * 견적서 문자(MMS) 발송 동의 — 발주 레이더에서 나온 상대에게는 '견적 요청' 기록이 있어야 보낸다.
  *  - 견적 거래처에 매출 이력이 있으면(거래관계) 통과.
  *  - 레이더 출처 = 견적의 source_project_id(레이더 카드·영업내역 [견적]) → 그 행·계정 기준.
- *  - 출처가 없어도 거래처가 레이더 행에 연결(★)돼 있으면 그 행들 기준([거래처로] 뒤 견적 메뉴에서 만든 견적).
- *  - 둘 다 아니면(레이더와 무관한 견적) 통과.
+ *  - 출처가 없어도 거래처를 [거래처로]로 레이더에서 만들었으면(partner.source_project_id, 0074)
+ *    그 출처 행·계정 + ★ 연결 행 기준(견적 메뉴에서 만든 견적). ★ 연결이 풀려도 출처는 남는다.
+ *  - 출처 없는 ★ 거래처는 등록 시각으로 가른다(preRadarPartner): 캠페인 시작 전에, 그리고 ★ 행이 처음 수집되기 전에
+ *    등록된 거래처만 '레이더 이전부터'로 보고 거절 기록만 막는다. 그 밖(전화 캠페인 뒤 거래처 메뉴 등록, 명함 등록 뒤
+ *    [거래처로] 연결, 캠페인 중 등록 등)은 레이더에서 온 상대로 보고 '견적 요청'을 요구한다.
+ *  - 거래처가 있으면 영업내역에서 그 거래처를 골라 남긴 기록도 본다(거절이면 차단, '견적 요청'이면 동의).
+ *  - 그 밖(레이더와 무관한 견적)은 통과.
  */
 export async function quoteMmsConsent(
   sb: SupabaseClient,
@@ -698,13 +723,30 @@ export async function quoteMmsConsent(
     if (error) return { ok: false, reason: `매출 이력 조회 실패: ${error.message}` };
     if ((count ?? 0) > 0) return { ok: true };
   }
-  if (q.sourceProjectId) return radarQuoteConsent(sb, q.sourceProjectId);
+  if (q.sourceProjectId) return radarQuoteConsent(sb, q.sourceProjectId, q.partnerId);
   if (!q.partnerId) return { ok: true };
-  const { data: rows, error } = await sb
+  const { data: partner, error: pe } = await sb
+    .from("partner")
+    .select("source_project_id, created_at")
+    .eq("id", q.partnerId)
+    .maybeSingle();
+  if (pe) return { ok: false, reason: `거래처 조회 실패: ${pe.message}` };
+  const { data: linked, error } = await sb
     .from("construction_project")
-    .select("id, dismiss_reason")
+    .select("id, dismiss_reason, created_at")
     .eq("linked_partner_id", q.partnerId);
   if (error) return { ok: false, reason: `레이더 연결 조회 실패: ${error.message}` };
-  if (!rows || rows.length === 0) return { ok: true };
-  return consentForRows(sb, rows as Array<{ id: string; dismiss_reason: string | null }>);
+  const starred = (linked ?? []) as Array<ConsentRow & { created_at: string | null }>;
+  const fromRadar = (partner?.source_project_id as string | null | undefined) ?? null;
+  if (fromRadar) {
+    const acc = await accountRows(sb, fromRadar);
+    if ("error" in acc) return { ok: false, reason: acc.error };
+    const rows: ConsentRow[] = [...starred];
+    const seen = new Set(rows.map((r) => r.id));
+    for (const r of acc.rows) if (!seen.has(r.id)) rows.push(r);
+    return consentForRows(sb, rows, { partnerId: q.partnerId });
+  }
+  if (starred.length === 0) return { ok: true };
+  const preRadar = preRadarPartner(partner?.created_at as string | null | undefined, starred.map((r) => r.created_at));
+  return consentForRows(sb, starred, { requireRequest: !preRadar, partnerId: q.partnerId });
 }
