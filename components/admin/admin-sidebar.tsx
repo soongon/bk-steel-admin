@@ -27,6 +27,7 @@ import {
   TagsIcon,
   TrendingUpIcon,
   WalletIcon,
+  ScaleIcon,
 } from "lucide-react";
 
 import { type BookView } from "@/lib/book";
@@ -83,6 +84,7 @@ function buildMenuGroups(): MenuGroup[] {
       label: "영업",
       items: [
         { label: "견적서", href: "/quotes", icon: FileTextIcon },
+        { label: "매입견적서", href: "/purchase-quotes", icon: ScaleIcon },
         { label: "영업내역", href: "/sales-log", icon: PhoneCallIcon },
         { label: "명함", href: "/business-cards", icon: ContactIcon },
         { label: "정기업무", href: "/recurring-tasks", icon: ClipboardListIcon },
