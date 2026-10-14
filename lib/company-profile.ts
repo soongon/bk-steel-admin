@@ -32,8 +32,32 @@ export type CompanyProfile = {
   notes: string | null;
 };
 
-const COMPANY_COLS =
-  "book, name, business_no, representative, address, business_type, business_item, phone, fax, mobile, email, bank_default_name, bank_default_no, stamp_url, bank_copy_url, biz_cert_url, notes";
+const COMPANY_COLS_BASE =
+  "book, name, business_no, representative, address, business_type, business_item, phone, fax, mobile, email, bank_default_name, bank_default_no, stamp_url, bank_copy_url, notes";
+const COMPANY_COLS = COMPANY_COLS_BASE + ", biz_cert_url";
+
+/**
+ * company_profile select — biz_cert_url(0076) 컬럼이 아직 없는 DB(마이그레이션 전)에서도 깨지지 않게
+ * 컬럼 누락(42703) 이면 기본 컬럼으로 재조회한다. 조회 실패로 회사정보가 '미설정'처럼 보이는 일을 막는다.
+ */
+async function selectProfiles(
+  supabase: SupabaseClient,
+  build: (q: ReturnType<SupabaseClient["from"]>, cols: string) => PromiseLike<{ data: unknown; error: { code?: string; message: string } | null }>,
+): Promise<CompanyProfile[]> {
+  const first = await build(supabase.from("company_profile"), COMPANY_COLS);
+  if (!first.error) return ((first.data ?? []) as CompanyProfile[]);
+  const missingCol = first.error.code === "42703" || /biz_cert_url/.test(first.error.message);
+  if (!missingCol) {
+    console.error("[company-profile] 조회 실패:", first.error.message);
+    return [];
+  }
+  const second = await build(supabase.from("company_profile"), COMPANY_COLS_BASE);
+  if (second.error) {
+    console.error("[company-profile] 조회 실패:", second.error.message);
+    return [];
+  }
+  return ((second.data ?? []) as Omit<CompanyProfile, "biz_cert_url">[]).map((r) => ({ ...r, biz_cert_url: null }));
+}
 
 /**
  * 단일 책의 회사 정보 fetch.
@@ -44,22 +68,12 @@ export async function fetchCompanyProfile(
   supabase: SupabaseClient,
   book: Book,
 ): Promise<CompanyProfile | null> {
-  const { data } = await supabase
-    .from("company_profile")
-    .select(COMPANY_COLS)
-    .eq("book", book)
-    .maybeSingle();
-  const row = data as CompanyProfile | null;
+  const row = (await selectProfiles(supabase, (q, cols) => q.select(cols).eq("book", book)))[0] ?? null;
   if (book !== "b") return row;
 
   // B계좌: SL과 같은 사업자라 상호·사업자번호·인감은 SL 공유. B는 입금계좌·계좌사본만 별도.
   // b row 없으면 전체 SL, 있으면 b 우선 + 비어있는 필드(특히 인감)는 SL 폴백.
-  const { data: slData } = await supabase
-    .from("company_profile")
-    .select(COMPANY_COLS)
-    .eq("book", "sl")
-    .maybeSingle();
-  const sl = slData as CompanyProfile | null;
+  const sl = (await selectProfiles(supabase, (q, cols) => q.select(cols).eq("book", "sl")))[0] ?? null;
   if (!row) return sl;
   if (!sl) return row;
   return {
@@ -84,6 +98,5 @@ export async function fetchCompanyProfile(
 export async function fetchAllCompanyProfiles(
   supabase: SupabaseClient,
 ): Promise<CompanyProfile[]> {
-  const { data } = await supabase.from("company_profile").select(COMPANY_COLS).order("book");
-  return (data ?? []) as CompanyProfile[];
+  return selectProfiles(supabase, (q, cols) => q.select(cols).order("book"));
 }
