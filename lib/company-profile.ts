@@ -28,11 +28,12 @@ export type CompanyProfile = {
   bank_default_no: string | null;
   stamp_url: string | null;
   bank_copy_url: string | null; // 통장(계좌) 사본 이미지
+  biz_cert_url: string | null; // 사업자등록증 이미지
   notes: string | null;
 };
 
 const COMPANY_COLS =
-  "book, name, business_no, representative, address, business_type, business_item, phone, fax, mobile, email, bank_default_name, bank_default_no, stamp_url, bank_copy_url, notes";
+  "book, name, business_no, representative, address, business_type, business_item, phone, fax, mobile, email, bank_default_name, bank_default_no, stamp_url, bank_copy_url, biz_cert_url, notes";
 
 /**
  * 단일 책의 회사 정보 fetch.
@@ -75,6 +76,7 @@ export async function fetchCompanyProfile(
     mobile: row.mobile ?? sl.mobile,
     email: row.email ?? sl.email,
     stamp_url: row.stamp_url ?? sl.stamp_url,
+    biz_cert_url: row.biz_cert_url ?? sl.biz_cert_url, // 같은 사업자 — 등록증은 SL 공유
   };
 }
 

@@ -69,7 +69,7 @@ export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
                     ) : null}
                     {p.notes ? <Row label="비고" value={p.notes} colSpan /> : null}
                   </dl>
-                  {p.stamp_url || p.bank_copy_url ? (
+                  {p.stamp_url || p.bank_copy_url || p.biz_cert_url ? (
                     <div className="mt-3 flex items-center gap-4 border-t pt-3">
                       {p.stamp_url ? (
                         <div className="flex items-center gap-2">
@@ -81,6 +81,14 @@ export function CompanyCards({ profiles }: { profiles: CompanyProfile[] }) {
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground">계좌사본:</span>
                           <img src={p.bank_copy_url} alt="계좌사본" className="h-12 w-20 rounded border bg-white object-contain" />
+                        </div>
+                      ) : null}
+                      {p.biz_cert_url ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">사업자등록증:</span>
+                          <a href={p.biz_cert_url} target="_blank" rel="noreferrer" title="원본 보기">
+                            <img src={p.biz_cert_url} alt="사업자등록증" className="h-12 w-9 rounded border bg-white object-contain" />
+                          </a>
                         </div>
                       ) : null}
                     </div>

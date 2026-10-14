@@ -6,6 +6,7 @@ import { BookBadge } from "@/components/admin/book-badge";
 import { fmtKrw } from "@/lib/format";
 import { type Book } from "@/lib/book";
 import { fetchCompanyProfile } from "@/lib/company-profile";
+import { STEEL_CUSTOM_ITEM_ID } from "@/lib/transaction-draft";
 import { PURCHASE_QUOTE_STATUS_LABEL, type PurchaseQuoteStatus, perKgToPerTon, type PurchaseQuoteLineDraft } from "@/lib/purchase-quote";
 import { type PurchaseQuoteDocumentData } from "@/components/admin/purchase-quote-document";
 import {
@@ -71,7 +72,7 @@ export default async function PurchaseQuoteDetailPage({ params }: { params: Prom
   const [company, partnersRes, itemsRes] = await Promise.all([
     fetchCompanyProfile(supabase, book),
     supabase.from("partner").select("id, name, representative, address, phone").is("deleted_at", null).eq("is_active", true).order("name"),
-    supabase.from("item").select("id, name").is("deleted_at", null).eq("is_active", true).order("name"),
+    supabase.from("item").select("id, name").is("deleted_at", null).eq("is_active", true).neq("id", STEEL_CUSTOM_ITEM_ID).order("name"),
   ]);
 
   const lines = [...(q.lines ?? [])].sort((a, b) => Number(a.sort_order) - Number(b.sort_order));

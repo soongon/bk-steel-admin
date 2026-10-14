@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { type Book, type BookView, BOOK_VIEW_LABEL } from "@/lib/book";
-import { type CompanyProfile } from "@/lib/company-profile";
+import { type Book, type BookView, BOOK_VIEW_LABEL, BOOKS } from "@/lib/book";
+import { type CompanyProfile, fetchCompanyProfile } from "@/lib/company-profile";
+import { STEEL_CUSTOM_ITEM_ID } from "@/lib/transaction-draft";
 import { BookBadge } from "@/components/admin/book-badge";
 import { fmtKrw } from "@/lib/format";
 import { PURCHASE_QUOTE_STATUS_LABEL, type PurchaseQuoteStatus } from "@/lib/purchase-quote";
@@ -44,10 +45,9 @@ export default async function PurchaseQuotesPage({ params }: { params: Promise<{
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),
-    supabase.from("item").select("id, name").is("deleted_at", null).eq("is_active", true).order("name"),
-    view !== "all"
-      ? supabase.from("company_profile").select("*").eq("book", view)
-      : supabase.from("company_profile").select("*"),
+    supabase.from("item").select("id, name").is("deleted_at", null).eq("is_active", true).neq("id", STEEL_CUSTOM_ITEM_ID).order("name"),
+    // 책별 회사정보 — B계좌는 SL 폴백(fetchCompanyProfile)까지 적용해 상세와 같은 공급자로 미리보기.
+    Promise.all((view !== "all" ? [view as Book] : [...BOOKS]).map((b) => fetchCompanyProfile(supabase, b))),
   ]);
 
   type Row = {
@@ -65,7 +65,10 @@ export default async function PurchaseQuotesPage({ params }: { params: Promise<{
   const quotes = (quotesRes.data ?? []) as unknown as Row[];
 
   const companies: Partial<Record<Book, CompanyProfile>> = {};
-  for (const c of (companyRes.data ?? []) as CompanyProfile[]) if (c.book) companies[c.book] = c;
+  (view !== "all" ? [view as Book] : [...BOOKS]).forEach((b, i) => {
+    const c = companyRes[i];
+    if (c) companies[b] = c;
+  });
 
   const sources: PurchaseQuoteSources = {
     partners: (partnersRes.data ?? []) as PurchaseQuotePartner[],

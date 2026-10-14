@@ -50,6 +50,11 @@ export function PurchaseQuoteDetailActions({
     setPhone(defaultPhone);
     setSmsOpen(true);
   }
+  /** 헤더의 '문자 전송' — 문서 모달을 열면서 수신번호 입력까지 바로 펼친다. */
+  function openDocWithSms() {
+    setShowDoc(true);
+    openSms();
+  }
 
   function handleSendSms() {
     if (!captureRef.current) return;
@@ -94,6 +99,9 @@ export function PurchaseQuoteDetailActions({
     <>
       <Button variant="secondary" size="sm" onClick={() => setShowDoc(true)}>
         <PrinterIcon className="size-4" /> 견적서 보기
+      </Button>
+      <Button size="sm" onClick={openDocWithSms}>
+        <SendIcon className="size-4" /> 문자 전송
       </Button>
       {status === "draft" ? (
         <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => markPurchaseQuoteSent(quoteId, book), "발송 표시됨")}>

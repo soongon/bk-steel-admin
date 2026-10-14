@@ -40,20 +40,11 @@ export async function sendPurchaseQuoteMms(
   const to = phoneKey(digitsOnly(toPhone));
   if (!to) return { ok: false, error: "수신 전화번호가 올바르지 않습니다 — 국내 번호 하나만 입력하세요." };
 
-  // 거래관계(매입·매출 이력) 없으면 받는 번호 기준 레이더 동의 검사.
-  let related = false;
-  const partnerId = (quote.partner_id as string | null) ?? null;
-  if (partnerId) {
-    const [p, s] = await Promise.all([
-      supabase.from("purchase").select("id", { count: "exact", head: true }).eq("partner_id", partnerId).is("deleted_at", null),
-      supabase.from("sale").select("id", { count: "exact", head: true }).eq("partner_id", partnerId).is("deleted_at", null),
-    ]);
-    related = (p.count ?? 0) > 0 || (s.count ?? 0) > 0;
-  }
-  if (!related) {
-    const consent = await recipientPhoneConsent(supabase, to);
-    if (!consent.ok) return { ok: false, error: consent.reason };
-  }
+  // 받는 번호 기준 동의 검사는 거래관계와 무관하게 항상 — 레이더가 보여준 번호(낙찰사 전화 등)면 그 행·계정의
+  // '견적 요청' 기록이 있어야 하고 거절(수신거부)은 차단(매출 견적 가드와 동일). 매입 상대는 보통 먼저 팔겠다고 연락한 쪽이라
+  // 매출 가드의 '거래처·출처 기준' 검사(quoteSideConsent)는 요구하지 않는다.
+  const consent = await recipientPhoneConsent(supabase, to);
+  if (!consent.ok) return { ok: false, error: consent.reason };
 
   if (!imageDataUrl.startsWith("data:image/")) return { ok: false, error: "이미지 형식이 올바르지 않습니다." };
   const base64 = imageDataUrl.split(",")[1] ?? "";
@@ -64,7 +55,9 @@ export async function sendPurchaseQuoteMms(
   }
 
   const company = await fetchCompanyProfile(supabase, quote.book as Book);
-  const text = `[${companyName || company?.name || "신라철강"}] ${siteName ? siteName + " " : ""}매입 단가 견적서를 보내드립니다. 총중량·금액은 당일 계근 후 확정됩니다.`;
+  const site = (siteName ?? "").trim().slice(0, 40);
+  const corp = (companyName || company?.name || "신라철강").trim().slice(0, 30);
+  const text = `[${corp}] ${site ? site + " " : ""}매입 단가 견적서를 보내드립니다. 총중량·금액은 당일 계근 후 확정됩니다.`;
   const r = await getMessageProvider().sendImageMms({
     corpNum: company?.business_no ?? null,
     to,

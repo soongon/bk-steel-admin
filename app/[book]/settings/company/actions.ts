@@ -100,6 +100,32 @@ export async function updateCompanyProfile(
     bankCopyUrl = "";
   }
 
+  // 사업자등록증 이미지 업로드 (선택) — 계좌사본과 동일 패턴(biz- 접두).
+  let bizCertUrl: string | undefined = undefined;
+  const bizFile = formData.get("biz_cert_file");
+  const bizClear = formData.get("biz_cert_clear") === "true";
+  if (bizFile instanceof File && bizFile.size > 0) {
+    if (bizFile.size > 4 * 1024 * 1024) {
+      return { ok: false, error: "사업자등록증 이미지는 4MB 이하여야 합니다." };
+    }
+    const ext = (bizFile.name.split(".").pop() ?? "png").toLowerCase();
+    const rand = Math.random().toString(36).slice(2, 8);
+    const path = `${book}/biz-${Date.now()}-${rand}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from("company-stamps")
+      .upload(path, bizFile, { contentType: bizFile.type || "image/png", upsert: false });
+    if (upErr) {
+      const msg = upErr.message.includes("row-level security")
+        ? "Storage 권한 거부 — 0034 마이그레이션 적용 여부를 확인해주세요."
+        : `사업자등록증 업로드 실패: ${upErr.message}`;
+      return { ok: false, error: msg };
+    }
+    const { data: pub } = supabase.storage.from("company-stamps").getPublicUrl(path);
+    bizCertUrl = pub.publicUrl;
+  } else if (bizClear) {
+    bizCertUrl = "";
+  }
+
   const payload: Record<string, unknown> = {
     book,
     name,
@@ -121,6 +147,9 @@ export async function updateCompanyProfile(
   }
   if (bankCopyUrl !== undefined) {
     payload.bank_copy_url = bankCopyUrl === "" ? null : bankCopyUrl;
+  }
+  if (bizCertUrl !== undefined) {
+    payload.biz_cert_url = bizCertUrl === "" ? null : bizCertUrl;
   }
 
   const { error } = await supabase

@@ -55,6 +55,9 @@ export function PurchaseQuoteDocument({
 
   const filled = [...data.lines, ...Array.from({ length: Math.max(0, MIN_ROWS - data.lines.length) }, () => null)];
   const single = data.lines.length === 1 ? data.lines[0] : null;
+  const prices = data.lines.map((l) => l.price_per_kg);
+  const lo = prices.length ? Math.min(...prices) : 0;
+  const hi = prices.length ? Math.max(...prices) : 0;
 
   return (
     <div className="purchase-quote-print text-zinc-900 print:text-black">
@@ -141,6 +144,14 @@ export function PurchaseQuoteDocument({
             <span className="text-sm font-semibold"> /kg</span>
             <span className="ml-2 text-sm text-zinc-600">(₩{fmt(perKgToPerTon(single.price_per_kg))} /톤)</span>
           </span>
+        ) : prices.length > 0 ? (
+          <span className="whitespace-nowrap text-right tabular-nums">
+            <span className="text-lg font-bold">
+              ₩{fmt(lo)}
+              {lo !== hi ? ` ~ ₩${fmt(hi)}` : ""}
+            </span>
+            <span className="text-sm font-semibold"> /kg</span>
+          </span>
         ) : null}
       </div>
 
@@ -201,7 +212,11 @@ export function PurchaseQuoteDocument({
               : "무자료 거래 — 부가세 없음"
           }
         />
-        <ConditionRow label="시세변동" value="본 단가는 고철·철근 시세 변동에 따라 변경될 수 있으며, 유효기간 내 계근·인수 기준입니다." last />
+        <ConditionRow
+          label="시세변동"
+          value={`본 단가는 고철·철근 시세 변동에 따라 변경될 수 있으며, ${data.valid_until ? "유효기간 내" : "견적일 기준"} 계근·인수 시 적용됩니다.`}
+          last
+        />
       </div>
 
       {data.notes ? (

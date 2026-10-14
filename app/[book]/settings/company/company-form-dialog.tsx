@@ -126,6 +126,40 @@ export function CompanyFormDialog({
             ) : null}
           </div>
 
+          {/* 사업자등록증 이미지 — 거래처 요청 시 송부·확인용 */}
+          <div className="rounded-md border-dashed border-2 border-zinc-300 p-3 dark:border-zinc-700">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">
+              사업자등록증 이미지 — 4MB 이하, PNG/JPG/WebP
+            </p>
+            <div className="flex items-center gap-3">
+              {profile?.biz_cert_url ? (
+                <a href={profile.biz_cert_url} target="_blank" rel="noreferrer" title="원본 보기">
+                  <img
+                    src={profile.biz_cert_url}
+                    alt="현재 사업자등록증"
+                    className="h-16 w-12 rounded border bg-white object-contain"
+                  />
+                </a>
+              ) : (
+                <div className="flex h-16 w-12 items-center justify-center rounded border-2 border-dashed border-zinc-300 text-[10px] text-muted-foreground dark:border-zinc-700">
+                  미등록
+                </div>
+              )}
+              <input
+                type="file"
+                name="biz_cert_file"
+                accept="image/png,image/jpeg,image/webp"
+                className="block w-full text-xs file:mr-2 file:rounded file:border file:bg-muted file:px-2 file:py-1 file:text-xs"
+              />
+            </div>
+            {profile?.biz_cert_url ? (
+              <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <input type="checkbox" name="biz_cert_clear" value="true" className="size-3.5" />
+                사업자등록증 제거 (저장 시 삭제)
+              </label>
+            ) : null}
+          </div>
+
           <Field label="비고" name="notes" defaultValue={profile?.notes} />
 
           {/* 인감(직인) 이미지 — 거래명세표·납품확인서에 표시 */}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { FileTextIcon, PlusIcon, PrinterIcon, SaveIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -103,7 +104,7 @@ export function PurchaseQuoteDialog({
   const [spec, setSpec] = useState("");
   const [priceStr, setPriceStr] = useState("");
   const [lineNote, setLineNote] = useState("");
-  const price = Number(priceStr) || 0;
+  const price = Math.round(Number(priceStr) || 0); // 원 단위 정수
   const [lines, setLines] = useState<PurchaseQuoteLineDraft[]>([]);
 
   const [weighingTerms, setWeighingTerms] = useState("");
@@ -302,7 +303,7 @@ export function PurchaseQuoteDialog({
             </div>
 
             {/* 라인 입력 — 품목 + 규격·상태 + 원/kg */}
-            <div className="grid grid-cols-[1fr_1fr_8rem] gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_8rem]">
               <Field label="품목 *">
                 <Input list="pq-items" value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 중고철근" />
                 <datalist id="pq-items">
@@ -421,18 +422,17 @@ export function PurchaseQuoteDialog({
   );
 }
 
-/** 트리거 버튼 + 다이얼로그. */
+/** 트리거 버튼 + 다이얼로그. 저장 후 상세로 이동(바로 문자 전송·인쇄할 수 있게). */
 export function PurchaseQuoteButton({
   sources,
   book,
-  onSaved,
   label = "매입견적서 작성",
 }: {
   sources: PurchaseQuoteSources;
   book: BookView;
-  onSaved?: (id: string) => void;
   label?: string;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -440,7 +440,13 @@ export function PurchaseQuoteButton({
         <FileTextIcon className="size-4" />
         {label}
       </Button>
-      <PurchaseQuoteDialog open={open} onOpenChange={setOpen} sources={sources} book={book} onSaved={onSaved} />
+      <PurchaseQuoteDialog
+        open={open}
+        onOpenChange={setOpen}
+        sources={sources}
+        book={book}
+        onSaved={(id) => (id ? router.push(`/${book}/purchase-quotes/${id}`) : router.refresh())}
+      />
     </>
   );
 }

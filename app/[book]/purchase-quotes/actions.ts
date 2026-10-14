@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { type Book } from "@/lib/book";
+import { type Book, isValidBook } from "@/lib/book";
 
 export type PurchaseQuoteActionResult = { ok: true; id?: string } | { ok: false; error: string };
 
@@ -17,16 +17,8 @@ function friendly(message: string): string {
 
 const kstToday = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
 
-/** 매입견적번호 — PQ{YYYYMMDD}-NNN (매출 견적 Q… 와 접두 분리). race 는 UNIQUE 로 catch. */
-async function generateDocNo(quoteDate: string): Promise<string> {
-  const supabase = await createClient();
-  const datePart = quoteDate.replace(/-/g, "");
-  const { count } = await supabase
-    .from("purchase_quote")
-    .select("id", { count: "exact", head: true })
-    .like("doc_no", `PQ${datePart}-%`);
-  return `PQ${datePart}-${String((count ?? 0) + 1).padStart(3, "0")}`;
-}
+// 견적번호(PQ{YYYYMMDD}-NNN)는 DB 가 채번(next_purchase_quote_doc_no, 0076) — 앱의 count 채번은 RLS 가시 범위만 세어
+// 책 권한이 제한된 사용자에게 UNIQUE 충돌이 났다.
 
 type LineInput = {
   item_id: string | null;
@@ -39,8 +31,8 @@ type LineInput = {
 function readInput(formData: FormData) {
   const str = (k: string) => (formData.get(k) as string | null)?.trim() ?? "";
   const bookStr = str("book");
-  if (!bookStr || bookStr === "all") return { error: "책(법인/사업자/B계좌)을 선택해주세요." };
-  const book = bookStr as Book;
+  if (!isValidBook(bookStr)) return { error: "책(법인/사업자/B계좌)을 선택해주세요." };
+  const book: Book = bookStr;
   const quote_date = str("quote_date");
   if (!quote_date) return { error: "견적일을 입력해주세요." };
 
@@ -54,7 +46,7 @@ function readInput(formData: FormData) {
         item_id: typeof o.item_id === "string" && uuid.test(o.item_id) ? o.item_id : null,
         display_name: typeof o.display_name === "string" ? o.display_name.trim() : "",
         spec_text: typeof o.spec_text === "string" && o.spec_text.trim() ? o.spec_text.trim() : null,
-        price_per_kg_krw: Number(o.price_per_kg_krw) || 0,
+        price_per_kg_krw: Math.round(Number(o.price_per_kg_krw) || 0), // 원 단위 정수(톤당 환산 ×1,000 과 일치)
         notes: typeof o.notes === "string" && o.notes.trim() ? o.notes.trim() : null,
       };
     });
@@ -95,11 +87,10 @@ export async function createPurchaseQuote(formData: FormData): Promise<PurchaseQ
   if ("error" in parsed) return { ok: false, error: parsed.error ?? "입력 오류" };
 
   const supabase = await createClient();
-  const docNo = parsed.doc_no ?? (await generateDocNo(parsed.quote_date));
   const { data, error } = await supabase.rpc("create_purchase_quote_with_lines", {
     p_quote: {
       book: parsed.book,
-      doc_no: docNo,
+      doc_no: parsed.doc_no ?? null, // null 이면 DB 채번
       partner_id: parsed.partner_id,
       prospect_name: parsed.prospect_name,
       site_id: parsed.site_id,
@@ -147,6 +138,7 @@ export async function updatePurchaseQuote(id: string, formData: FormData): Promi
   if (error) return { ok: false, error: friendly(error.message) };
 
   revalidatePath(`/${parsed.book}/purchase-quotes`);
+  revalidatePath(`/all/purchase-quotes`);
   revalidatePath(`/${parsed.book}/purchase-quotes/${id}`);
   return { ok: true, id };
 }
@@ -154,13 +146,16 @@ export async function updatePurchaseQuote(id: string, formData: FormData): Promi
 /** 발송 표시 — status='sent', sent_on(최초 1회). */
 export async function markPurchaseQuoteSent(id: string, book: string): Promise<PurchaseQuoteActionResult> {
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("purchase_quote")
     .update({ status: "sent", sent_on: kstToday() })
     .eq("id", id)
-    .is("sent_on", null);
+    .is("sent_on", null)
+    .select("id");
   if (error) return { ok: false, error: friendly(error.message) };
+  if (!data || data.length === 0) return { ok: false, error: "권한이 없거나 이미 발송 처리된 견적입니다." };
   revalidatePath(`/${book}/purchase-quotes`);
+  revalidatePath(`/all/purchase-quotes`);
   revalidatePath(`/${book}/purchase-quotes/${id}`);
   return { ok: true };
 }
@@ -171,13 +166,16 @@ export async function markPurchaseQuoteSent(id: string, book: string): Promise<P
  */
 export async function markPurchaseQuoteDone(id: string, book: string): Promise<PurchaseQuoteActionResult> {
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("purchase_quote")
     .update({ status: "done", done_on: kstToday() })
     .eq("id", id)
-    .in("status", ["draft", "sent"]);
+    .in("status", ["draft", "sent"])
+    .select("id");
   if (error) return { ok: false, error: friendly(error.message) };
+  if (!data || data.length === 0) return { ok: false, error: "권한이 없거나 이미 완료된 견적입니다." };
   revalidatePath(`/${book}/purchase-quotes`);
+  revalidatePath(`/all/purchase-quotes`);
   revalidatePath(`/${book}/purchase-quotes/${id}`);
   return { ok: true };
 }
@@ -185,11 +183,15 @@ export async function markPurchaseQuoteDone(id: string, book: string): Promise<P
 /** 삭제 (soft). */
 export async function deletePurchaseQuote(id: string, book: string): Promise<PurchaseQuoteActionResult> {
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("purchase_quote")
     .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .is("deleted_at", null)
+    .select("id");
   if (error) return { ok: false, error: friendly(error.message) };
+  if (!data || data.length === 0) return { ok: false, error: "권한이 없거나 이미 삭제된 견적입니다." };
   revalidatePath(`/${book}/purchase-quotes`);
+  revalidatePath(`/all/purchase-quotes`);
   return { ok: true };
 }
