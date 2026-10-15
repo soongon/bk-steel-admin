@@ -19,11 +19,13 @@ import { BookBadge } from "@/components/admin/book-badge";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { fmtKrw } from "@/lib/format";
-import { type Attachment, deleteAttachment, uploadAttachment } from "@/lib/attachment";
+import { type Attachment, syncAttachments } from "@/lib/attachment";
 import {
   type PurchaseQuoteLineDraft,
+  PURCHASE_QUOTE_CARD_BATCH_BYTES,
   PURCHASE_QUOTE_CARD_KIND,
   PURCHASE_QUOTE_CARD_MAX,
+  chunkBySize,
   PURCHASE_QUOTE_DEFAULT_TERMS,
   perKgToPerTon,
   serializePurchaseQuoteLines,
@@ -196,22 +198,30 @@ export function PurchaseQuoteDialog({
     setStagedCards((prev) => prev.filter((c) => c.key !== key));
   }
 
-  /** 명함 반영 — 뺀 기존 사진 삭제 + 새 사진 업로드. 실패 건수를 돌려준다(견적은 이미 저장된 뒤). */
+  /**
+   * 명함 반영 — 뺀 기존 사진 삭제 + 새 사진 업로드를 서버 액션 한 번에 보내 서버에서 동시에 처리한다
+   * (클라이언트는 서버 액션을 하나씩 차례로 보내므로 장마다 부르면 줄을 선다). 본문 상한을 넘지 않게 3MB 단위로
+   * 묶는다 — 줄인 명함은 장당 수백 KB 라 보통 한 번. 실패 건수를 돌려준다(견적은 이미 저장된 뒤).
+   */
   async function syncCards(quoteId: string): Promise<number> {
-    let failed = 0;
     const removed = (editing?.cards ?? []).filter((c) => !keptCards.some((k) => k.id === c.id));
-    for (const c of removed) {
-      const r = await deleteAttachment(c.id).catch(() => ({ ok: false as const }));
-      if (!r.ok) failed++;
-    }
-    for (const c of stagedCards) {
+    if (removed.length === 0 && stagedCards.length === 0) return 0;
+    // 새 사진은 남긴 사진 뒤에, 고른 순서대로(동시에 올라가도 순서가 섞이지 않게 sort_order 지정).
+    let sortBase = keptCards.reduce((m, c) => Math.max(m, c.sort_order), -1) + 1;
+    let failed = 0;
+    const batches = chunkBySize(stagedCards, (c) => c.file.size, PURCHASE_QUOTE_CARD_BATCH_BYTES);
+    for (const [i, batch] of batches.entries()) {
+      const removeNow = i === 0 ? removed : [];
       const fd = new FormData();
-      fd.set("file", c.file);
       fd.set("entity_type", "purchase_quote");
       fd.set("entity_id", quoteId);
       fd.set("kind", PURCHASE_QUOTE_CARD_KIND);
-      const r = await uploadAttachment(fd).catch(() => ({ ok: false as const }));
-      if (!r.ok) failed++;
+      fd.set("sort_base", String(sortBase));
+      for (const c of removeNow) fd.append("remove_id", c.id);
+      for (const c of batch) fd.append("file", c.file);
+      const r = await syncAttachments(fd).catch(() => null);
+      failed += r?.ok ? r.failed : batch.length + removeNow.length;
+      sortBase += batch.length;
     }
     return failed;
   }

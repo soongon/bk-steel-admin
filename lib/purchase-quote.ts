@@ -38,6 +38,29 @@ export const PURCHASE_QUOTE_DEFAULT_TERMS = {
 export const PURCHASE_QUOTE_CARD_KIND = "business_card";
 /** 견적 1건당 명함 사진 상한 — 앞·뒷면 × 담당자 2명 정도. */
 export const PURCHASE_QUOTE_CARD_MAX = 4;
+/** 명함 업로드 한 번(서버 액션 본문 상한 4MB, next.config)에 싣는 최대 크기 — multipart 여유를 두고 3MB. */
+export const PURCHASE_QUOTE_CARD_BATCH_BYTES = 3 * 1024 * 1024;
+
+/**
+ * items 를 순서대로 limit 바이트 이하 묶음으로 나눈다. 한 개가 limit 를 넘으면 그것만 한 묶음.
+ * 항상 묶음 1개 이상을 돌려준다(items 가 비면 [[]] — 빼기만 보내는 경우).
+ */
+export function chunkBySize<T>(items: T[], sizeOf: (t: T) => number, limit: number): T[][] {
+  const chunks: T[][] = [[]];
+  let size = 0;
+  for (const item of items) {
+    const cur = chunks[chunks.length - 1];
+    const n = sizeOf(item);
+    if (cur.length > 0 && size + n > limit) {
+      chunks.push([item]);
+      size = n;
+    } else {
+      cur.push(item);
+      size += n;
+    }
+  }
+  return chunks;
+}
 
 /** 서버 액션(lines FormData)로 보낼 직렬화 — DB 컬럼명 기준. */
 export function serializePurchaseQuoteLines(lines: PurchaseQuoteLineDraft[]): string {
