@@ -31,6 +31,14 @@ export const PURCHASE_QUOTE_DEFAULT_TERMS = {
   payment: "계근 당일 계좌 송금",
 } as const;
 
+/**
+ * 판매자 명함 이미지 — 공용 첨부(attachment)에 entity_type 'purchase_quote' + 이 kind 로 둔다(0077).
+ * 문서·문자 이미지에는 싣지 않는다(상대방 자신의 명함이라 상세 화면 참고용).
+ */
+export const PURCHASE_QUOTE_CARD_KIND = "business_card";
+/** 견적 1건당 명함 사진 상한 — 앞·뒷면 × 담당자 2명 정도. */
+export const PURCHASE_QUOTE_CARD_MAX = 4;
+
 /** 서버 액션(lines FormData)로 보낼 직렬화 — DB 컬럼명 기준. */
 export function serializePurchaseQuoteLines(lines: PurchaseQuoteLineDraft[]): string {
   return JSON.stringify(

@@ -4,10 +4,19 @@ import { ArrowLeftIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { BookBadge } from "@/components/admin/book-badge";
 import { fmtKrw } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { type Book } from "@/lib/book";
 import { fetchCompanyProfile } from "@/lib/company-profile";
 import { STEEL_CUSTOM_ITEM_ID } from "@/lib/transaction-draft";
-import { PURCHASE_QUOTE_STATUS_LABEL, type PurchaseQuoteStatus, perKgToPerTon, type PurchaseQuoteLineDraft } from "@/lib/purchase-quote";
+import {
+  PURCHASE_QUOTE_CARD_KIND,
+  PURCHASE_QUOTE_STATUS_LABEL,
+  type PurchaseQuoteStatus,
+  perKgToPerTon,
+  type PurchaseQuoteLineDraft,
+} from "@/lib/purchase-quote";
+import { type Attachment } from "@/lib/attachment";
+import { PurchaseQuoteCardPanel } from "@/components/admin/purchase-quote-cards";
 import { type PurchaseQuoteDocumentData } from "@/components/admin/purchase-quote-document";
 import {
   Table,
@@ -69,11 +78,22 @@ export default async function PurchaseQuoteDetailPage({ params }: { params: Prom
   const q = data as unknown as PurchaseQuoteRow;
   const book = q.book;
 
-  const [company, partnersRes, itemsRes] = await Promise.all([
+  const [company, partnersRes, itemsRes, cardsRes] = await Promise.all([
     fetchCompanyProfile(supabase, book),
     supabase.from("partner").select("id, name, representative, address, phone").is("deleted_at", null).eq("is_active", true).order("name"),
     supabase.from("item").select("id, name").is("deleted_at", null).eq("is_active", true).neq("id", STEEL_CUSTOM_ITEM_ID).order("name"),
+    // 판매자 명함(첨부, 0077)
+    supabase
+      .from("attachment")
+      .select("id, entity_type, entity_id, kind, storage, path, url, thumbnail_url, mime, bytes, width, height, caption, sort_order, created_at")
+      .eq("entity_type", "purchase_quote")
+      .eq("entity_id", id)
+      .eq("kind", PURCHASE_QUOTE_CARD_KIND)
+      .is("deleted_at", null)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
   ]);
+  const cards = (cardsRes.data ?? []) as Attachment[];
 
   const lines = [...(q.lines ?? [])].sort((a, b) => Number(a.sort_order) - Number(b.sort_order));
   const partnerName: string = q.partner?.name ?? q.prospect_name ?? "";
@@ -96,6 +116,7 @@ export default async function PurchaseQuoteDetailPage({ params }: { params: Prom
     delivery_terms: q.delivery_terms ?? null,
     payment_terms: q.payment_terms ?? null,
     notes: q.notes ?? null,
+    cards,
     lines: lines.map(
       (l): PurchaseQuoteLineDraft => ({
         itemId: l.item_id ?? null,
@@ -160,50 +181,65 @@ export default async function PurchaseQuoteDetailPage({ params }: { params: Prom
         </div>
       </header>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Info label="견적일" value={q.quote_date} />
-        <Info label="유효기간" value={q.valid_until ?? "—"} />
-        <Info label="부가세" value={q.is_documented ? "별도 (자료)" : "무자료"} />
-        <Info label="발송" value={q.mms_sent_on ? `문자 ${q.mms_sent_on}` : q.sent_on ? `발송 ${q.sent_on}` : "—"} />
-      </div>
+      {/* 명함이 있으면 오른쪽(모바일은 맨 위)에 크게 — 판매자 확인용 참고 정보 */}
+      <div
+        className={cn(
+          "grid items-start gap-6",
+          cards.length > 0 && "lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]",
+        )}
+      >
+        {cards.length > 0 ? (
+          <aside className="lg:sticky lg:top-6 lg:order-last">
+            <PurchaseQuoteCardPanel cards={cards} sellerName={partnerName} />
+          </aside>
+        ) : null}
+        <div className="flex min-w-0 flex-col gap-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Info label="견적일" value={q.quote_date} />
+            <Info label="유효기간" value={q.valid_until ?? "—"} />
+            <Info label="부가세" value={q.is_documented ? "별도 (자료)" : "무자료"} />
+            <Info label="발송" value={q.mms_sent_on ? `문자 ${q.mms_sent_on}` : q.sent_on ? `발송 ${q.sent_on}` : "—"} />
+          </div>
 
-      <div className="overflow-x-auto rounded-lg border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>품목</TableHead>
-              <TableHead>규격 · 상태</TableHead>
-              <TableHead className="text-right">단가 (원/kg)</TableHead>
-              <TableHead className="text-right">환산 (원/톤)</TableHead>
-              <TableHead>비고</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {docData.lines.map((l, i) => (
-              <TableRow key={i}>
-                <TableCell className="font-medium">{l.name}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{l.spec || "—"}</TableCell>
-                <TableCell className="text-right font-medium tabular-nums">{fmtKrw(l.price_per_kg)}</TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">{fmtKrw(perKgToPerTon(l.price_per_kg))}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{l.note || "—"}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+          <div className="overflow-x-auto rounded-lg border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>품목</TableHead>
+                  <TableHead>규격 · 상태</TableHead>
+                  <TableHead className="text-right">단가 (원/kg)</TableHead>
+                  <TableHead className="text-right">환산 (원/톤)</TableHead>
+                  <TableHead>비고</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {docData.lines.map((l, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-medium">{l.name}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{l.spec || "—"}</TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">{fmtKrw(l.price_per_kg)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{fmtKrw(perKgToPerTon(l.price_per_kg))}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{l.note || "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
-      <p className="text-xs text-muted-foreground">
-        총중량·매입금액은 당일 계근 후 확정 — 계근이 끝나면 <Link href={`/${book}/purchases`} className="underline">매입</Link> 메뉴에서 kg 단위·실중량으로 등록하고, 이 견적은 ‘매입 완료’로 표시하세요.
-      </p>
+          <p className="text-xs text-muted-foreground">
+            총중량·매입금액은 당일 계근 후 확정 — 계근이 끝나면 <Link href={`/${book}/purchases`} className="underline">매입</Link> 메뉴에서 kg 단위·실중량으로 등록하고, 이 견적은 ‘매입 완료’로 표시하세요.
+          </p>
 
-      {q.weighing_terms || q.delivery_terms || q.payment_terms || q.notes ? (
-        <div className="grid gap-3 rounded-lg border bg-card p-4 text-sm sm:grid-cols-2">
-          {q.weighing_terms ? <Info label="계근 조건" value={q.weighing_terms} /> : null}
-          {q.delivery_terms ? <Info label="운반·상하차" value={q.delivery_terms} /> : null}
-          {q.payment_terms ? <Info label="결제조건" value={q.payment_terms} /> : null}
-          {q.notes ? <Info label="메모" value={q.notes} /> : null}
+          {q.weighing_terms || q.delivery_terms || q.payment_terms || q.notes ? (
+            <div className="grid gap-3 rounded-lg border bg-card p-4 text-sm sm:grid-cols-2">
+              {q.weighing_terms ? <Info label="계근 조건" value={q.weighing_terms} /> : null}
+              {q.delivery_terms ? <Info label="운반·상하차" value={q.delivery_terms} /> : null}
+              {q.payment_terms ? <Info label="결제조건" value={q.payment_terms} /> : null}
+              {q.notes ? <Info label="메모" value={q.notes} /> : null}
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }

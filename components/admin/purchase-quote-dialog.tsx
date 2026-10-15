@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FileTextIcon, PlusIcon, PrinterIcon, SaveIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -19,13 +19,17 @@ import { BookBadge } from "@/components/admin/book-badge";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { fmtKrw } from "@/lib/format";
+import { type Attachment, deleteAttachment, uploadAttachment } from "@/lib/attachment";
 import {
   type PurchaseQuoteLineDraft,
+  PURCHASE_QUOTE_CARD_KIND,
+  PURCHASE_QUOTE_CARD_MAX,
   PURCHASE_QUOTE_DEFAULT_TERMS,
   perKgToPerTon,
   serializePurchaseQuoteLines,
 } from "@/lib/purchase-quote";
 import { PurchaseQuoteDocument, type PurchaseQuoteDocumentData } from "@/components/admin/purchase-quote-document";
+import { PurchaseQuoteCardPicker, revokeStagedCards, type StagedCard } from "@/components/admin/purchase-quote-cards";
 import { createPurchaseQuote, updatePurchaseQuote } from "@/app/[book]/purchase-quotes/actions";
 
 export type PurchaseQuotePartner = {
@@ -52,6 +56,7 @@ export type EditingPurchaseQuote = {
   payment_terms: string | null;
   notes: string | null;
   lines: PurchaseQuoteLineDraft[];
+  cards?: Attachment[]; // 판매자 명함(첨부) — 수정에서 빼거나 더할 수 있음
 };
 
 export type PurchaseQuoteSources = {
@@ -112,6 +117,15 @@ export function PurchaseQuoteDialog({
   const [paymentTerms, setPaymentTerms] = useState("");
   const [notes, setNotes] = useState("");
 
+  // 판매자 명함 — 기존 사진 중 남길 것(수정) + 새로 고른 축소본. 서버 반영(삭제·업로드)은 저장할 때 한 번에.
+  const [keptCards, setKeptCards] = useState<Attachment[]>([]);
+  const [stagedCards, setStagedCards] = useState<StagedCard[]>([]);
+  const stagedRef = useRef<StagedCard[]>([]);
+  useEffect(() => {
+    stagedRef.current = stagedCards;
+  }, [stagedCards]);
+  useEffect(() => () => revokeStagedCards(stagedRef.current), []); // 언마운트 시 미리보기 URL 해제
+
   const makeDraft = (): PurchaseQuoteLineDraft => ({
     itemId: items.find((i) => i.name === name.trim())?.id ?? null,
     displayName: name.trim(),
@@ -132,6 +146,9 @@ export function PurchaseQuoteDialog({
     setPriceStr("");
     setLineNote("");
     setSelectedBook(book !== "all" ? book : "sl");
+    revokeStagedCards(stagedRef.current);
+    setStagedCards([]);
+    setKeptCards(editing?.cards ?? []);
     if (editing) {
       setPartnerInput(editing.partner_name ?? "");
       setSiteName(editing.site_name ?? "");
@@ -167,6 +184,36 @@ export function PurchaseQuoteDialog({
   }
   function removeLine(idx: number) {
     setLines((prev) => prev.filter((_, i) => i !== idx));
+  }
+  function addStagedCards(cards: StagedCard[]) {
+    const room = Math.max(0, PURCHASE_QUOTE_CARD_MAX - keptCards.length - stagedCards.length);
+    revokeStagedCards(cards.slice(room));
+    setStagedCards((prev) => [...prev, ...cards.slice(0, room)]);
+  }
+  function removeStagedCard(key: string) {
+    const card = stagedCards.find((c) => c.key === key);
+    if (card) URL.revokeObjectURL(card.previewUrl);
+    setStagedCards((prev) => prev.filter((c) => c.key !== key));
+  }
+
+  /** 명함 반영 — 뺀 기존 사진 삭제 + 새 사진 업로드. 실패 건수를 돌려준다(견적은 이미 저장된 뒤). */
+  async function syncCards(quoteId: string): Promise<number> {
+    let failed = 0;
+    const removed = (editing?.cards ?? []).filter((c) => !keptCards.some((k) => k.id === c.id));
+    for (const c of removed) {
+      const r = await deleteAttachment(c.id).catch(() => ({ ok: false as const }));
+      if (!r.ok) failed++;
+    }
+    for (const c of stagedCards) {
+      const fd = new FormData();
+      fd.set("file", c.file);
+      fd.set("entity_type", "purchase_quote");
+      fd.set("entity_id", quoteId);
+      fd.set("kind", PURCHASE_QUOTE_CARD_KIND);
+      const r = await uploadAttachment(fd).catch(() => ({ ok: false as const }));
+      if (!r.ok) failed++;
+    }
+    return failed;
   }
 
   const docData: PurchaseQuoteDocumentData | null =
@@ -223,9 +270,14 @@ export function PurchaseQuoteDialog({
     startSaving(async () => {
       const r = editing ? await updatePurchaseQuote(editing.id, fd) : await createPurchaseQuote(fd);
       if (r.ok) {
+        const id = r.id ?? editing?.id ?? "";
+        const failedCards = id ? await syncCards(id) : 0;
         toast.success(editing ? "매입견적서 수정됨" : "매입견적서 저장됨");
+        if (failedCards > 0) toast.error(`명함 사진 ${failedCards}건을 반영하지 못했습니다 — [수정]에서 다시 해 주세요.`);
+        // 미리보기도 닫는다 — 상세(수정)에선 화면이 남아 [수정 저장]을 다시 누르면 명함이 한 번 더 올라갔다.
+        setShowDoc(false);
         onOpenChange(false);
-        onSaved?.(r.id ?? editing?.id ?? "");
+        onSaved?.(id);
       } else {
         setError(r.error);
       }
@@ -282,6 +334,18 @@ export function PurchaseQuoteDialog({
               <Field label="현장명 (물건 위치)">
                 <Input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="예: ○○ 철거 현장" />
               </Field>
+            </div>
+
+            {/* 판매자 명함 — <label>(Field)로 감싸지 않는다: 안의 빼기 버튼이 라벨 클릭을 받는다. */}
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">판매자 명함 (선택 · 최대 {PURCHASE_QUOTE_CARD_MAX}장)</span>
+              <PurchaseQuoteCardPicker
+                kept={keptCards}
+                staged={stagedCards}
+                onAdd={addStagedCards}
+                onRemoveKept={(id) => setKeptCards((prev) => prev.filter((c) => c.id !== id))}
+                onRemoveStaged={removeStagedCard}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">

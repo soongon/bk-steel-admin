@@ -25,7 +25,8 @@ export type AttachmentEntityType =
   | "sales_log"
   | "sale"
   | "purchase"
-  | "receipt";
+  | "receipt"
+  | "purchase_quote"; // 매입견적서 판매자 명함(0077)
 
 export type AttachmentResult =
   | { ok: true; attachment: Attachment }
