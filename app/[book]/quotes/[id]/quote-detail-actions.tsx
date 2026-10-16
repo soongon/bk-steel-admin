@@ -12,11 +12,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { FormattedInput } from "@/components/admin/formatted-input";
 import { QuoteDocument, type QuoteDocumentData } from "@/components/admin/quote-document";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { type Book } from "@/lib/book";
-import { digitsOnly } from "@/lib/format";
+import { digitsOnly, formatPhone } from "@/lib/format";
 import { markQuoteSent, deleteQuote } from "../actions";
 import { sendQuoteMms } from "../sms-actions";
 import { sendQuoteMail } from "../mail-actions";
@@ -55,7 +55,7 @@ export function QuoteDetailActions({
   const siteName = statementData.site_name ?? undefined;
 
   function openSms() {
-    setPhone(defaultPhone);
+    setPhone(formatPhone(defaultPhone)); // 저장값(숫자만)을 대시 표기로
     setMailOpen(false);
     setSmsOpen(true);
   }
@@ -197,11 +197,11 @@ export function QuoteDetailActions({
               <div className="flex items-end gap-2 rounded-lg border bg-muted/30 p-3 print:hidden">
                 <label className="flex flex-1 flex-col gap-1 text-sm">
                   <span className="text-muted-foreground">수신 번호 *</span>
-                  <Input
+                  <FormattedInput
+                    format="phone"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="010-0000-0000"
-                    inputMode="numeric"
                   />
                   {!defaultPhone ? (
                     <span className="text-xs text-amber-600">거래처 휴대폰이 없습니다 — 직접 입력</span>

@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { FormattedInput, type NumberFormat } from "@/components/admin/formatted-input";
 import { Button } from "@/components/ui/button";
 import { formatBusinessNo, formatPhone } from "@/lib/format";
 import { createPartner, updatePartner, type PartnerActionResult } from "./actions";
@@ -131,10 +131,10 @@ export function PartnerFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="대표자" name="representative" defaultValue={initial?.representative ?? undefined} />
-            <Field label="사업자번호" name="business_no" defaultValue={formatBusinessNo(initial?.business_no)} placeholder="000-00-00000" />
+            <Field label="사업자번호" name="business_no" defaultValue={formatBusinessNo(initial?.business_no)} placeholder="000-00-00000" format="bizNo" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="연락처" name="phone" defaultValue={formatPhone(initial?.phone)} placeholder="010-0000-0000" />
+            <Field label="연락처" name="phone" defaultValue={formatPhone(initial?.phone)} placeholder="010-0000-0000" format="phone" />
             <Field label="이메일 (세금계산서 수신)" name="email" type="email" defaultValue={initial?.email ?? undefined} placeholder="contact@partner.com" />
           </div>
           <Field label="이메일 2 (선택 · 계산서 추가 수신)" name="email2" type="email" defaultValue={editing?.email2 ?? undefined} placeholder="담당자2@partner.com" />
@@ -176,6 +176,7 @@ function Field({
   required,
   uppercase,
   type,
+  format,
 }: {
   label: string;
   name: string;
@@ -184,11 +185,13 @@ function Field({
   required?: boolean;
   uppercase?: boolean;
   type?: string;
+  format?: NumberFormat; // 전화·사업자번호 자동 대시
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <Input
+      <FormattedInput
+        format={format}
         name={name}
         type={type}
         defaultValue={defaultValue ?? ""}

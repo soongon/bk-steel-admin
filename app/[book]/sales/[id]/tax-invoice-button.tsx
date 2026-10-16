@@ -15,11 +15,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/admin/field";
 import { Input } from "@/components/ui/input";
+import { FormattedInput } from "@/components/admin/formatted-input";
 import { type StatementData } from "@/components/admin/trading-statement";
 import { TaxInvoiceDocument } from "@/components/admin/tax-invoice-document";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { TAX_INVOICE_STATE_KO, type TaxDocMode, type TaxInvoiceState } from "@/lib/tax-invoice";
-import { digitsOnly } from "@/lib/format";
+import { digitsOnly, formatBusinessNo, formatPhone } from "@/lib/format";
 import {
   issueSaleTaxInvoice,
   cancelSaleTaxInvoice,
@@ -94,7 +95,7 @@ export function TaxInvoiceButton({
   const [purpose, setPurpose] = useState<"charge" | "receipt">("charge");
   const [remark, setRemark] = useState(taxInvoice?.remark ?? ""); // 발행됨: 저장된 계산서 비고 표시
   const [buyerPartnerId, setBuyerPartnerId] = useState(defaultBuyerPartnerId ?? "");
-  const [bizNo, setBizNo] = useState(statementData.partner.business_no ?? "");
+  const [bizNo, setBizNo] = useState(formatBusinessNo(statementData.partner.business_no));
   const [ceo, setCeo] = useState(statementData.partner.representative ?? "");
   const [email, setEmail] = useState(statementData.partner.email ?? "");
   const [email2, setEmail2] = useState(statementData.partner.email2 ?? "");
@@ -141,7 +142,7 @@ export function TaxInvoiceButton({
     setBuyerPartnerId(id);
     const p = partners.find((x) => x.id === id);
     if (p) {
-      setBizNo(p.business_no ?? "");
+      setBizNo(formatBusinessNo(p.business_no));
       setCeo(p.representative ?? "");
       setEmail(p.email ?? "");
       setEmail2(p.email2 ?? "");
@@ -232,7 +233,7 @@ export function TaxInvoiceButton({
     });
   }
   function openSmsInput() {
-    setSmsPhone(previewData.partner.phone ?? "");
+    setSmsPhone(formatPhone(previewData.partner.phone));
     setSmsOpen(true);
   }
   function onSendSms() {
@@ -327,11 +328,11 @@ export function TaxInvoiceButton({
                 <div className="mt-1 flex items-end gap-2 rounded-lg border bg-muted/30 p-2">
                   <label className="flex flex-1 flex-col gap-1 text-sm">
                     <span className="text-muted-foreground">수신 번호 *</span>
-                    <Input
+                    <FormattedInput
+                      format="phone"
                       value={smsPhone}
                       onChange={(e) => setSmsPhone(e.target.value)}
                       placeholder="010-0000-0000"
-                      inputMode="numeric"
                     />
                     {!previewData.partner.phone ? (
                       <span className="text-xs text-amber-600">거래처 휴대폰이 없습니다 — 직접 입력</span>
@@ -403,7 +404,7 @@ export function TaxInvoiceButton({
                 </div>
               </Field>
               <Field label="거래처 사업자등록번호 *">
-                <Input value={bizNo} onChange={(e) => setBizNo(e.target.value)} placeholder="숫자 10자리" inputMode="numeric" />
+                <FormattedInput format="bizNo" value={bizNo} onChange={(e) => setBizNo(e.target.value)} placeholder="000-00-00000" />
               </Field>
               <Field label="거래처 대표자">
                 <Input value={ceo} onChange={(e) => setCeo(e.target.value)} />

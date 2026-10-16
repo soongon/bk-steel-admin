@@ -4,11 +4,11 @@ import { useRef, useState, useTransition } from "react";
 import { SendIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { FormattedInput } from "@/components/admin/formatted-input";
 import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { type Book } from "@/lib/book";
-import { digitsOnly } from "@/lib/format";
+import { digitsOnly, formatPhone } from "@/lib/format";
 import { captureNodeForMail, captureNodeToJpeg } from "@/lib/capture-node";
 import { type MailStatus } from "@/lib/mail/address";
 import { MailButton, MailSendPanel } from "@/components/admin/mail-send-panel";
@@ -41,7 +41,7 @@ export function SiteStatementView({
   const captureRef = useRef<HTMLDivElement>(null);
 
   function openSms() {
-    setPhone(defaultPhone ?? "");
+    setPhone(formatPhone(defaultPhone)); // 저장값(숫자만)을 대시 표기로
     setMailOpen(false);
     setSmsOpen(true);
   }
@@ -125,11 +125,11 @@ export function SiteStatementView({
           <div className="flex items-end gap-2 rounded-lg border bg-card p-3">
             <label className="flex flex-1 flex-col gap-1 text-sm">
               <span className="text-muted-foreground">수신 번호 *</span>
-              <Input
+              <FormattedInput
+                format="phone"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="010-0000-0000"
-                inputMode="numeric"
               />
               {!defaultPhone ? (
                 <span className="text-xs text-amber-600">거래처 휴대폰이 없습니다 — 직접 입력</span>

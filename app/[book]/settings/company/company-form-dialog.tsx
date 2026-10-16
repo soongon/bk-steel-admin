@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { FormattedInput, type NumberFormat } from "@/components/admin/formatted-input";
 import { Button } from "@/components/ui/button";
 import { type Book, BOOK_LABEL } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
@@ -70,7 +70,7 @@ export function CompanyFormDialog({
         >
           <div className="grid grid-cols-2 gap-3">
             <Field label="상호 *" name="name" defaultValue={profile?.name} required />
-            <Field label="사업자등록번호 *" name="business_no" defaultValue={formatBusinessNo(profile?.business_no)} placeholder="000-00-00000" required />
+            <Field label="사업자등록번호 *" name="business_no" defaultValue={formatBusinessNo(profile?.business_no)} placeholder="000-00-00000" required format="bizNo" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="대표자" name="representative" defaultValue={profile?.representative} />
@@ -82,9 +82,9 @@ export function CompanyFormDialog({
           </div>
           <Field label="사업장 주소" name="address" defaultValue={profile?.address} />
           <div className="grid grid-cols-3 gap-3">
-            <Field label="전화" name="phone" defaultValue={formatPhone(profile?.phone)} placeholder="054-000-0000" />
-            <Field label="팩스" name="fax" defaultValue={formatPhone(profile?.fax)} />
-            <Field label="휴대폰" name="mobile" defaultValue={formatPhone(profile?.mobile)} placeholder="010-0000-0000" />
+            <Field label="전화" name="phone" defaultValue={formatPhone(profile?.phone)} placeholder="054-000-0000" format="phone" />
+            <Field label="팩스" name="fax" defaultValue={formatPhone(profile?.fax)} format="phone" />
+            <Field label="휴대폰" name="mobile" defaultValue={formatPhone(profile?.mobile)} placeholder="010-0000-0000" format="phone" />
           </div>
 
           <div className="rounded-md border-dashed border-2 border-zinc-300 p-3 dark:border-zinc-700">
@@ -217,6 +217,7 @@ function Field({
   placeholder,
   required,
   type,
+  format,
 }: {
   label: string;
   name: string;
@@ -224,11 +225,13 @@ function Field({
   placeholder?: string;
   required?: boolean;
   type?: string;
+  format?: NumberFormat; // 전화·사업자번호 자동 대시
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <Input
+      <FormattedInput
+        format={format}
         name={name}
         type={type}
         defaultValue={defaultValue ?? ""}

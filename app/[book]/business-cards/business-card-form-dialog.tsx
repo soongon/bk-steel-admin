@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { FormattedInput, type NumberFormat } from "@/components/admin/formatted-input";
 import { Button } from "@/components/ui/button";
 import {
   AttachmentUploader,
@@ -122,7 +122,7 @@ export function BusinessCardFormDialog({
             </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="연락처" name="phone" defaultValue={formatPhone(editing?.phone)} placeholder="010-0000-0000" />
+            <Field label="연락처" name="phone" defaultValue={formatPhone(editing?.phone)} placeholder="010-0000-0000" format="phone" />
             <Field label="이메일" name="email" type="email" defaultValue={editing?.email ?? undefined} />
           </div>
           <Field label="주소" name="address" defaultValue={editing?.address ?? undefined} />
@@ -192,6 +192,7 @@ function Field({
   placeholder,
   required,
   type,
+  format,
 }: {
   label: string;
   name: string;
@@ -199,11 +200,13 @@ function Field({
   placeholder?: string;
   required?: boolean;
   type?: string;
+  format?: NumberFormat; // 전화 자동 대시
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <Input
+      <FormattedInput
+        format={format}
         name={name}
         type={type}
         defaultValue={defaultValue ?? ""}

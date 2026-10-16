@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { FormattedInput, type NumberFormat } from "@/components/admin/formatted-input";
 import { Button } from "@/components/ui/button";
 import {
   DISMISS_REASONS,
@@ -128,7 +129,7 @@ export function TouchDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="담당자" name="contact_person" placeholder="현장소장 김○○" />
-            <Field label="담당자 전화" name="contact_phone" type="tel" placeholder="010-0000-0000" />
+            <Field label="담당자 전화" name="contact_phone" placeholder="010-0000-0000" format="phone" />
           </div>
           {target?.channel === "visit" ? (
             <Field label="시공사·업체명 (표지판)" name="company" placeholder="○○종합건설" />
@@ -224,6 +225,7 @@ function Field({
   placeholder,
   required,
   type,
+  format,
 }: {
   label: string;
   name: string;
@@ -231,11 +233,12 @@ function Field({
   placeholder?: string;
   required?: boolean;
   type?: string;
+  format?: NumberFormat; // 전화 자동 대시
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <Input name={name} type={type} defaultValue={defaultValue ?? ""} placeholder={placeholder} required={required} />
+      <FormattedInput format={format} name={name} type={type} defaultValue={defaultValue ?? ""} placeholder={placeholder} required={required} />
     </label>
   );
 }

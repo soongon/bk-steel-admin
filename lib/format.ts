@@ -30,9 +30,55 @@ export function formatPhone(s: string | null | undefined): string {
     if (d.length === 10) return `02-${d.slice(2, 6)}-${d.slice(6)}`;
     if (d.length === 9) return `02-${d.slice(2, 5)}-${d.slice(5)}`;
   }
+  // 050x 안심·평생번호(국번 4자리): 11자리 4-3-4, 12자리 4-4-4
+  if (/^050[2-8]/.test(d)) {
+    if (d.length === 12) return `${d.slice(0, 4)}-${d.slice(4, 8)}-${d.slice(8)}`;
+    if (d.length === 11) return `${d.slice(0, 4)}-${d.slice(4, 7)}-${d.slice(7)}`;
+  }
   // 휴대폰·일반 11자리: 3-4-4
   if (d.length === 11) return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
   // 일반 지역/070/구휴대폰 10자리: 3-3-4
   if (d.length === 10) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
   return d;
+}
+
+// ── 입력칸 자동 대시: 치는 대로 단계별로 대시를 넣는다. 완성된 번호는 위 표기 함수와 같은 모양 ──
+
+const dashJoin = (...parts: string[]) => parts.filter(Boolean).join("-");
+
+/** 전화 입력 형식 — 010-1234-5678 · 02-123-4567 · 054-777-0293 · 1588-1234 · 0505-123-4567. 자릿수 초과분은 버린다. */
+export function formatPhoneInput(s: string | null | undefined): string {
+  const d = digitsOnly(s);
+  // 서울 02: 2-3-4, 10자리면 2-4-4
+  if (d.startsWith("02")) {
+    const x = d.slice(0, 10);
+    return x.length === 10 ? dashJoin(x.slice(0, 2), x.slice(2, 6), x.slice(6)) : dashJoin(x.slice(0, 2), x.slice(2, 5), x.slice(5));
+  }
+  // 050x 안심·평생번호: 4-3-4, 12자리면 4-4-4
+  if (/^050[2-8]/.test(d)) {
+    const x = d.slice(0, 12);
+    return x.length === 12 ? dashJoin(x.slice(0, 4), x.slice(4, 8), x.slice(8)) : dashJoin(x.slice(0, 4), x.slice(4, 7), x.slice(7));
+  }
+  // 휴대폰 010: 처음부터 3-4-4(입력 중 대시 자리가 옮겨 다니지 않게)
+  if (d.startsWith("010")) {
+    const x = d.slice(0, 11);
+    return dashJoin(x.slice(0, 3), x.slice(3, 7), x.slice(7));
+  }
+  // 그 밖의 0 국번(지역번호·070·080·구 휴대폰): 3-3-4, 11자리면 3-4-4
+  if (d.startsWith("0")) {
+    const x = d.slice(0, 11);
+    return x.length === 11 ? dashJoin(x.slice(0, 3), x.slice(3, 7), x.slice(7)) : dashJoin(x.slice(0, 3), x.slice(3, 6), x.slice(6));
+  }
+  // 대표번호 15xx·16xx·18xx: 4-4
+  if (d.startsWith("1")) {
+    const x = d.slice(0, 8);
+    return dashJoin(x.slice(0, 4), x.slice(4));
+  }
+  return d.slice(0, 12); // 알 수 없는 형식 — 숫자만
+}
+
+/** 사업자등록번호 입력 형식 — 000-00-00000(10자리까지). */
+export function formatBusinessNoInput(s: string | null | undefined): string {
+  const d = digitsOnly(s).slice(0, 10);
+  return dashJoin(d.slice(0, 3), d.slice(3, 5), d.slice(5));
 }
