@@ -23,6 +23,8 @@ import {
   type LineDraft,
   UNIT_OPTIONS,
   STEEL_CUSTOM_ITEM_ID,
+  unitOptionValue,
+  parseUnitOption,
   calcLineDraft,
   buildStatementLines,
   serializeLines,
@@ -154,7 +156,7 @@ export function SaleFormDialog({
 
   // 단위·수량·단가
   const [unit, setUnit] = useState<"ea" | "kg" | "ton">("ea");
-  const [tonMetric, setTonMetric] = useState(false); // 톤: 1톤=1000kg 청구(소량·배달비)
+  const [tonMetric, setTonMetric] = useState(false); // 1톤=1,000kg 기준 청구(소량·배달비) — 톤(1,000kg)·가닥(톤기준)
   const [qtyStr, setQtyStr] = useState("");
   const [unitPriceStr, setUnitPriceStr] = useState("");
   const qty = Number(qtyStr) || 0;
@@ -525,14 +527,15 @@ export function SaleFormDialog({
                 </Field>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              {/* 단위 칸을 조금 넓게 — '가닥/EA (톤기준)'이 384px 폼에서 잘리지 않게. */}
+              <div className="grid grid-cols-[1.35fr_1fr_1fr] gap-3">
                 <Field label="단위 *">
                   <select
-                    value={tonMetric ? "ton_metric" : unit}
+                    value={unitOptionValue(unit, tonMetric)}
                     onChange={(e) => {
-                      const v = e.target.value;
-                      setTonMetric(v === "ton_metric");
-                      setUnit(v === "ton_metric" ? "ton" : (v as "ea" | "kg" | "ton"));
+                      const u = parseUnitOption(e.target.value);
+                      setUnit(u.unit);
+                      setTonMetric(u.tonMetric);
                     }}
                     className="h-8 rounded-md border border-input bg-background px-2 text-sm"
                   >
@@ -593,6 +596,14 @@ export function SaleFormDialog({
                       <span className="rounded bg-blue-100 px-1 text-[10px] font-normal text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
                         1톤=1,000kg 청구 ({qty}톤 = {fmtNum(qty * 1000)}kg)
                       </span>
+                    ) : calc.eaMetric && selectedItem?.bars_per_tonne ? (
+                      <span className="rounded bg-blue-100 px-1 text-[10px] font-normal text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                        톤기준: 1톤({selectedItem.bars_per_tonne}본)=1,000kg 청구 · 1본 {fmtNum(1000 / selectedItem.bars_per_tonne, 2)}kg
+                      </span>
+                    ) : unit === "ea" && tonMetric ? (
+                      <span className="rounded bg-amber-100 px-1 text-[10px] font-normal text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                        표준본수 없는 길이 — 이론중량으로 계산
+                      </span>
                     ) : null}
                   </p>
                   <div className="grid grid-cols-3 gap-2 font-mono">
@@ -628,6 +639,7 @@ export function SaleFormDialog({
                         </span>
                         <span className="text-muted-foreground">
                           {reb ? `${fmtNum(c!.weightKg)}kg` : `${l.qty}${l.unit}`}
+                          {reb && c!.eaMetric ? <span className="text-blue-600 dark:text-blue-400">·톤기준</span> : null}
                           {l.manualAmount != null && l.manualAmount > 0
                             ? " · 금액직접"
                             : ` × ${fmtKrw(l.unitPrice)}${reb ? "/kg" : ""}`}

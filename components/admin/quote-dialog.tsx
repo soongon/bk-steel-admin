@@ -23,6 +23,8 @@ import {
   type LineDraft,
   UNIT_OPTIONS,
   STEEL_CUSTOM_ITEM_ID,
+  unitOptionValue,
+  parseUnitOption,
   calcLineDraft,
   buildStatementLines,
   serializeLines,
@@ -471,14 +473,15 @@ export function QuoteDialog({
                 )}
               </Field>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            {/* 단위 칸을 조금 넓게 — '가닥/EA (톤기준)'이 384px 폼에서 잘리지 않게. */}
+            <div className="grid grid-cols-[1.35fr_1fr_1fr] gap-3">
               <Field label="단위 *">
                 <select
-                  value={tonMetric ? "ton_metric" : unit}
+                  value={unitOptionValue(unit, tonMetric)}
                   onChange={(e) => {
-                    const v = e.target.value;
-                    setTonMetric(v === "ton_metric");
-                    setUnit(v === "ton_metric" ? "ton" : (v as "ea" | "kg" | "ton"));
+                    const u = parseUnitOption(e.target.value);
+                    setUnit(u.unit);
+                    setTonMetric(u.tonMetric);
                   }}
                   className="h-8 rounded-md border border-input bg-background px-2 text-sm"
                 >
@@ -521,6 +524,11 @@ export function QuoteDialog({
               <div className="rounded-lg border border-dashed bg-muted/30 p-2 text-xs text-muted-foreground">
                 환산: 가닥 <strong className="text-foreground">{calc.bars.toLocaleString()}</strong> · 실중량{" "}
                 <strong className="text-foreground">{fmtNum(calc.weightKg)}kg</strong>
+                {calc.eaMetric && selectedItem?.bars_per_tonne
+                  ? ` · 톤기준 1톤(${selectedItem.bars_per_tonne}본)=1,000kg`
+                  : unit === "ea" && tonMetric
+                    ? " · 표준본수 없는 길이 — 이론중량"
+                    : null}
               </div>
             ) : null}
 
@@ -546,6 +554,7 @@ export function QuoteDialog({
                       </span>
                       <span className="text-muted-foreground">
                         {reb ? `${fmtNum(c!.weightKg)}kg` : `${l.qty}${l.unit}`}
+                        {reb && c!.eaMetric ? <span className="text-blue-600 dark:text-blue-400">·톤기준</span> : null}
                         {l.manualAmount != null && l.manualAmount > 0
                           ? " · 금액직접"
                           : ` × ${fmtKrw(l.unitPrice)}${reb ? "/kg" : ""}`}

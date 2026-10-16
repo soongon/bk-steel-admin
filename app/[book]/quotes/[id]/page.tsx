@@ -108,8 +108,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
       const isReb = !!it?.rebar_spec_code;
       const u = String(l.unit);
       const w = l.weight_kg != null ? Number(l.weight_kg) : null;
-      // 영구 저장된 ton_metric(0060) 우선, 없으면(구 데이터) weight_kg=qty×1000 추론 fallback.
-      const isMetricTon =
+      // 영구 저장된 ton_metric(0060 — 톤(1,000kg)·가닥(톤기준)) 우선, 없으면(구 데이터, 톤만) weight_kg=qty×1000 추론 fallback.
+      const isMetric =
         l.ton_metric === true ||
         (u === "ton" && w != null && Math.round(w) === Math.round(Number(l.qty) * 1000));
       return {
@@ -118,7 +118,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
         unit: u === "ton" || u === "kg" ? u : "ea",
         qty: Number(l.qty),
         unitPrice: Number(l.unit_price_krw),
-        tonMetric: isMetricTon,
+        tonMetric: isMetric,
         manualAmount: l.manual_amount != null ? Number(l.manual_amount) : null,
         displayName: l.display_name != null ? String(l.display_name) : null,
         specText: l.spec_text != null ? String(l.spec_text) : null,

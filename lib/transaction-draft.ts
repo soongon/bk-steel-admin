@@ -14,6 +14,7 @@ export type LineDraft = {
   unit: "ea" | "kg" | "ton";
   qty: number;
   unitPrice: number;
+  /** 1톤=1,000kg 기준(소량 청구) — unit 'ton' 이면 톤(1,000kg), 'ea' 면 가닥(톤기준). 견적은 quote_line.ton_metric 에 저장. */
   tonMetric: boolean;
   /** 운송비 포함 등 — 단가 계산 대신 라인 총액을 직접 입력(원). null/미설정이면 자동 계산. */
   manualAmount?: number | null;
@@ -23,13 +24,26 @@ export type LineDraft = {
   specText?: string | null;
 };
 
-/** 단위 옵션 — 폼 select 공통. ton_metric 은 unit='ton' + tonMetric=true 로 분해. */
+/** 단위 옵션 — 폼 select 공통. ton_metric·ea_metric 은 unit='ton'·'ea' + tonMetric=true 로 분해. */
 export const UNIT_OPTIONS = [
   { value: "ea", label: "가닥/EA" },
+  { value: "ea_metric", label: "가닥/EA (톤기준)" },
   { value: "kg", label: "kg" },
   { value: "ton", label: "톤 (이론중량)" },
   { value: "ton_metric", label: "톤 (1,000kg)" },
 ] as const;
+
+/** 라인 단위 → select 값. */
+export function unitOptionValue(unit: LineDraft["unit"], tonMetric: boolean): string {
+  return tonMetric && (unit === "ton" || unit === "ea") ? `${unit}_metric` : unit;
+}
+
+/** select 값 → 라인 단위 + 1톤=1,000kg 기준 여부. */
+export function parseUnitOption(value: string): { unit: LineDraft["unit"]; tonMetric: boolean } {
+  if (value === "ton_metric") return { unit: "ton", tonMetric: true };
+  if (value === "ea_metric") return { unit: "ea", tonMetric: true };
+  return { unit: value === "kg" || value === "ton" ? value : "ea", tonMetric: false };
+}
 
 /** calcLineDraft·buildStatementLines 가 요구하는 품목 최소 필드. sale Item·quote QuoteItem 호환. */
 export type DraftItem = {
@@ -80,7 +94,7 @@ export function serializeLines(
         qty: l.qty,
         unit_price_krw: l.unitPrice,
         weight_kg: c ? c.weightKg : null,
-        // 톤(1,000kg) 여부를 영구 저장 — weight_kg 만으론 이론중량 톤과 구분 불가(수정 시 손실).
+        // 1톤=1,000kg 기준(톤(1,000kg)·가닥(톤기준)) 여부를 영구 저장 — weight_kg 만으론 이론중량과 구분 불가(수정 시 손실).
         ton_metric: l.tonMetric,
         // 금액 직접입력(운송비 포함 등) 시 라인 총액. null이면 자동 계산.
         manual_amount: l.manualAmount ?? null,
