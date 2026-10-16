@@ -2,6 +2,7 @@
 // 한글은 자모 단위로 비교해야 입력 중 조합 상태('워'→'월', '월ㄷ')에서도 결과가 끊기지 않는다.
 
 import { digitsOnly, formatPhone } from "@/lib/format";
+import { normalizePartnerName } from "@/lib/partner";
 
 const CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
 // 겹모음·겹받침은 입력 순서대로 쪼갠다(ㅘ=ㅗ+ㅏ, ㄺ=ㄹ+ㄱ) — '고'→'과', '달'→'닭'처럼 조합 중간 상태도 부분일치.
@@ -24,9 +25,23 @@ function toJamo(s: string): string {
   return out;
 }
 
-/** 검색 비교 키 — 소문자, 공백·기호 제거(㈜→주), 한글 자모 분해. 검색어와 대상 모두 이 키로 부분일치 비교. */
+/** 검색 비교 키 — NFC 정리, 소문자, 공백·기호 제거(㈜→주), 한글 자모 분해. 검색어와 대상 모두 이 키로 부분일치 비교. */
 export function searchKey(s: string | null | undefined): string {
-  return toJamo((s ?? "").toLowerCase().replace(/㈜/g, "주").replace(/[^\p{L}\p{N}]/gu, ""));
+  return toJamo((s ?? "").normalize("NFC").toLowerCase().replace(/㈜/g, "주").replace(/[^\p{L}\p{N}]/gu, ""));
+}
+
+/** 이름 검색 키 두 벌 — [보이는 그대로, 회사 표기((주)·주식회사 등) 뺀 것]. 검색어도 같은 함수로 만든다. */
+export type NameKeys = readonly [raw: string, bare: string];
+export function nameKeys(s: string | null | undefined): NameKeys {
+  return [searchKey(s), searchKey(normalizePartnerName(s))];
+}
+
+/**
+ * 이름 일치 — 그대로끼리('주식'까지 쳐도 '주식회사 OO'가 안 사라짐) 또는 표기 뺀 것끼리('주식회사 태웅' → '(주)태웅건설') 부분일치.
+ * query 는 nameKeys(검색어). 검색어가 비면 false.
+ */
+export function nameMatches(target: NameKeys, query: NameKeys): boolean {
+  return (query[0] !== "" && target[0].includes(query[0])) || (query[1] !== "" && target[1].includes(query[1]));
 }
 
 /** 전화번호 검색 숫자 — 검색어가 숫자·대시·공백·괄호만일 때 그 숫자. 글자가 섞이면(예: '삼성1') 전화로 보지 않고 "". */
@@ -35,15 +50,14 @@ export function phoneQueryDigits(query: string): string {
 }
 
 /**
- * 전화번호 일치 — 1~2자리는 앞자리만(02·01 처럼 치는 순서대로 좁혀짐), 3자리부터는 번호 묶음(010·7159·4100)
- * 시작 위치에서 이어 맞춘다(가운데·뒷자리 4개로도 찾기). 묶음 중간에서 시작하는 우연한 일치(054 → 010-5447)는 제외.
+ * 전화번호 일치 — 번호 묶음(010·7159·4100) 시작 위치에서 이어 맞춘다: 앞자리·가운데·뒷자리 어느 묶음부터 쳐도
+ * 한 자리씩 좁혀지고(중간에 결과가 비지 않음), 묶음 중간에서 시작하는 우연한 일치(054 → 010-5447)는 제외.
  * 대시로 나눌 수 없는 번호는 어디든 부분일치.
  */
 export function phoneMatches(phone: string | null | undefined, queryDigits: string): boolean {
   const formatted = formatPhone(phone);
   if (!queryDigits || !formatted) return false;
   const digits = digitsOnly(formatted);
-  if (queryDigits.length < 3) return digits.startsWith(queryDigits);
   if (!formatted.includes("-")) return digits.includes(queryDigits);
   let start = 0;
   for (const part of formatted.split("-")) {

@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { PencilIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
+import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { formatPhone } from "@/lib/format";
-import { normalizePartnerName } from "@/lib/partner";
-import { phoneMatches, phoneQueryDigits, searchKey } from "@/lib/search";
-import { Input } from "@/components/ui/input";
+import { nameKeys, nameMatches, phoneMatches, phoneQueryDigits } from "@/lib/search";
+import { ListSearch, useListSearch } from "@/components/admin/list-search";
 import {
   Table,
   TableBody,
@@ -33,29 +32,19 @@ export function PartnerTable({
   const [editing, setEditing] = useState<PartnerRow | null>(null);
   const [, startTransition] = useTransition();
 
-  // 즉시 검색 — 검색칸 하나로 거래처명(㈜·주식회사·공백 무시, 한글 조합 중에도 좁혀짐) 또는 전화번호(숫자로만 친 검색어) 일치.
-  const [query, setQuery] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
-  const indexed = useMemo(
-    () => partners.map((p) => ({ p, nameKey: searchKey(normalizePartnerName(p.name)), phone: p.phone })),
-    [partners],
-  );
-  const nameQuery = searchKey(normalizePartnerName(query));
-  const phoneQuery = phoneQueryDigits(query);
-  const searching = nameQuery !== "" || phoneQuery !== "";
-  const visible = useMemo(
-    () =>
-      searching
-        ? indexed
-            .filter(({ nameKey, phone }) => (nameQuery !== "" && nameKey.includes(nameQuery)) || phoneMatches(phone, phoneQuery))
-            .map(({ p }) => p)
-        : partners,
-    [indexed, partners, searching, nameQuery, phoneQuery],
-  );
-  function clearSearch() {
-    setQuery("");
-    searchRef.current?.focus();
-  }
+  // 즉시 검색 — 검색칸 하나로 거래처명(보이는 그대로·회사 표기 무시 둘 다, 한글 조합 중에도 좁혀짐)
+  // 또는 전화번호(숫자로만 친 검색어, 번호 묶음 시작부터) 일치.
+  const search = useListSearch();
+  const indexed = useMemo(() => partners.map((p) => ({ p, keys: nameKeys(p.name) })), [partners]);
+  const { visible, searching } = useMemo(() => {
+    const nameQuery = nameKeys(search.query);
+    const phoneQuery = phoneQueryDigits(search.query);
+    if (nameQuery[0] === "" && phoneQuery === "") return { visible: partners, searching: false };
+    return {
+      visible: indexed.filter(({ p, keys }) => nameMatches(keys, nameQuery) || phoneMatches(p.phone, phoneQuery)).map(({ p }) => p),
+      searching: true,
+    };
+  }, [indexed, partners, search.query]);
 
   useEffect(() => {
     if (prefill?.from_card_id || prefill?.from_radar_id) {
@@ -92,48 +81,15 @@ export function PartnerTable({
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* 좁은 화면: 검색칸이 한 줄을 다 쓰고 [신규 거래처]는 다음 줄 오른쪽. */}
-        <div className="flex min-w-0 flex-1 basis-full items-center gap-3 sm:basis-auto">
-          <div className="relative w-full max-w-sm">
-            <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              ref={searchRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape" && query) clearSearch();
-              }}
-              placeholder="거래처명 또는 전화번호 검색"
-              aria-label="거래처 검색"
-              inputMode="search"
-              enterKeyHint="search"
-              autoComplete="off"
-              className="pr-8 pl-8"
-            />
-            {query ? (
-              <button
-                type="button"
-                onClick={clearSearch}
-                aria-label="검색어 지우기"
-                className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm text-muted-foreground hover:text-foreground"
-              >
-                <XIcon className="size-4" />
-              </button>
-            ) : null}
-          </div>
-          <p className="shrink-0 text-sm text-muted-foreground">
-            {searching ? (
-              <>
-                검색 <span className="font-medium text-foreground">{visible.length}</span>건 / 전체 {partners.length}건
-              </>
-            ) : (
-              <>
-                총 <span className="font-medium text-foreground">{partners.length}</span>건
-              </>
-            )}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <ListSearch
+          search={search}
+          placeholder="거래처명 또는 전화번호 검색"
+          label="거래처 검색"
+          searching={searching}
+          shown={visible.length}
+          total={partners.length}
+        />
         <Button onClick={openCreate} size="sm" className="ml-auto">
           <PlusIcon className="size-4" />
           신규 거래처
@@ -164,8 +120,8 @@ export function PartnerTable({
             ) : visible.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
-                  ‘{query.trim()}’에 맞는 거래처가 없습니다.{" "}
-                  <button onClick={clearSearch} className="underline">
+                  ‘{search.query.trim()}’에 맞는 거래처가 없습니다.{" "}
+                  <button onClick={search.clear} className="underline">
                     검색 지우기
                   </button>
                 </TableCell>

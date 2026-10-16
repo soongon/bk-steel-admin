@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
@@ -14,6 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { ListSearch, useListSearch } from "@/components/admin/list-search";
+import { nameKeys, nameMatches } from "@/lib/search";
 import { SiteFormDialog, type SiteRow } from "./site-form-dialog";
 import { deleteSite } from "./actions";
 
@@ -41,6 +43,18 @@ export function SiteTable({
   const [editing, setEditing] = useState<SiteRow | null>(null);
   const [, startTransition] = useTransition();
 
+  // 즉시 검색 — 표에 보이는 글자(현장명·지역·주소·시공사·건축주)로, 한글 조합 중에도 좁혀짐. 현장엔 전화번호 칸이 없다.
+  const search = useListSearch();
+  const indexed = useMemo(
+    () => sites.map((s) => ({ s, keys: [s.name, s.city, s.address, s.client_name, s.owner_name].map(nameKeys) })),
+    [sites],
+  );
+  const { visible, searching } = useMemo(() => {
+    const q = nameKeys(search.query);
+    if (q[0] === "") return { visible: sites, searching: false };
+    return { visible: indexed.filter(({ keys }) => keys.some((k) => nameMatches(k, q))).map(({ s }) => s), searching: true };
+  }, [indexed, sites, search.query]);
+
   function openCreate() {
     setEditing(null);
     setOpen(true);
@@ -60,11 +74,16 @@ export function SiteTable({
 
   return (
     <>
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          총 <span className="font-medium text-foreground">{sites.length}</span>건
-        </p>
-        <Button onClick={openCreate} size="sm">
+      <div className="flex flex-wrap items-center gap-3">
+        <ListSearch
+          search={search}
+          placeholder="현장명·지역·시공사 검색"
+          label="현장 검색"
+          searching={searching}
+          shown={visible.length}
+          total={sites.length}
+        />
+        <Button onClick={openCreate} size="sm" className="ml-auto">
           <PlusIcon className="size-4" />
           신규 현장
         </Button>
@@ -94,8 +113,17 @@ export function SiteTable({
                   </button>
                 </TableCell>
               </TableRow>
+            ) : visible.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                  ‘{search.query.trim()}’에 맞는 현장이 없습니다.{" "}
+                  <button onClick={search.clear} className="underline">
+                    검색 지우기
+                  </button>
+                </TableCell>
+              </TableRow>
             ) : (
-              sites.map((s) => {
+              visible.map((s) => {
                 const st = STATUS_LABEL[s.status] ?? STATUS_LABEL.active;
                 return (
                   <TableRow key={s.id}>
