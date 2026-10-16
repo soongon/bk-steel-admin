@@ -20,6 +20,7 @@ import { type CompanyProfile } from "@/lib/company-profile";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { fmtKrw } from "@/lib/format";
 import { type Attachment, syncAttachments } from "@/lib/attachment";
+import { LEAD_NOTE_PLACEHOLDER, LEAD_SOURCES, type LeadSource } from "@/lib/lead-source";
 import {
   type PurchaseQuoteLineDraft,
   PURCHASE_QUOTE_CARD_BATCH_BYTES,
@@ -57,6 +58,8 @@ export type EditingPurchaseQuote = {
   delivery_terms: string | null;
   payment_terms: string | null;
   notes: string | null;
+  lead_source?: LeadSource | null; // 유입경로(0079)
+  lead_note?: string | null;
   lines: PurchaseQuoteLineDraft[];
   cards?: Attachment[]; // 판매자 명함(첨부) — 수정에서 빼거나 더할 수 있음
 };
@@ -97,6 +100,11 @@ export function PurchaseQuoteDialog({
   const [showDoc, setShowDoc] = useState(false);
   const [saving, startSaving] = useTransition();
   const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+
+  // 유입경로 — 통화 중 "어디 보고 연락 주셨어요?" 한 번 묻고 1탭. 모르면 비워 둔다(미기록).
+  const [leadSource, setLeadSource] = useState<LeadSource | null>(null);
+  const [leadNote, setLeadNote] = useState("");
+  const leadNotePlaceholder = leadSource ? LEAD_NOTE_PLACEHOLDER[leadSource] : undefined;
 
   const [partnerInput, setPartnerInput] = useState("");
   const matchedPartner = partners.find((p) => p.name === partnerInput);
@@ -160,6 +168,8 @@ export function PurchaseQuoteDialog({
       setDeliveryTerms(editing.delivery_terms ?? "");
       setPaymentTerms(editing.payment_terms ?? "");
       setNotes(editing.notes ?? "");
+      setLeadSource(editing.lead_source ?? null);
+      setLeadNote(editing.lead_note ?? "");
       setLines(editing.lines);
     } else {
       setPartnerInput("");
@@ -170,6 +180,8 @@ export function PurchaseQuoteDialog({
       setDeliveryTerms("");
       setPaymentTerms("");
       setNotes("");
+      setLeadSource(null);
+      setLeadNote("");
       setLines([]);
     }
   }, [open, book, editing]);
@@ -276,6 +288,10 @@ export function PurchaseQuoteDialog({
     if (deliveryTerms) fd.set("delivery_terms", deliveryTerms);
     if (paymentTerms) fd.set("payment_terms", paymentTerms);
     if (notes) fd.set("notes", notes);
+    if (leadSource) {
+      fd.set("lead_source", leadSource);
+      if (leadNote.trim()) fd.set("lead_note", leadNote.trim());
+    }
     fd.set("lines", serializePurchaseQuoteLines(allLines));
     startSaving(async () => {
       const r = editing ? await updatePurchaseQuote(editing.id, fd) : await createPurchaseQuote(fd);
@@ -323,6 +339,26 @@ export function PurchaseQuoteDialog({
                 </div>
               )}
             </Field>
+
+            {/* 유입경로 — label 로 감싸지 않는다(버튼 묶음 + 메모 입력이 한 칸). */}
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-muted-foreground">유입경로 — 어디 보고 연락했나 (선택)</span>
+              <div className="flex flex-wrap gap-1">
+                {LEAD_SOURCES.map((s) => (
+                  <button
+                    type="button"
+                    key={s.value}
+                    onClick={() => setLeadSource((cur) => (cur === s.value ? null : s.value))}
+                    className={toggleCls(leadSource === s.value)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              {leadSource && leadNotePlaceholder ? (
+                <Input value={leadNote} onChange={(e) => setLeadNote(e.target.value)} placeholder={leadNotePlaceholder} className="mt-1" />
+              ) : null}
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="판매자 (거래처, 선택)">

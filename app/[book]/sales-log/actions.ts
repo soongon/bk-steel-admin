@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { isLeadSource } from "@/lib/lead-source";
 
 export type SalesLogActionResult = { ok: true } | { ok: false; error: string };
 
@@ -15,6 +16,8 @@ type SalesLogInput = {
   follow_up_on: string | null;
   notes: string | null;
   business_card_id: string | null;
+  lead_source: string | null; // 유입경로(0079) — 인바운드일 때만, 콜드 아웃바운드는 null
+  lead_note: string | null;
 };
 
 function readInput(formData: FormData): SalesLogInput {
@@ -34,12 +37,15 @@ function readInput(formData: FormData): SalesLogInput {
     follow_up_on: str("follow_up_on"),
     notes: str("notes"),
     business_card_id: str("business_card_id"),
+    lead_source: isLeadSource(str("lead_source")) ? str("lead_source") : null,
+    lead_note: isLeadSource(str("lead_source")) ? str("lead_note") : null,
   };
 }
 
 function friendlyError(message: string): string {
   if (message.includes("row-level security")) return "권한이 없습니다.";
   if (message.includes("violates foreign key")) return "선택한 거래처가 유효하지 않습니다.";
+  if (message.includes("chk_sales_log_lead_source")) return "유입경로 값이 올바르지 않습니다.";
   return message;
 }
 

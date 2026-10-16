@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { LEAD_NOTE_PLACEHOLDER, LEAD_SOURCES, isLeadSource } from "@/lib/lead-source";
 import {
   createSalesLog,
   updateSalesLog,
@@ -32,6 +33,9 @@ export type SalesLogRow = {
   notes: string | null;
   /** 발주 레이더 행(construction_project) — 레이더 [기록] 또는 메모 "레이더 {id}" 연결분 */
   project_id?: string | null;
+  /** 유입경로(0079) — 인바운드 문의일 때. null = 미기록/아웃바운드 */
+  lead_source?: string | null;
+  lead_note?: string | null;
 };
 
 /**
@@ -175,6 +179,9 @@ export function SalesLogFormDialog({
             placeholder="홍길동 과장"
           />
 
+          {/* 유입경로(0079) — 상대가 먼저 연락한 건이면 어디 보고 왔는지. 우리가 건 콜드콜은 비워 둔다. */}
+          <LeadSourceFields defaultSource={editing?.lead_source ?? ""} defaultNote={editing?.lead_note ?? ""} />
+
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-muted-foreground">결과</span>
             <textarea
@@ -216,6 +223,40 @@ export function SalesLogFormDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * 유입경로 select + 메모 — 메모 placeholder 가 고른 경로를 따라가도록 이 칸만 상태를 든다.
+ * 폼의 key(editing id)로 같이 리마운트되므로 effect 로 초기화하지 않는다.
+ */
+function LeadSourceFields({ defaultSource, defaultNote }: { defaultSource: string; defaultNote: string }) {
+  const [leadSource, setLeadSource] = useState<string>(defaultSource);
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-muted-foreground">유입경로 (인바운드일 때)</span>
+        <select
+          name="lead_source"
+          value={leadSource}
+          onChange={(e) => setLeadSource(e.target.value)}
+          className="h-9 rounded-md border bg-background px-3 text-sm"
+        >
+          <option value="">— (아웃바운드 / 미기록)</option>
+          {LEAD_SOURCES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <Field
+        label="유입 메모"
+        name="lead_note"
+        defaultValue={defaultNote}
+        placeholder={isLeadSource(leadSource) ? (LEAD_NOTE_PLACEHOLDER[leadSource] ?? "") : "검색어·소개자 등"}
+      />
+    </div>
   );
 }
 

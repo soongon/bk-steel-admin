@@ -16,6 +16,8 @@ import {
   type PurchaseQuoteLineDraft,
 } from "@/lib/purchase-quote";
 import { type Attachment } from "@/lib/attachment";
+import { type LeadSource, isLeadSource } from "@/lib/lead-source";
+import { LeadSourceBadge } from "@/components/admin/lead-source-badge";
 import { PurchaseQuoteCardPanel } from "@/components/admin/purchase-quote-cards";
 import { type PurchaseQuoteDocumentData } from "@/components/admin/purchase-quote-document";
 import {
@@ -49,6 +51,8 @@ type PurchaseQuoteRow = {
   delivery_terms: string | null;
   payment_terms: string | null;
   notes: string | null;
+  lead_source: string | null;
+  lead_note: string | null;
   status: PurchaseQuoteStatus;
   sent_on: string | null;
   mms_sent_on: string | null;
@@ -116,6 +120,8 @@ export default async function PurchaseQuoteDetailPage({ params }: { params: Prom
     delivery_terms: q.delivery_terms ?? null,
     payment_terms: q.payment_terms ?? null,
     notes: q.notes ?? null,
+    lead_source: isLeadSource(q.lead_source) ? (q.lead_source as LeadSource) : null,
+    lead_note: q.lead_note ?? null,
     cards,
     lines: lines.map(
       (l): PurchaseQuoteLineDraft => ({
@@ -194,11 +200,18 @@ export default async function PurchaseQuoteDetailPage({ params }: { params: Prom
           </aside>
         ) : null}
         <div className="flex min-w-0 flex-col gap-6">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
             <Info label="견적일" value={q.quote_date} />
             <Info label="유효기간" value={q.valid_until ?? "—"} />
             <Info label="부가세" value={q.is_documented ? "별도 (자료)" : "무자료"} />
             <Info label="발송" value={q.mms_sent_on ? `문자 ${q.mms_sent_on}` : q.sent_on ? `발송 ${q.sent_on}` : "—"} />
+            <div>
+              <div className="text-xs text-muted-foreground">유입경로</div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-sm">
+                <LeadSourceBadge source={q.lead_source} note={q.lead_note} />
+                {q.lead_note ? <span className="text-xs text-muted-foreground">{q.lead_note}</span> : null}
+              </div>
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-lg border bg-card">

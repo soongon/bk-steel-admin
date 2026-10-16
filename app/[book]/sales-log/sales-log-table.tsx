@@ -23,6 +23,7 @@ import {
 } from "./sales-log-form-dialog";
 import { QuoteButton, type QuoteSources } from "@/components/admin/quote-dialog";
 import { extractRadarId } from "@/lib/radar/v2-rules";
+import { LeadSourceBadge } from "@/components/admin/lead-source-badge";
 import { deleteSalesLog } from "./actions";
 
 type Row = SalesLogRow & {
@@ -122,6 +123,7 @@ export function SalesLogTable({
               <TableHead>거래처 / 잠재명</TableHead>
               <TableHead className="w-28">담당자</TableHead>
               <TableHead className="w-20">채널</TableHead>
+              <TableHead className="w-28">유입</TableHead>
               <TableHead>결과</TableHead>
               <TableHead className="w-32">후속 조치</TableHead>
               <TableHead className="w-36 text-right">액션</TableHead>
@@ -130,7 +132,7 @@ export function SalesLogTable({
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
                   등록된 영업내역이 없습니다.{" "}
                   <button onClick={openCreate} className="underline">
                     신규 추가
@@ -167,6 +169,11 @@ export function SalesLogTable({
                   </TableCell>
                   <TableCell>{r.contact_person ?? "—"}</TableCell>
                   <TableCell>{r.channel ? CHANNEL_LABEL[r.channel] ?? r.channel : "—"}</TableCell>
+                  <TableCell>
+                    {/* 아웃바운드 기록이 대부분이라 미기록 배지는 띄우지 않는다(견적서 목록과 다름). */}
+                    <LeadSourceBadge source={r.lead_source} note={r.lead_note} showNone={false} />
+                    {r.lead_note ? <div className="mt-0.5 max-w-[9rem] truncate text-[10px] text-muted-foreground" title={r.lead_note}>{r.lead_note}</div> : null}
+                  </TableCell>
                   <TableCell className="text-sm text-muted-foreground line-clamp-2">
                     {r.result ?? "—"}
                   </TableCell>

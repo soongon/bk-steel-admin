@@ -6,6 +6,8 @@ import { STEEL_CUSTOM_ITEM_ID } from "@/lib/transaction-draft";
 import { BookBadge } from "@/components/admin/book-badge";
 import { fmtKrw } from "@/lib/format";
 import { PURCHASE_QUOTE_STATUS_LABEL, type PurchaseQuoteStatus } from "@/lib/purchase-quote";
+import { LEAD_FILTER_NONE, LEAD_SOURCES, type LeadSource, isLeadSource } from "@/lib/lead-source";
+import { LeadSourceBadge } from "@/components/admin/lead-source-badge";
 import {
   Table,
   TableBody,
@@ -21,24 +23,42 @@ import {
   type PurchaseQuoteItemOption,
 } from "@/components/admin/purchase-quote-dialog";
 
-export default async function PurchaseQuotesPage({ params }: { params: Promise<{ book: string }> }) {
+export default async function PurchaseQuotesPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ book: string }>;
+  searchParams: Promise<{ lead?: string }>;
+}) {
   const { book } = await params;
+  const { lead: leadParam } = await searchParams;
   const view = book as BookView;
   const supabase = await createClient();
+
+  // 유입경로 필터(0079) — ?lead=homepage… 또는 ?lead=none(미기록). 그 외 값은 무시.
+  const leadFilter: LeadSource | typeof LEAD_FILTER_NONE | null =
+    leadParam === LEAD_FILTER_NONE ? LEAD_FILTER_NONE : isLeadSource(leadParam) ? leadParam : null;
 
   let q = supabase
     .from("purchase_quote")
     .select(
-      "id, book, doc_no, quote_date, valid_until, status, prospect_name, site_name, partner:partner(name), lines:purchase_quote_line(display_name, price_per_kg_krw, sort_order)",
+      "id, book, doc_no, quote_date, valid_until, status, prospect_name, site_name, lead_source, lead_note, partner:partner(name), lines:purchase_quote_line(display_name, price_per_kg_krw, sort_order)",
     )
     .is("deleted_at", null)
     .order("quote_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(100);
   if (view !== "all") q = q.eq("book", view);
+  if (leadFilter === LEAD_FILTER_NONE) q = q.is("lead_source", null);
+  else if (leadFilter) q = q.eq("lead_source", leadFilter);
 
-  const [quotesRes, partnersRes, itemsRes, companyRes] = await Promise.all([
+  // 유입경로별 건수(책 범위 전체, 필터 무관) — 칩에 표시. 견적 테이블은 작아 전부 읽어 세어도 된다.
+  let countQ = supabase.from("purchase_quote").select("lead_source").is("deleted_at", null);
+  if (view !== "all") countQ = countQ.eq("book", view);
+
+  const [quotesRes, countRes, partnersRes, itemsRes, companyRes] = await Promise.all([
     q,
+    countQ,
     supabase
       .from("partner")
       .select("id, name, representative, address, phone")
@@ -59,10 +79,27 @@ export default async function PurchaseQuotesPage({ params }: { params: Promise<{
     status: PurchaseQuoteStatus;
     prospect_name: string | null;
     site_name: string | null;
+    lead_source: string | null;
+    lead_note: string | null;
     partner: { name: string } | null;
     lines: Array<{ display_name: string; price_per_kg_krw: number; sort_order: number }>;
   };
   const quotes = (quotesRes.data ?? []) as unknown as Row[];
+
+  const leadCounts: Record<string, number> = {};
+  let leadTotal = 0;
+  for (const r of (countRes.data ?? []) as Array<{ lead_source: string | null }>) {
+    const k = r.lead_source ?? LEAD_FILTER_NONE;
+    leadCounts[k] = (leadCounts[k] ?? 0) + 1;
+    leadTotal += 1;
+  }
+  const leadChips: Array<{ key: string | null; label: string; count: number }> = [
+    { key: null, label: "전체", count: leadTotal },
+    ...LEAD_SOURCES.map((s) => ({ key: s.value as string, label: s.label, count: leadCounts[s.value] ?? 0 })),
+    { key: LEAD_FILTER_NONE, label: "미기록", count: leadCounts[LEAD_FILTER_NONE] ?? 0 },
+  ];
+  const chipCls = (on: boolean) =>
+    `inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs ${on ? "bg-foreground text-background" : "bg-background hover:bg-muted"}`;
 
   const companies: Partial<Record<Book, CompanyProfile>> = {};
   (view !== "all" ? [view as Book] : [...BOOKS]).forEach((b, i) => {
@@ -91,6 +128,20 @@ export default async function PurchaseQuotesPage({ params }: { params: Promise<{
         </div>
       </header>
 
+      {/* 유입경로 칩 — 어디서 문의가 오는지 한눈에. 미기록이 많으면 통화 때 묻는 습관부터. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-xs text-muted-foreground">유입경로</span>
+        {leadChips.map((c) => {
+          const on = c.key === leadFilter;
+          return (
+            <Link key={c.key ?? "all"} href={c.key ? `/${view}/purchase-quotes?lead=${c.key}` : `/${view}/purchase-quotes`} className={chipCls(on)}>
+              {c.label}
+              <span className={`tabular-nums ${on ? "opacity-80" : "text-muted-foreground"}`}>{c.count}</span>
+            </Link>
+          );
+        })}
+      </div>
+
       <div className="overflow-x-auto rounded-lg border bg-card">
         <Table>
           <TableHeader>
@@ -99,6 +150,7 @@ export default async function PurchaseQuotesPage({ params }: { params: Promise<{
               <TableHead className="w-24">책</TableHead>
               <TableHead className="w-32">견적일</TableHead>
               <TableHead>판매자 / 현장</TableHead>
+              <TableHead className="w-28">유입</TableHead>
               <TableHead>품목 · 단가(원/kg)</TableHead>
               <TableHead className="w-20 text-center">상태</TableHead>
             </TableRow>
@@ -106,8 +158,8 @@ export default async function PurchaseQuotesPage({ params }: { params: Promise<{
           <TableBody>
             {quotes.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
-                  등록된 매입견적서가 없습니다.
+                <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+                  {leadFilter ? "이 유입경로의 매입견적서가 없습니다." : "등록된 매입견적서가 없습니다."}
                 </TableCell>
               </TableRow>
             ) : (
@@ -131,6 +183,10 @@ export default async function PurchaseQuotesPage({ params }: { params: Promise<{
                     <TableCell>
                       <div className="font-medium">{s.partner?.name ?? s.prospect_name ?? "—"}</div>
                       {s.site_name ? <div className="text-xs text-muted-foreground">{s.site_name}</div> : null}
+                    </TableCell>
+                    <TableCell>
+                      <LeadSourceBadge source={s.lead_source} note={s.lead_note} />
+                      {s.lead_note ? <div className="mt-0.5 max-w-[10rem] truncate text-[10px] text-muted-foreground" title={s.lead_note}>{s.lead_note}</div> : null}
                     </TableCell>
                     <TableCell className="text-xs">
                       {lines.slice(0, 2).map((l, i) => (

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { type Book, isValidBook } from "@/lib/book";
+import { isLeadSource } from "@/lib/lead-source";
 
 export type PurchaseQuoteActionResult = { ok: true; id?: string } | { ok: false; error: string };
 
@@ -11,6 +12,7 @@ function friendly(message: string): string {
   if (message.includes("chk_pq_bk_documented")) return "법인 매입견적은 자료거래(부가세 별도)만 가능합니다.";
   if (message.includes("chk_pq_b_undocumented")) return "B계좌 매입견적은 무자료만 가능합니다.";
   if (message.includes("chk_pq_line_price_positive")) return "단가(원/kg)는 0보다 커야 합니다.";
+  if (message.includes("chk_pq_lead_source")) return "유입경로 값이 올바르지 않습니다.";
   if (message.includes("row-level security")) return "권한이 없습니다.";
   return message;
 }
@@ -64,6 +66,11 @@ function readInput(formData: FormData) {
   if (book === "bk") is_documented = true;
   if (book === "b") is_documented = false;
 
+  // 유입경로(0079) — 목록 밖 값은 버린다(미기록). 메모는 경로가 있을 때만.
+  const leadRaw = str("lead_source");
+  const lead_source = isLeadSource(leadRaw) ? leadRaw : null;
+  const lead_note = lead_source ? str("lead_note") || null : null;
+
   return {
     book,
     doc_no: str("doc_no") || undefined,
@@ -78,6 +85,8 @@ function readInput(formData: FormData) {
     delivery_terms: str("delivery_terms") || null,
     payment_terms: str("payment_terms") || null,
     notes: str("notes") || null,
+    lead_source,
+    lead_note,
     lines,
   };
 }
@@ -102,6 +111,8 @@ export async function createPurchaseQuote(formData: FormData): Promise<PurchaseQ
       delivery_terms: parsed.delivery_terms,
       payment_terms: parsed.payment_terms,
       notes: parsed.notes,
+      lead_source: parsed.lead_source,
+      lead_note: parsed.lead_note,
       status: "draft",
     },
     p_lines: parsed.lines,
@@ -132,6 +143,8 @@ export async function updatePurchaseQuote(id: string, formData: FormData): Promi
       delivery_terms: parsed.delivery_terms,
       payment_terms: parsed.payment_terms,
       notes: parsed.notes,
+      lead_source: parsed.lead_source,
+      lead_note: parsed.lead_note,
     },
     p_lines: parsed.lines,
   });
