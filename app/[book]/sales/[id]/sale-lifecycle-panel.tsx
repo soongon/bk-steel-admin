@@ -20,6 +20,7 @@ import { type StatementData } from "@/components/admin/trading-statement";
 import { type DeliveryCertificate } from "@/lib/delivery-certificate";
 import { type DeliveryCertData } from "@/components/admin/delivery-cert-form";
 import { StatementButton } from "./statement-button";
+import { type MailStatus } from "@/lib/mail/address";
 import { DeliveryCertButton } from "./delivery-cert-button";
 import { TaxInvoiceButton, type SaleTaxInvoice, type BuyerPartner } from "./tax-invoice-button";
 import { SettleDialog, type BankAccount } from "../settle-dialog";
@@ -58,6 +59,7 @@ export function SaleLifecyclePanel({
   certFormData,
   taxInvoice,
   partners = [],
+  mailStatus,
 }: {
   sale: LifecycleSale;
   bankAccounts: BankAccount[];
@@ -67,6 +69,7 @@ export function SaleLifecyclePanel({
   certFormData: DeliveryCertData | null;
   taxInvoice: SaleTaxInvoice | null;
   partners?: BuyerPartner[];
+  mailStatus?: MailStatus; // 명세표 메일 버튼 상태(서버 계산) — 없으면 메일 버튼 숨김
 }) {
   const [pending, startTransition] = useTransition();
   const [delivering, startDeliver] = useTransition();
@@ -180,7 +183,12 @@ export function SaleLifecyclePanel({
 
                 {s.key === "statement" ? (
                   <>
-                    <StatementButton data={statementData} company={company} sms={{ saleId: sale.id }} />
+                    <StatementButton
+                      data={statementData}
+                      company={company}
+                      sms={{ saleId: sale.id }}
+                      mail={mailStatus ? { saleId: sale.id, status: mailStatus } : undefined}
+                    />
                     <Button size="xs" variant={s.done ? "secondary" : "outline"} onClick={toggleStatement} disabled={pending}>
                       {s.done ? "송부 해제" : "송부 완료"}
                     </Button>

@@ -16,6 +16,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { QuoteDetailActions } from "./quote-detail-actions";
+import { mailStatusFor } from "@/lib/mail/document";
+import { type Book } from "@/lib/book";
 import { QuoteConvertButton } from "./quote-convert-button";
 import { QuoteEditButton } from "./quote-edit-button";
 import {
@@ -155,6 +157,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
       phone: q.partner?.phone ?? null,
       fax: q.partner?.fax ?? null,
       industry: q.partner?.industry ?? null,
+      email: q.partner?.email ?? null,
+      email2: q.partner?.email2 ?? null,
     },
     site_name: q.site_name,
     is_documented: q.is_documented,
@@ -208,6 +212,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
             status={q.status}
             statementData={statementData}
             company={company}
+            mailStatus={mailStatusFor(q.book as Book, company)}
           />
         </div>
       </header>

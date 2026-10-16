@@ -11,6 +11,7 @@ import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
+import { mailStatusFor } from "@/lib/mail/document";
 import { type BuyerPartner } from "./tax-invoice-button";
 import { type SaleTaxInvoice } from "./tax-invoice-button";
 import { SaleLineNameButton, type NameLine } from "./sale-line-name-button";
@@ -371,6 +372,7 @@ export default async function SaleDetailPage({
         certFormData={certFormData}
         taxInvoice={taxInvoice}
         partners={(editPartnersRes.data ?? []) as BuyerPartner[]}
+        mailStatus={mailStatusFor(book, company)}
       />
 
       {/* 정보 카드 그리드 */}

@@ -11,6 +11,8 @@ import {
   type StatementLine,
 } from "@/components/admin/trading-statement";
 import { SiteStatementView } from "./statement-view";
+import { mailStatusFor } from "@/lib/mail/document";
+import { defaultMailTo } from "@/lib/mail/address";
 import { fetchCompanyProfile } from "@/lib/company-profile";
 import { rebarSpecLabel } from "@/lib/rebar";
 import { fmtKrw } from "@/lib/format";
@@ -25,6 +27,8 @@ type RawPartner = {
   phone: string | null;
   fax: string | null;
   industry: string | null;
+  email: string | null;
+  email2: string | null;
 };
 type RawLine = {
   qty: number | string;
@@ -62,7 +66,7 @@ const SALE_SELECT = `
   id, book, doc_no, ordered_on, delivered_on, status,
   subtotal_krw, vat_krw, total_krw, vat_rate, is_documented,
   tax_doc_no, notes,
-  partner:partner(id, code, name, business_no, representative, address, phone, fax, industry),
+  partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email, email2),
   sale_line(
     id, qty, unit, unit_price_krw, weight_kg, theoretical_weight_kg, line_subtotal_krw,
     display_name, spec_text,
@@ -278,6 +282,14 @@ export default async function SiteStatementPage({
         siteId={site.id}
         book={supplierBook}
         defaultPhone={uniqPartners.length === 1 || groupMode ? (mainPartner?.phone ?? null) : null}
+        mail={{
+          // 책이 섞인 전체 누적(badgeBook=null)은 메일 불가 — 공급자를 하나로 정할 수 없다.
+          status: mailStatusFor(badgeBook, company),
+          defaultTo: uniqPartners.length === 1 || groupMode ? defaultMailTo(mainPartner?.email, mainPartner?.email2) : "",
+          viewBook: bookParam,
+          groupBook: groupMode ? groupBook! : null,
+          partnerId: groupMode ? partnerId! : null,
+        }}
       />
     </div>
   );

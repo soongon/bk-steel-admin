@@ -2,6 +2,8 @@
 // MMS 이미지 상한(솔라피 200KB)을 넘지 않도록 폭·품질을 단계적으로 낮춰 재인코딩한다.
 // html2canvas-pro: Tailwind4 oklch 색상 파싱(원조 html2canvas 는 실패). 동적 import(브라우저 전용).
 
+import { MAIL_IMAGE_MAX_BYTES } from "@/lib/mail/address";
+
 /** data URL(base64) 의 실제 바이트 크기 추정. */
 function dataUrlBytes(dataUrl: string): number {
   const b64 = dataUrl.split(",")[1] ?? "";
@@ -26,6 +28,7 @@ function encode(canvas: HTMLCanvasElement, width: number, quality: number): stri
 export async function captureNodeToJpeg(
   node: HTMLElement,
   maxBytes = 195_000,
+  ladder: { widths: number[]; qualities: number[] } = { widths: [1400, 1200, 1000, 900], qualities: [0.85, 0.75, 0.65, 0.55, 0.5] },
 ): Promise<string> {
   const html2canvas = (await import("html2canvas-pro")).default;
   const canvas = await html2canvas(node, {
@@ -33,10 +36,14 @@ export async function captureNodeToJpeg(
     backgroundColor: "#ffffff",
     useCORS: true,
     imageTimeout: 15000,
+    // 다크모드는 html 의 .dark 클래스 기반 — 클론에서 빼서 보는 사람 테마와 상관없이 밝은 문서로 찍는다.
+    onclone: (doc) => {
+      doc.documentElement.classList.remove("dark");
+      doc.documentElement.style.colorScheme = "light";
+    },
   });
 
-  const widths = [1400, 1200, 1000, 900];
-  const qualities = [0.85, 0.75, 0.65, 0.55, 0.5];
+  const { widths, qualities } = ladder;
   let smallest = encode(canvas, Math.min(canvas.width, widths[0]), qualities[0]);
   let smallestBytes = dataUrlBytes(smallest);
 
@@ -52,4 +59,10 @@ export async function captureNodeToJpeg(
     }
   }
   return smallest; // 상한 이하로 못 줄인 경우(초장문) — 최소 크기 결과
+}
+
+
+/** 메일용 캡처 — 문자(195KB)보다 크게: 캔버스 폭 그대로(1600px)·품질 0.9 부터. 인쇄해도 읽히게. */
+export function captureNodeForMail(node: HTMLElement): Promise<string> {
+  return captureNodeToJpeg(node, MAIL_IMAGE_MAX_BYTES, { widths: [1600, 1400, 1200], qualities: [0.9, 0.82, 0.72, 0.6] });
 }

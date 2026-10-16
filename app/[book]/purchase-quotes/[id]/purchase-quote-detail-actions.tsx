@@ -18,27 +18,35 @@ import { type CompanyProfile } from "@/lib/company-profile";
 import { type Book } from "@/lib/book";
 import { type PurchaseQuoteStatus } from "@/lib/purchase-quote";
 import { digitsOnly } from "@/lib/format";
-import { captureNodeToJpeg } from "@/lib/capture-node";
+import { captureNodeForMail, captureNodeToJpeg } from "@/lib/capture-node";
+import { type MailStatus } from "@/lib/mail/address";
+import { MailButton, MailSendPanel } from "@/components/admin/mail-send-panel";
 import { markPurchaseQuoteSent, markPurchaseQuoteDone, deletePurchaseQuote } from "../actions";
 import { sendPurchaseQuoteMms } from "../sms-actions";
+import { sendPurchaseQuoteMail } from "../mail-actions";
 
-/** 매입견적 상세 액션 — 보기(인쇄)·문자(MMS)·발송 표시·매입 완료·삭제. (QuoteDetailActions 미러) */
+/** 매입견적 상세 액션 — 보기(인쇄)·문자(MMS)·메일(PDF)·발송 표시·매입 완료·삭제. (QuoteDetailActions 미러) */
 export function PurchaseQuoteDetailActions({
   quoteId,
   book,
   status,
   docData,
   company,
+  mailStatus,
+  defaultMailTo,
 }: {
   quoteId: string;
   book: Book;
   status: PurchaseQuoteStatus;
   docData: PurchaseQuoteDocumentData;
   company: CompanyProfile | null;
+  mailStatus: MailStatus;
+  defaultMailTo: string; // 판매자 거래처 이메일 1·2(문서 데이터에는 없음)
 }) {
   const router = useRouter();
   const [showDoc, setShowDoc] = useState(false);
   const [smsOpen, setSmsOpen] = useState(false);
+  const [mailOpen, setMailOpen] = useState(false);
   const [phone, setPhone] = useState("");
   const [pending, start] = useTransition();
   const captureRef = useRef<HTMLDivElement>(null);
@@ -48,12 +56,58 @@ export function PurchaseQuoteDetailActions({
 
   function openSms() {
     setPhone(defaultPhone);
+    setMailOpen(false);
     setSmsOpen(true);
   }
   /** 헤더의 '문자 전송' — 문서 모달을 열면서 수신번호 입력까지 바로 펼친다. */
   function openDocWithSms() {
     setShowDoc(true);
     openSms();
+  }
+  function openMail() {
+    setSmsOpen(false);
+    setMailOpen(true);
+  }
+  /** 모달 닫기 — [닫기]·바깥 클릭·ESC 모두 이 길로(펼친 문자·메일 칸이 다음에 열 때 남지 않게). */
+  function closeDoc() {
+    setShowDoc(false);
+    setSmsOpen(false);
+    setMailOpen(false);
+  }
+  /** 헤더의 '메일 전송' — 문서 모달을 열면서 받는 주소 입력까지 바로 펼친다. */
+  function openDocWithMail() {
+    setShowDoc(true);
+    openMail();
+  }
+
+  function handleSendMail(to: string, note: string) {
+    if (!captureRef.current) return;
+    const node = captureRef.current;
+    start(async () => {
+      let dataUrl: string;
+      try {
+        dataUrl = await captureNodeForMail(node); // PDF 용 고화질
+      } catch {
+        toast.error("매입견적서 이미지 생성 실패");
+        return;
+      }
+      let r: Awaited<ReturnType<typeof sendPurchaseQuoteMail>>;
+      try {
+        r = await sendPurchaseQuoteMail(quoteId, dataUrl, to, note);
+      } catch {
+        toast.error("메일 전송 실패 — 잠시 후 다시 시도하세요.");
+        return;
+      }
+      if (r.ok) {
+        if (r.warning) toast.warning(r.warning);
+        else toast.success("매입견적서 메일 전송됨");
+        setMailOpen(false);
+        setShowDoc(false);
+        router.refresh();
+      } else {
+        toast.error(r.error);
+      }
+    });
   }
 
   function handleSendSms() {
@@ -103,6 +157,7 @@ export function PurchaseQuoteDetailActions({
       <Button size="sm" onClick={openDocWithSms}>
         <SendIcon className="size-4" /> 문자 전송
       </Button>
+      <MailButton status={mailStatus} size="sm" variant="outline" onClick={openDocWithMail} />
       {status === "draft" ? (
         <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => markPurchaseQuoteSent(quoteId, book), "발송 표시됨")}>
           <SendIcon className="size-4" /> 발송 표시
@@ -139,10 +194,7 @@ export function PurchaseQuoteDetailActions({
         <Dialog
           open
           onOpenChange={(o) => {
-            if (!o) {
-              setShowDoc(false);
-              setSmsOpen(false);
-            }
+            if (!o) closeDoc();
           }}
         >
           <DialogContent className="!max-w-[920px] max-h-[90vh] overflow-y-auto">
@@ -176,18 +228,28 @@ export function PurchaseQuoteDetailActions({
               </div>
             ) : null}
 
+            {mailOpen ? (
+              <MailSendPanel
+                defaultTo={defaultMailTo}
+                pending={pending}
+                onSend={handleSendMail}
+                onCancel={() => setMailOpen(false)}
+              />
+            ) : null}
+
             <DialogFooter className="print:hidden">
-              <Button variant="outline" onClick={() => setShowDoc(false)}>
+              <Button variant="outline" onClick={closeDoc}>
                 닫기
               </Button>
               <Button variant="secondary" onClick={() => window.print()}>
                 <PrinterIcon className="size-4" /> 프린트
               </Button>
-              {!smsOpen ? (
+              {!smsOpen && !mailOpen ? (
                 <Button variant="secondary" onClick={openSms}>
                   <SendIcon className="size-4" /> 문자 전송
                 </Button>
               ) : null}
+              {!smsOpen && !mailOpen ? <MailButton status={mailStatus} onClick={openMail} /> : null}
             </DialogFooter>
           </DialogContent>
         </Dialog>

@@ -19,10 +19,13 @@ import { type Book } from "@/lib/book";
 import { digitsOnly } from "@/lib/format";
 import { markQuoteSent, deleteQuote } from "../actions";
 import { sendQuoteMms } from "../sms-actions";
-import { captureNodeToJpeg } from "@/lib/capture-node";
+import { sendQuoteMail } from "../mail-actions";
+import { captureNodeForMail, captureNodeToJpeg } from "@/lib/capture-node";
+import { defaultMailTo, type MailStatus } from "@/lib/mail/address";
+import { MailButton, MailSendPanel } from "@/components/admin/mail-send-panel";
 
 /**
- * 견적 상세의 액션 묶음 — 견적서 보기(출력)·문자(MMS) 전송·발송 표시·삭제.
+ * 견적 상세의 액션 묶음 — 견적서 보기(출력)·문자(MMS)·메일(PDF) 전송·발송 표시·삭제.
  * 견적서 보기 모달의 QuoteDocument DOM 을 html2canvas-pro 로 캡처해 거래처에 MMS 전송(StatementButton 패턴).
  */
 export function QuoteDetailActions({
@@ -31,16 +34,19 @@ export function QuoteDetailActions({
   status,
   statementData,
   company,
+  mailStatus,
 }: {
   quoteId: string;
   book: Book;
   status: string;
   statementData: QuoteDocumentData;
   company: CompanyProfile | null;
+  mailStatus: MailStatus;
 }) {
   const router = useRouter();
   const [showDoc, setShowDoc] = useState(false);
   const [smsOpen, setSmsOpen] = useState(false);
+  const [mailOpen, setMailOpen] = useState(false);
   const [phone, setPhone] = useState("");
   const [pending, start] = useTransition();
   const captureRef = useRef<HTMLDivElement>(null);
@@ -50,7 +56,45 @@ export function QuoteDetailActions({
 
   function openSms() {
     setPhone(defaultPhone);
+    setMailOpen(false);
     setSmsOpen(true);
+  }
+
+  /** 모달 닫기 — [닫기]·바깥 클릭·ESC 모두 이 길로(펼친 문자·메일 칸이 다음에 열 때 남지 않게). */
+  function closeDoc() {
+    setShowDoc(false);
+    setSmsOpen(false);
+    setMailOpen(false);
+  }
+
+  function handleSendMail(to: string, note: string) {
+    if (!captureRef.current) return;
+    const node = captureRef.current;
+    start(async () => {
+      let dataUrl: string;
+      try {
+        dataUrl = await captureNodeForMail(node); // PDF 용 고화질
+      } catch {
+        toast.error("견적서 이미지 생성 실패");
+        return;
+      }
+      let r: Awaited<ReturnType<typeof sendQuoteMail>>;
+      try {
+        r = await sendQuoteMail(quoteId, dataUrl, to, note);
+      } catch {
+        toast.error("메일 전송 실패 — 잠시 후 다시 시도하세요.");
+        return;
+      }
+      if (r.ok) {
+        if (r.warning) toast.warning(r.warning);
+        else toast.success("견적서 메일 전송됨");
+        setMailOpen(false);
+        setShowDoc(false);
+        router.refresh();
+      } else {
+        toast.error(r.error);
+      }
+    });
   }
 
   function handleSendSms() {
@@ -130,10 +174,7 @@ export function QuoteDetailActions({
         <Dialog
           open
           onOpenChange={(o) => {
-            if (!o) {
-              setShowDoc(false);
-              setSmsOpen(false);
-            }
+            if (!o) closeDoc();
           }}
         >
           <DialogContent className="!max-w-[920px] max-h-[90vh] overflow-y-auto">
@@ -175,17 +216,35 @@ export function QuoteDetailActions({
               </div>
             ) : null}
 
+            {mailOpen ? (
+              <MailSendPanel
+                defaultTo={defaultMailTo(statementData.partner.email, statementData.partner.email2)}
+                pending={pending}
+                onSend={handleSendMail}
+                onCancel={() => setMailOpen(false)}
+              />
+            ) : null}
+
             <DialogFooter className="print:hidden">
-              <Button variant="outline" onClick={() => setShowDoc(false)}>
+              <Button variant="outline" onClick={closeDoc}>
                 닫기
               </Button>
               <Button variant="secondary" onClick={() => window.print()}>
                 <PrinterIcon className="size-4" /> 프린트
               </Button>
-              {!smsOpen ? (
+              {!smsOpen && !mailOpen ? (
                 <Button variant="secondary" onClick={openSms}>
                   <SendIcon className="size-4" /> 문자 전송
                 </Button>
+              ) : null}
+              {!smsOpen && !mailOpen ? (
+                <MailButton
+                  status={mailStatus}
+                  onClick={() => {
+                    setSmsOpen(false);
+                    setMailOpen(true);
+                  }}
+                />
               ) : null}
             </DialogFooter>
           </DialogContent>

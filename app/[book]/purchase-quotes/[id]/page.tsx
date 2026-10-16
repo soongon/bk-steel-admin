@@ -35,6 +35,8 @@ import {
   type PurchaseQuoteItemOption,
 } from "@/components/admin/purchase-quote-dialog";
 import { PurchaseQuoteDetailActions } from "./purchase-quote-detail-actions";
+import { mailStatusFor } from "@/lib/mail/document";
+import { defaultMailTo } from "@/lib/mail/address";
 import { PurchaseQuoteEditButton } from "./purchase-quote-edit-button";
 
 type PurchaseQuoteRow = {
@@ -56,7 +58,14 @@ type PurchaseQuoteRow = {
   status: PurchaseQuoteStatus;
   sent_on: string | null;
   mms_sent_on: string | null;
-  partner: { name: string; representative: string | null; phone: string | null; address: string | null } | null;
+  partner: {
+    name: string;
+    representative: string | null;
+    phone: string | null;
+    address: string | null;
+    email: string | null;
+    email2: string | null;
+  } | null;
   lines: Array<{
     item_id: string | null;
     display_name: string;
@@ -183,7 +192,15 @@ export default async function PurchaseQuoteDetailPage({ params }: { params: Prom
         <div className="flex flex-wrap items-center gap-2">
           <BookBadge book={book} size="md" />
           {status !== "done" ? <PurchaseQuoteEditButton book={book} sources={editSources} editing={editing} /> : null}
-          <PurchaseQuoteDetailActions quoteId={q.id} book={book} status={status} docData={docData} company={company} />
+          <PurchaseQuoteDetailActions
+            quoteId={q.id}
+            book={book}
+            status={status}
+            docData={docData}
+            company={company}
+            mailStatus={mailStatusFor(book, company)}
+            defaultMailTo={defaultMailTo(q.partner?.email, q.partner?.email2)}
+          />
         </div>
       </header>
 
