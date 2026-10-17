@@ -1,12 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ArrowLeftRightIcon,
   Building2Icon,
   CalendarClockIcon,
-  ClipboardListIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   ContactIcon,
   FactoryIcon,
   FileDownIcon,
@@ -15,7 +17,6 @@ import {
   LayoutDashboardIcon,
   MapPinIcon,
   MessageSquareIcon,
-  LightbulbIcon,
   PackageIcon,
   PhoneCallIcon,
   RadarIcon,
@@ -52,6 +53,8 @@ type MenuItem = {
   icon: React.ComponentType<{ className?: string }>;
   /** true면 book prefix를 붙이지 않고 절대 경로로 링크(예: /radar — book 밖 독립 라우트). */
   absolute?: boolean;
+  /** true면 평소엔 접어 두고 그룹 끝 [더보기]로 펼친다. 지금 보고 있는 화면이면 접혀 있어도 보인다. */
+  more?: boolean;
 };
 
 type MenuGroup = {
@@ -71,13 +74,13 @@ function buildMenuGroups(): MenuGroup[] {
         { label: "대시보드", href: "/dashboard", icon: LayoutDashboardIcon },
         { label: "매출", href: "/sales", icon: ShoppingCartIcon },
         { label: "매입", href: "/purchases", icon: ShoppingBagIcon },
-        { label: "세금계산서", href: "/tax-invoices", icon: ReceiptTextIcon },
-        { label: "재고", href: "/inventory", icon: PackageIcon },
-        { label: "통장", href: "/bank", icon: WalletIcon },
-        { label: "미수금", href: "/receivables", icon: CalendarClockIcon },
-        { label: "외상매입금", href: "/payables", icon: LandmarkIcon },
-        { label: "영수증·비용", href: "/receipts", icon: ReceiptIcon },
-        { label: "책 간 이관", href: "/transfers", icon: ArrowLeftRightIcon },
+        { label: "세금계산서", href: "/tax-invoices", icon: ReceiptTextIcon, more: true },
+        { label: "재고", href: "/inventory", icon: PackageIcon, more: true },
+        { label: "통장", href: "/bank", icon: WalletIcon, more: true },
+        { label: "미수금", href: "/receivables", icon: CalendarClockIcon, more: true },
+        { label: "외상매입금", href: "/payables", icon: LandmarkIcon, more: true },
+        { label: "영수증·비용", href: "/receipts", icon: ReceiptIcon, more: true },
+        { label: "책 간 이관", href: "/transfers", icon: ArrowLeftRightIcon, more: true },
       ],
     },
     {
@@ -87,8 +90,7 @@ function buildMenuGroups(): MenuGroup[] {
         { label: "매입견적서", href: "/purchase-quotes", icon: ScaleIcon },
         { label: "영업내역", href: "/sales-log", icon: PhoneCallIcon },
         { label: "명함", href: "/business-cards", icon: ContactIcon },
-        { label: "정기업무", href: "/recurring-tasks", icon: ClipboardListIcon },
-        { label: "개선 아이디어", href: "/improvement-ideas", icon: LightbulbIcon },
+        // 정기업무(/recurring-tasks)·개선 아이디어(/improvement-ideas)는 메뉴에서만 뺐다 — 페이지는 그대로.
       ],
     },
     {
@@ -127,6 +129,8 @@ function buildMenuGroups(): MenuGroup[] {
 export function AdminSidebar({ book }: { book: BookView }) {
   const pathname = usePathname();
   const groups = buildMenuGroups();
+  // [더보기]로 펼친 그룹 — 처음엔 접힌 상태(more 항목은 기본으로 안 보임).
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   return (
     <Sidebar collapsible="icon">
@@ -138,32 +142,50 @@ export function AdminSidebar({ book }: { book: BookView }) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {groups.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {group.items.map((item) => {
-                  const fullHref = item.absolute ? item.href : `/${book}${item.href}`;
-                  const isActive = pathname === fullHref || pathname.startsWith(fullHref + "/");
-                  const Icon = item.icon;
-                  return (
-                    <SidebarMenuItem key={item.href}>
+        {groups.map((group) => {
+          const open = !!expanded[group.label];
+          return (
+            <SidebarGroup key={group.label}>
+              {/* 아이콘 모드에선 투명해진 그룹 이름이 위 그룹 마지막 항목의 아래쪽을 덮는다 — 클릭이 지나가게 */}
+              <SidebarGroupLabel className="group-data-[collapsible=icon]:pointer-events-none">{group.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {group.items.map((item) => {
+                    const fullHref = item.absolute ? item.href : `/${book}${item.href}`;
+                    const isActive = pathname === fullHref || pathname.startsWith(fullHref + "/");
+                    if (item.more && !open && !isActive) return null;
+                    const Icon = item.icon;
+                    return (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton
+                          render={<Link href={fullHref} />}
+                          isActive={isActive}
+                          tooltip={item.label}
+                        >
+                          <Icon className="size-4" />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                  {group.items.some((item) => item.more) ? (
+                    <SidebarMenuItem>
                       <SidebarMenuButton
-                        render={<Link href={fullHref} />}
-                        isActive={isActive}
-                        tooltip={item.label}
+                        onClick={() => setExpanded((e) => ({ ...e, [group.label]: !e[group.label] }))}
+                        aria-expanded={open}
+                        tooltip={open ? "접기" : "더보기"}
+                        className="text-muted-foreground"
                       >
-                        <Icon className="size-4" />
-                        <span>{item.label}</span>
+                        {open ? <ChevronUpIcon className="size-4" /> : <ChevronDownIcon className="size-4" />}
+                        <span>{open ? "접기" : "더보기"}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
+                  ) : null}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          );
+        })}
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
