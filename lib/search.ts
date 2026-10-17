@@ -75,10 +75,14 @@ export type ListQuery = { whole: QueryKeys; words: QueryKeys[]; empty: boolean }
 
 const queryKeys = (s: string): QueryKeys => ({ name: nameKeys(s), phone: phoneQueryDigits(s) });
 
-/** 목록 검색어 만들기 — 단어에서는 회사 표기만인 것((주)·주식회사)과 기호뿐인 것을 뺀다('주식회사 OO'는 전체 키가 맡는다). */
+/**
+ * 목록 검색어 만들기 — 단어에서는 회사 표기만인 것((주)·주식회사)과 기호뿐인 것을 뺀다('주식회사 OO'는 전체 이름 키가 맡는다).
+ * 전체 전화 숫자도 뺀 단어로 만든다 — '(주) 4100'도 뒷자리 4100 으로 찾게.
+ */
 export function listQuery(query: string): ListQuery {
-  const whole = queryKeys(query);
-  const words = query.split(/\s+/).filter((w) => nameKeys(w)[1] !== "").map(queryKeys);
+  const kept = query.split(/\s+/).filter((w) => nameKeys(w)[1] !== "");
+  const whole: QueryKeys = { name: nameKeys(query), phone: phoneQueryDigits(kept.join(" ")) };
+  const words = kept.map(queryKeys);
   return { whole, words: words.length > 1 ? words : [], empty: whole.name[0] === "" && whole.phone === "" };
 }
 
