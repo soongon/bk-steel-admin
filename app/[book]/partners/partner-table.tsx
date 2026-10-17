@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { formatPhone } from "@/lib/format";
-import { nameKeys, nameMatches, phoneMatches, phoneQueryDigits } from "@/lib/search";
+import { listMatches, listQuery, nameKeys, nameMatches, phoneMatches } from "@/lib/search";
 import { ListSearch, useListSearch } from "@/components/admin/list-search";
 import {
   Table,
@@ -33,15 +33,14 @@ export function PartnerTable({
   const [, startTransition] = useTransition();
 
   // 즉시 검색 — 검색칸 하나로 거래처명(보이는 그대로·회사 표기 무시 둘 다, 한글 조합 중에도 좁혀짐)
-  // 또는 전화번호(숫자로만 친 검색어, 번호 묶음 시작부터) 일치.
+  // 또는 전화번호(숫자로만 친 검색어, 번호 묶음 시작부터) 일치. 띄어 쓴 단어는 이름·전화 어디서든 모두 맞으면(이름 + 뒷자리 등).
   const search = useListSearch();
   const indexed = useMemo(() => partners.map((p) => ({ p, keys: nameKeys(p.name) })), [partners]);
   const { visible, searching } = useMemo(() => {
-    const nameQuery = nameKeys(search.query);
-    const phoneQuery = phoneQueryDigits(search.query);
-    if (nameQuery[0] === "" && phoneQuery === "") return { visible: partners, searching: false };
+    const q = listQuery(search.query);
+    if (q.empty) return { visible: partners, searching: false };
     return {
-      visible: indexed.filter(({ p, keys }) => nameMatches(keys, nameQuery) || phoneMatches(p.phone, phoneQuery)).map(({ p }) => p),
+      visible: indexed.filter(({ p, keys }) => listMatches(q, (k) => nameMatches(keys, k.name) || phoneMatches(p.phone, k.phone))).map(({ p }) => p),
       searching: true,
     };
   }, [indexed, partners, search.query]);

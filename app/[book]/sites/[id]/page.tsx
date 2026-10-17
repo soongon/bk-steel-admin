@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { type Book, type BookView } from "@/lib/book";
 import { buttonVariants } from "@/components/ui/button";
 import { BookBadge } from "@/components/admin/book-badge";
+import { ListBackLink } from "@/components/admin/list-search";
 import { fetchCompanyProfile } from "@/lib/company-profile";
 import { type DeliveryCertificate } from "@/lib/delivery-certificate";
 import {
@@ -272,13 +273,13 @@ export default async function SiteDetailPage({
     <div className="flex flex-1 flex-col gap-6 p-6">
       {/* 상단 액션 바 */}
       <div className="flex items-center justify-between">
-        <Link
+        <ListBackLink
           href={`/${bookParam}/sites`}
           className={buttonVariants({ variant: "outline", size: "sm" })}
         >
           <ArrowLeftIcon className="size-4" />
           현장 목록
-        </Link>
+        </ListBackLink>
         <div className="flex items-center gap-2">
           {/* 현장 전체 매출 누적 명세서 (날짜 오름차순) */}
           <Link

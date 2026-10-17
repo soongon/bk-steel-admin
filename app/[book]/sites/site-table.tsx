@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { ListSearch, useListSearch } from "@/components/admin/list-search";
-import { nameKeys, nameMatches } from "@/lib/search";
+import { listMatches, listQuery, nameKeys, nameMatches } from "@/lib/search";
 import { SiteFormDialog, type SiteRow } from "./site-form-dialog";
 import { deleteSite } from "./actions";
 
@@ -43,16 +43,20 @@ export function SiteTable({
   const [editing, setEditing] = useState<SiteRow | null>(null);
   const [, startTransition] = useTransition();
 
-  // 즉시 검색 — 표에 보이는 글자(현장명·지역·주소·시공사·건축주)로, 한글 조합 중에도 좁혀짐. 현장엔 전화번호 칸이 없다.
+  // 즉시 검색 — 표에 보이는 글자(현장명·지역·주소·시공사·건축주)로, 한글 조합 중에도 좁혀짐.
+  // 띄어 쓴 단어는 칸·순서 상관없이 모두 맞으면('OO면 △△리'를 'OO △△'로). 현장엔 전화번호 칸이 없다.
   const search = useListSearch();
   const indexed = useMemo(
     () => sites.map((s) => ({ s, keys: [s.name, s.city, s.address, s.client_name, s.owner_name].map(nameKeys) })),
     [sites],
   );
   const { visible, searching } = useMemo(() => {
-    const q = nameKeys(search.query);
-    if (q[0] === "") return { visible: sites, searching: false };
-    return { visible: indexed.filter(({ keys }) => keys.some((k) => nameMatches(k, q))).map(({ s }) => s), searching: true };
+    const q = listQuery(search.query);
+    if (q.empty) return { visible: sites, searching: false };
+    return {
+      visible: indexed.filter(({ keys }) => listMatches(q, (k) => keys.some((f) => nameMatches(f, k.name)))).map(({ s }) => s),
+      searching: true,
+    };
   }, [indexed, sites, search.query]);
 
   function openCreate() {

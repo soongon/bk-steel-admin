@@ -1,18 +1,67 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
+import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import { SearchIcon, XIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
-/** 목록 즉시 검색 상태 — 검색어·입력칸 ref·지우기(지운 뒤 입력칸에 포커스). 결과 없음 안내의 [검색 지우기]도 clear 를 쓴다. */
+const storeKey = (path: string) => `list-q:${path}`;
+
+/** 목록에서 마지막으로 친 검색어 기억(이 탭 안에서만) — 상세 화면의 [목록] 버튼(ListBackLink)이 붙여서 돌아온다. */
+function rememberQuery(path: string, q: string) {
+  try {
+    sessionStorage.setItem(storeKey(path), q);
+  } catch {
+    // 저장소를 못 쓰는 환경 — [목록] 버튼만 검색어 없이 돌아간다.
+  }
+}
+
+function rememberedQuery(path: string): string {
+  try {
+    return sessionStorage.getItem(storeKey(path)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** 주소의 ?q= 를 검색어로 맞춘다 — 그 목록 화면에 있을 때만, 값이 바뀔 때만. 서버를 다시 부르지 않는 replaceState. */
+function writeQueryParam(path: string, q: string) {
+  if (window.location.pathname !== path) return; // 이미 다른 화면으로 넘어갔으면 손대지 않는다
+  const url = new URL(window.location.href);
+  if (q) url.searchParams.set("q", q);
+  else url.searchParams.delete("q");
+  if (url.href === window.location.href) return;
+  try {
+    window.history.replaceState(null, "", url);
+  } catch {
+    // 브라우저가 잦은 주소 변경을 막으면(사파리) 이번 것만 건너뛴다 — 검색은 그대로, 주소는 다음 번에 맞춘다.
+  }
+}
+
+/**
+ * 목록 즉시 검색 상태 — 검색어·입력칸 ref·지우기(지운 뒤 입력칸에 포커스). 결과 없음 안내의 [검색 지우기]도 clear 를 쓴다.
+ * 검색어는 주소 ?q= 에도 남긴다(치다 멈추면, 입력칸을 벗어나면 바로) — 상세로 들어갔다 뒤로 오거나 새로고침해도 같은 검색.
+ * 상세 화면의 [목록] 버튼용으로 탭 안에도 기억해 둔다. 처음 값만 주소에서 읽고 그 뒤로는 입력칸이 기준.
+ * 키마다 주소를 바꾸지 않는 건 사파리가 잦은 주소 변경을 막기 때문.
+ */
 export function useListSearch() {
-  const [query, setQuery] = useState("");
+  const urlQuery = useSearchParams().get("q") ?? "";
+  const [listPath] = useState(usePathname()); // 이 목록의 주소 — 다른 화면으로 넘어간 뒤엔 주소를 건드리지 않게
+  const [query, setQuery] = useState(urlQuery);
   const inputRef = useRef<HTMLInputElement>(null);
   const clear = useCallback(() => {
     setQuery("");
     inputRef.current?.focus();
   }, []);
-  return { query, setQuery, inputRef, clear };
+  // 탭 기억은 바로, 주소는 치다 멈추면. 주소가 밖에서 바뀌어도(같은 목록 메뉴를 다시 눌러 ?q= 가 빠지는 등) 입력칸 기준으로 다시 맞춘다.
+  useEffect(() => {
+    rememberQuery(listPath, query);
+    const t = setTimeout(() => writeQueryParam(listPath, query), 400);
+    return () => clearTimeout(t);
+  }, [listPath, query, urlQuery]);
+  const saveToUrl = useCallback(() => writeQueryParam(listPath, query), [listPath, query]);
+  return { query, setQuery, inputRef, clear, saveToUrl };
 }
 
 export type ListSearchState = ReturnType<typeof useListSearch>;
@@ -38,7 +87,7 @@ export function ListSearch({
   shown: number;
   total: number;
 }) {
-  const { query, setQuery, inputRef, clear } = search;
+  const { query, setQuery, inputRef, clear, saveToUrl } = search;
   return (
     <>
       <div className="relative w-full basis-full sm:w-auto sm:max-w-sm sm:flex-1 sm:basis-auto">
@@ -47,6 +96,7 @@ export function ListSearch({
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onBlur={saveToUrl}
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing) return; // 한글 조합 중 키는 입력기 몫
             if (e.key === "Escape" && query) clear();
@@ -83,4 +133,12 @@ export function ListSearch({
       </p>
     </>
   );
+}
+
+const noSubscribe = () => () => {};
+
+/** 목록으로 돌아가는 링크 — 그 목록에서 마지막으로 친 검색어(?q=)를 붙여, 브라우저 뒤로 가기가 아니어도 검색이 그대로 남게. */
+export function ListBackLink({ href, ...props }: Omit<ComponentProps<typeof Link>, "href"> & { href: string }) {
+  const q = useSyncExternalStore(noSubscribe, () => rememberedQuery(href), () => "");
+  return <Link href={q ? `${href}?${new URLSearchParams({ q })}` : href} {...props} />;
 }

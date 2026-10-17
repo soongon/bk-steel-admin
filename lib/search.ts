@@ -66,3 +66,27 @@ export function phoneMatches(phone: string | null | undefined, queryDigits: stri
   }
   return false;
 }
+
+/** 검색어 한 덩이의 비교 키 — 이름 키 두 벌과, 숫자로만 쳤으면 전화 숫자. */
+export type QueryKeys = { name: NameKeys; phone: string };
+
+/** 목록 검색어 — 전체(공백 무시) 키와, 띄어 쓴 단어가 2개 이상이면 단어별 키. empty 면 거르지 않는다(기호만 친 경우 등). */
+export type ListQuery = { whole: QueryKeys; words: QueryKeys[]; empty: boolean };
+
+const queryKeys = (s: string): QueryKeys => ({ name: nameKeys(s), phone: phoneQueryDigits(s) });
+
+/** 목록 검색어 만들기 — 단어에서는 회사 표기만인 것((주)·주식회사)과 기호뿐인 것을 뺀다('주식회사 OO'는 전체 키가 맡는다). */
+export function listQuery(query: string): ListQuery {
+  const whole = queryKeys(query);
+  const words = query.split(/\s+/).filter((w) => nameKeys(w)[1] !== "").map(queryKeys);
+  return { whole, words: words.length > 1 ? words : [], empty: whole.name[0] === "" && whole.phone === "" };
+}
+
+/**
+ * 목록 검색 일치 — 검색어 전체가 맞거나, 띄어 쓴 단어가 하나하나 어느 칸에든 맞으면(순서·칸 무관) 일치.
+ * 사이 단어를 건너뛰거나('OO면 △△리'를 'OO △△'로) 순서를 바꾸거나 다른 칸의 단어를 섞어 쳐도 찾는다.
+ * 글자를 더 칠수록 두 조건 모두 줄기만 하므로 치는 대로 좁혀지는 성질은 그대로. hit 는 행 하나가 키 하나에 맞는지.
+ */
+export function listMatches(q: ListQuery, hit: (k: QueryKeys) => boolean): boolean {
+  return hit(q.whole) || (q.words.length > 0 && q.words.every(hit));
+}
