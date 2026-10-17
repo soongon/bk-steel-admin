@@ -9,6 +9,7 @@ import {
   CalendarClockIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  ClipboardListIcon,
   ContactIcon,
   FactoryIcon,
   FileDownIcon,
@@ -17,6 +18,7 @@ import {
   LayoutDashboardIcon,
   MapPinIcon,
   MessageSquareIcon,
+  LightbulbIcon,
   PackageIcon,
   PhoneCallIcon,
   RadarIcon,
@@ -90,7 +92,8 @@ function buildMenuGroups(): MenuGroup[] {
         { label: "매입견적서", href: "/purchase-quotes", icon: ScaleIcon },
         { label: "영업내역", href: "/sales-log", icon: PhoneCallIcon },
         { label: "명함", href: "/business-cards", icon: ContactIcon },
-        // 정기업무(/recurring-tasks)·개선 아이디어(/improvement-ideas)는 메뉴에서만 뺐다 — 페이지는 그대로.
+        { label: "정기업무", href: "/recurring-tasks", icon: ClipboardListIcon, more: true },
+        { label: "개선 아이디어", href: "/improvement-ideas", icon: LightbulbIcon, more: true },
       ],
     },
     {
