@@ -11,15 +11,20 @@ import {
   ChevronUpIcon,
   ClipboardListIcon,
   ContactIcon,
+  ExternalLinkIcon,
   FactoryIcon,
   FileDownIcon,
   FileTextIcon,
+  GlobeIcon,
+  InboxIcon,
   LandmarkIcon,
   LayoutDashboardIcon,
   MapPinIcon,
   MessageSquareIcon,
   LightbulbIcon,
+  NewspaperIcon,
   PackageIcon,
+  PenLineIcon,
   PhoneCallIcon,
   RadarIcon,
   ReceiptIcon,
@@ -27,6 +32,7 @@ import {
   ShieldCheckIcon,
   ShoppingBagIcon,
   ShoppingCartIcon,
+  SmartphoneIcon,
   TagsIcon,
   TrendingUpIcon,
   WalletIcon,
@@ -57,7 +63,12 @@ type MenuItem = {
   absolute?: boolean;
   /** true면 평소엔 접어 두고 그룹 끝 [더보기]로 펼친다. 지금 보고 있는 화면이면 접혀 있어도 보인다. */
   more?: boolean;
+  /** true면 다른 사이트 — href 는 전체 주소, 새 탭으로 열고 바깥 링크 표시. */
+  external?: boolean;
 };
+
+/** 홈페이지(별도 repo sl-steel·별도 Supabase·별도 로그인) — 관리 기능은 아직 거기 있고 여기선 메뉴 링크만. */
+const HOMEPAGE = "https://www.sl-steel.co.kr";
 
 type MenuGroup = {
   label: string;
@@ -94,6 +105,16 @@ function buildMenuGroups(): MenuGroup[] {
         { label: "명함", href: "/business-cards", icon: ContactIcon },
         { label: "정기업무", href: "/recurring-tasks", icon: ClipboardListIcon, more: true },
         { label: "개선 아이디어", href: "/improvement-ideas", icon: LightbulbIcon, more: true },
+      ],
+    },
+    {
+      label: "홈페이지",
+      items: [
+        { label: "문의 관리", href: `${HOMEPAGE}/admin/inquiries`, icon: InboxIcon, external: true },
+        { label: "블로그 글", href: `${HOMEPAGE}/admin`, icon: NewspaperIcon, external: true },
+        { label: "빠른 글쓰기", href: `${HOMEPAGE}/admin/quick-post`, icon: PenLineIcon, external: true, more: true },
+        { label: "모바일 글쓰기", href: `${HOMEPAGE}/admin/mobile-post`, icon: SmartphoneIcon, external: true, more: true },
+        { label: "블로그 보기", href: `${HOMEPAGE}/blog`, icon: GlobeIcon, external: true, more: true },
       ],
     },
     {
@@ -154,19 +175,33 @@ export function AdminSidebar({ book }: { book: BookView }) {
               <SidebarGroupContent>
                 <SidebarMenu>
                   {group.items.map((item) => {
-                    const fullHref = item.absolute ? item.href : `/${book}${item.href}`;
-                    const isActive = pathname === fullHref || pathname.startsWith(fullHref + "/");
+                    const fullHref = item.absolute || item.external ? item.href : `/${book}${item.href}`;
+                    const isActive = !item.external && (pathname === fullHref || pathname.startsWith(fullHref + "/"));
                     if (item.more && !open && !isActive) return null;
                     const Icon = item.icon;
                     return (
                       <SidebarMenuItem key={item.href}>
                         <SidebarMenuButton
-                          render={<Link href={fullHref} />}
+                          render={
+                            item.external ? (
+                              <a href={fullHref} target="_blank" rel="noopener noreferrer" />
+                            ) : (
+                              <Link href={fullHref} />
+                            )
+                          }
                           isActive={isActive}
                           tooltip={item.label}
                         >
                           <Icon className="size-4" />
-                          <span>{item.label}</span>
+                          <span>
+                            {item.label}
+                            {item.external ? <span className="sr-only"> (새 탭)</span> : null}
+                          </span>
+                          {item.external ? (
+                            <span className="ml-auto text-muted-foreground">
+                              <ExternalLinkIcon className="size-3" />
+                            </span>
+                          ) : null}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     );
