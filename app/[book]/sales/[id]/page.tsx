@@ -524,8 +524,8 @@ export default async function SaleDetailPage({
         registeredLabel="매출 등록·수정에서 쓴 메모"
         memos={memos}
         currentUserId={claimsData?.claims.sub ?? null}
-        addMemo={addSaleMemo}
-        deleteMemo={deleteSaleMemo}
+        addMemoAction={addSaleMemo}
+        deleteMemoAction={deleteSaleMemo}
       />
 
       {/* 첨부 사진 — 클릭 시 라이트박스 */}

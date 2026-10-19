@@ -31,7 +31,7 @@ async function call<T extends { ok: boolean }>(run: () => Promise<T>): Promise<T
  * 거래 메모 기록(매출·매입 상세 공용) — 시간순(오래된 것이 위, 새 메모는 입력칸 바로 위)으로 한국 시간과 함께.
  * 맨 위 '등록 메모'는 거래 등록·수정 폼의 메모(notes, 목록 메모 칸과 같은 값)라 여기선 보기만 한다.
  * 추가·삭제는 누르는 즉시 반영하고(운영에선 저장·다시 그리기에 몇 초 걸린다) 실패하면 되돌린다.
- * addMemo·deleteMemo 는 거래별 서버 액션(서버 페이지가 그대로 넘긴다).
+ * addMemoAction·deleteMemoAction 은 거래별 서버 액션(서버 페이지가 그대로 넘긴다 — Next 규칙대로 이름 끝이 Action).
  */
 export function MemoLogPanel({
   parentId,
@@ -39,8 +39,8 @@ export function MemoLogPanel({
   registeredLabel,
   memos,
   currentUserId,
-  addMemo,
-  deleteMemo,
+  addMemoAction,
+  deleteMemoAction,
 }: {
   parentId: string;
   registeredNote: string | null;
@@ -48,8 +48,8 @@ export function MemoLogPanel({
   registeredLabel: string;
   memos: MemoEntry[];
   currentUserId: string | null;
-  addMemo: (parentId: string, body: string) => Promise<MemoAddResult>;
-  deleteMemo: (memoId: string) => Promise<MemoDeleteResult>;
+  addMemoAction: (parentId: string, body: string) => Promise<MemoAddResult>;
+  deleteMemoAction: (memoId: string) => Promise<MemoDeleteResult>;
 }) {
   // 같은 id 는 하나만, 늘 시간순 — 삭제 실패로 되살릴 때도 원래 자리로.
   const [shown, apply] = useOptimistic<ShownMemo[], Change>(memos, (list, change) =>
@@ -71,7 +71,7 @@ export function MemoLogPanel({
         type: "add",
         memo: { id: tempId, body, created_at: new Date().toISOString(), created_by: currentUserId, pending: true },
       });
-      const r = await call(() => addMemo(parentId, body));
+      const r = await call(() => addMemoAction(parentId, body));
       if (!r.ok) {
         toast.error(r.error);
         // 다른 저장이 아직 진행 중이어도 실패한 줄은 바로 빼고(낙관 상태는 모든 저장이 끝나야 풀린다),
@@ -86,7 +86,7 @@ export function MemoLogPanel({
     setConfirmId(null);
     startSaving(async () => {
       apply({ type: "remove", id: memo.id });
-      const r = await call(() => deleteMemo(memo.id));
+      const r = await call(() => deleteMemoAction(memo.id));
       if (!r.ok) {
         toast.error(r.error);
         startSaving(() => apply({ type: "add", memo })); // 지우지 못했으면 원래 자리로 바로 되돌린다

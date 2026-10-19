@@ -355,8 +355,8 @@ export default async function PurchaseDetailPage({
           registeredLabel="매입 등록·수정에서 쓴 메모"
           memos={memos}
           currentUserId={claimsData?.claims.sub ?? null}
-          addMemo={addPurchaseMemo}
-          deleteMemo={deletePurchaseMemo}
+          addMemoAction={addPurchaseMemo}
+          deleteMemoAction={deletePurchaseMemo}
         />
       </section>
     </div>
