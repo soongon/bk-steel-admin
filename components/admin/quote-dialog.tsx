@@ -83,6 +83,8 @@ export type QuoteSources = {
   rebarSpecs: QuoteRebarSpec[];
   company?: CompanyProfile | null; // 단일 책 진입(현장 등) 공급자
   companies?: Partial<Record<Book, CompanyProfile>>; // 책 선택 진입(견적 메뉴) — 선택 책별 공급자
+  /** 현장 이름 자동완성(선택) — 저장 시 서버가 같은 이름의 현장에 연결하고 없으면 만든다(매출과 같은 규칙). */
+  sites?: Array<{ id: string; name: string }>;
 };
 
 /**
@@ -380,7 +382,22 @@ export function QuoteDialog({
             {/* 현장 + 거래처(선택) */}
             <div className="grid grid-cols-2 gap-3">
               <Field label="현장명">
-                <Input value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="현장명 입력" />
+                <Input
+                  list={sources.sites ? "quote-sites" : undefined}
+                  value={siteName}
+                  onChange={(e) => setSiteName(e.target.value)}
+                  placeholder={sources.sites ? "현장 검색·신규 입력" : "현장명 입력"}
+                />
+                {sources.sites ? (
+                  <datalist id="quote-sites">
+                    {sources.sites.map((s) => (
+                      <option key={s.id} value={s.name} />
+                    ))}
+                  </datalist>
+                ) : null}
+                {saveMode && sources.sites && siteName.trim() && !sources.sites.some((s) => s.name === siteName.trim()) ? (
+                  <p className="mt-0.5 text-[10px] text-amber-600">미등록 현장 — 저장 시 자동 생성됩니다</p>
+                ) : null}
               </Field>
               <Field label="거래처 (선택)">
                 <Input

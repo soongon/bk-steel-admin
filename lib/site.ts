@@ -39,9 +39,15 @@ export async function fetchAllSites(supabase: SupabaseClient): Promise<Site[]> {
   return (data ?? []) as Site[];
 }
 
+/** 현장 이름 목록(입력칸 자동완성용) — 활성·미삭제, 이름순. 매출 폼과 같은 범위. */
+export async function fetchSiteOptions(supabase: SupabaseClient): Promise<Array<{ id: string; name: string }>> {
+  const { data } = await supabase.from("site").select("id, name").is("deleted_at", null).eq("is_active", true).order("name");
+  return (data ?? []) as Array<{ id: string; name: string }>;
+}
+
 /**
  * site_id 가 없고 site_name 만 있는 경우(미등록 현장) site 마스터 자동 생성.
- * UNIQUE(name) 충돌 시 기존 row 조회로 fallback. 매출·매입 등록/편집 공용.
+ * UNIQUE(name) 충돌 시 기존 row 조회로 fallback. 매출·매입·견적서 등록/편집 공용.
  */
 export async function resolveSiteId(
   supabase: SupabaseClient,

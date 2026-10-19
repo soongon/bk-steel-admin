@@ -4,6 +4,7 @@ import { ArrowLeftIcon, MessageSquareIcon, PhoneIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { type Book, type BookView, BOOKS } from "@/lib/book";
 import { type CompanyProfile, fetchCompanyProfile } from "@/lib/company-profile";
+import { fetchSiteOptions } from "@/lib/site";
 import { STEEL_CUSTOM_ITEM_ID } from "@/lib/transaction-draft";
 import { fmtKstDateTime, formatPhone } from "@/lib/format";
 import { getInquiry, listInquiries } from "@/lib/homepage-inquiry";
@@ -40,7 +41,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
   const supabase = await createClient();
   const books: Book[] = view !== "all" ? [view] : [...BOOKS];
 
-  const [res, listRes, partnersRes, itemsRes, rebarSpecsRes, companyRes, pqCompanyList] = await Promise.all([
+  const [res, listRes, partnersRes, itemsRes, rebarSpecsRes, companyRes, pqCompanyList, sites] = await Promise.all([
     getInquiry(id),
     listInquiries(), // 같은 번호의 다른 문의
     supabase
@@ -58,6 +59,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
     view !== "all" ? supabase.from("company_profile").select("*").eq("book", view) : supabase.from("company_profile").select("*"),
     // 매입견적서는 B계좌 공급자를 SL 로 채운다(fetchCompanyProfile) — 매입견적서 목록과 같은 공급자로 미리보기.
     Promise.all(books.map((b) => fetchCompanyProfile(supabase, b))),
+    fetchSiteOptions(supabase), // 견적 폼 현장명 자동완성(문의의 현장/지역이 기존 현장이면 그대로 연결)
   ]);
   if (!res.ok) return <InquiryUnavailable error={res.error} unconfigured={res.unconfigured} />;
   const inq = res.data;
@@ -91,6 +93,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
     items,
     rebarSpecs: (rebarSpecsRes.data ?? []) as QuoteRebarSpec[],
     companies: quoteCompanies,
+    sites,
   };
   const pqSources: PurchaseQuoteSources = {
     partners: activePartners,

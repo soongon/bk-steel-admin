@@ -7,6 +7,7 @@ import { fmtKrw, fmtNum } from "@/lib/format";
 import { rebarSpecLabel } from "@/lib/rebar";
 import { type QuoteDocumentData } from "@/components/admin/quote-document";
 import { type CompanyProfile } from "@/lib/company-profile";
+import { fetchSiteOptions } from "@/lib/site";
 import {
   Table,
   TableBody,
@@ -54,7 +55,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
   const q = data as unknown as Record<string, any>;
 
   // 견적서 폼 데이터 + 메모 기록(0082, 시간순) + 지금 사용자(본인 메모만 삭제 버튼, getClaims — getUser 는 다른 쿼리를 붙잡는다)
-  const [companyRes, partnersRes, itemsRes, rebarSpecsRes, memosRes, claimsRes] = await Promise.all([
+  const [companyRes, partnersRes, itemsRes, rebarSpecsRes, memosRes, claimsRes, sites] = await Promise.all([
     supabase.from("company_profile").select("*").eq("book", q.book).maybeSingle(),
     supabase
       .from("partner")
@@ -76,6 +77,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
       .order("created_at", { ascending: true })
       .order("id", { ascending: true }),
     supabase.auth.getClaims(),
+    fetchSiteOptions(supabase), // 수정 폼 현장명 자동완성
   ]);
   const memos = (memosRes.data ?? []) as MemoEntry[];
   const company = (companyRes.data ?? null) as CompanyProfile | null;
@@ -102,6 +104,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
     items: (itemsRes.data ?? []) as QuoteItem[],
     rebarSpecs: (rebarSpecsRes.data ?? []) as QuoteRebarSpec[],
     company,
+    sites,
   };
   const editingQuote: EditingQuote = {
     id: q.id,

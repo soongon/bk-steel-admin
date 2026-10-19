@@ -200,15 +200,15 @@ export default async function SiteDetailPage({
     }
   }
 
-  // 6. 현장 메모 이력 — 매출·매출 라인·견적 메모 + 매출 메모 기록(시각 있음)을 날짜순 통합 (현장 자체 비고는 상단 메타에 표시)
+  // 6. 현장 메모 이력 — 매출·매출 라인·견적 메모 + 매출·견적서 메모 기록(시각 있음)을 날짜순 통합 (현장 자체 비고는 상단 메타에 표시)
   //    at = 정렬 키(기록은 'YYYY-MM-DD HH:mm' 한국 시간, 나머지는 날짜만 — 같은 날이면 날짜만인 것이 먼저).
   type SiteMemo = { date: string; at: string; kind: "매출" | "라인" | "견적" | "기록"; text: string; href: string; ref: string };
+  // 견적서는 비고(notes)뿐 아니라 내부 메모 기록(0082)도 — 비고 없는 견적서의 기록도 잡게 notes 필터는 두지 않는다.
   let quotesQ = supabase
     .from("quote")
-    .select("id, doc_no, quote_date, notes, prospect_name, partner:partner(name)")
+    .select("id, doc_no, quote_date, notes, prospect_name, partner:partner(name), quote_memo(id, body, created_at)")
     .eq("site_id", id)
-    .is("deleted_at", null)
-    .not("notes", "is", null);
+    .is("deleted_at", null);
   if (view !== "all") quotesQ = quotesQ.eq("book", view);
   const { data: rawQuotes } = await quotesQ;
 
@@ -255,6 +255,7 @@ export default async function SiteDetailPage({
     notes: string | null;
     prospect_name: string | null;
     partner: { name: string } | null;
+    quote_memo: Array<{ id: string; body: string; created_at: string }> | null;
   }>) {
     if (q.notes?.trim()) {
       memos.push({
@@ -264,6 +265,17 @@ export default async function SiteDetailPage({
         text: q.notes.trim(),
         href: `/${bookParam}/quotes/${q.id}`,
         ref: `${q.doc_no} · ${q.partner?.name ?? q.prospect_name ?? "—"}`,
+      });
+    }
+    for (const m of q.quote_memo ?? []) {
+      const kst = fmtKstDateTime(m.created_at);
+      memos.push({
+        date: kst.slice(0, 10),
+        at: kst,
+        kind: "기록",
+        text: m.body,
+        href: `/${bookParam}/quotes/${q.id}`,
+        ref: `${q.doc_no} · ${kst.slice(11)}`,
       });
     }
   }

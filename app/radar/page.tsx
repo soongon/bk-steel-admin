@@ -3,6 +3,7 @@ import { kstToday, lastSeenBySource, loadVisitRows } from "@/lib/radar/radar-dat
 import type { VisitViewRow } from "@/lib/radar/visit-view";
 import { type Book } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
+import { fetchSiteOptions } from "@/lib/site";
 import { type QuoteSources } from "@/components/admin/quote-dialog";
 import { RadarV2 } from "./radar-v2";
 
@@ -36,13 +37,14 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
       .order("name"),
     supabase.from("rebar_spec").select("spec_code, unit_weight_kg_per_m, standard_length_m").order("display_order"),
     supabase.from("company_profile").select("*"),
+    fetchSiteOptions(supabase), // 견적 폼 현장명 자동완성
   ]);
   try {
     [rows, synced] = await Promise.all([loadVisitRows(supabase, today), lastSeenBySource(supabase)]);
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
-  const [partnersRes, itemsRes, rebarSpecsRes, companyRes] = await sourcesP;
+  const [partnersRes, itemsRes, rebarSpecsRes, companyRes, sites] = await sourcesP;
   const companies: Partial<Record<Book, CompanyProfile>> = {};
   for (const c of (companyRes.data ?? []) as CompanyProfile[]) {
     if (c.book) companies[c.book as Book] = c;
@@ -55,6 +57,7 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
     items: (itemsRes.data ?? []) as QuoteSources["items"],
     rebarSpecs: (rebarSpecsRes.data ?? []) as QuoteSources["rebarSpecs"],
     companies,
+    sites,
   };
 
   if (error) {

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { computeVat } from "@/lib/transaction";
+import { resolveSiteId } from "@/lib/site";
 import { type Book } from "@/lib/book";
 
 export type QuoteActionResult = { ok: true; id?: string } | { ok: false; error: string };
@@ -104,6 +105,9 @@ export async function createQuote(formData: FormData): Promise<QuoteActionResult
 
   const supabase = await createClient();
   const docNo = parsed.doc_no ?? (await generateQuoteDocNo(parsed.quote_date));
+  // 현장 — 이름만 와도 현장 마스터에서 찾고 없으면 만든다(매출·매입과 같은 규칙). 예전엔 site_id 를 안 채워
+  // 현장 상세에 견적이 안 잡혔고, 매출 전환(convert_quote_to_sale)도 빈 site_id 를 그대로 가져갔다.
+  const siteId = await resolveSiteId(supabase, parsed.site_id, parsed.site_name);
 
   // 레이더 출처는 실제 행이 있을 때만 남긴다 — 영업내역 메모에서 읽은 id 가 틀려도 FK 위반으로 저장이 막히지 않게.
   let sourceProjectId = parsed.source_project_id;
@@ -148,7 +152,7 @@ export async function createQuote(formData: FormData): Promise<QuoteActionResult
       doc_no: docNo,
       partner_id: parsed.partner_id,
       prospect_name: parsed.prospect_name,
-      site_id: parsed.site_id,
+      site_id: siteId,
       site_name: parsed.site_name,
       quote_date: parsed.quote_date,
       valid_until: parsed.valid_until,
@@ -178,6 +182,7 @@ export async function updateQuote(quoteId: string, formData: FormData): Promise<
   if ("error" in parsed) return { ok: false, error: parsed.error ?? "입력 오류" };
 
   const supabase = await createClient();
+  const siteId = await resolveSiteId(supabase, parsed.site_id, parsed.site_name); // 현장 이름이 바뀌면 그 현장으로 다시 연결
   const lines = parsed.lines.map((l) => {
     const manual = l.manual_amount != null && l.manual_amount > 0;
     const lineSubtotal = manual
@@ -213,7 +218,7 @@ export async function updateQuote(quoteId: string, formData: FormData): Promise<
       book: parsed.book,
       partner_id: parsed.partner_id,
       prospect_name: parsed.prospect_name,
-      site_id: parsed.site_id,
+      site_id: siteId,
       site_name: parsed.site_name,
       quote_date: parsed.quote_date,
       valid_until: parsed.valid_until,

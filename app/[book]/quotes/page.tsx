@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { type Book, type BookView, BOOK_VIEW_LABEL } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
+import { fetchSiteOptions } from "@/lib/site";
 import { BookBadge } from "@/components/admin/book-badge";
 import { fmtKrw } from "@/lib/format";
 import {
@@ -40,7 +41,7 @@ export default async function QuotesPage({ params }: { params: Promise<{ book: s
     .limit(100);
   if (view !== "all") q = q.eq("book", view);
 
-  const [quotesRes, partnersRes, itemsRes, rebarSpecsRes, companyRes] = await Promise.all([
+  const [quotesRes, partnersRes, itemsRes, rebarSpecsRes, companyRes, sites] = await Promise.all([
     q,
     supabase
       .from("partner")
@@ -58,6 +59,7 @@ export default async function QuotesPage({ params }: { params: Promise<{ book: s
     view !== "all"
       ? supabase.from("company_profile").select("*").eq("book", view)
       : supabase.from("company_profile").select("*"),
+    fetchSiteOptions(supabase), // 현장명 자동완성 — 저장 시 그 현장에 연결
   ]);
 
   const quotes = (quotesRes.data ?? []) as unknown as Array<{
@@ -84,6 +86,7 @@ export default async function QuotesPage({ params }: { params: Promise<{ book: s
     items: (itemsRes.data ?? []) as QuoteItem[],
     rebarSpecs: (rebarSpecsRes.data ?? []) as QuoteRebarSpec[],
     companies,
+    sites,
   };
 
   return (
