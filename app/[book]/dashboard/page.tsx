@@ -2,11 +2,10 @@ import { createClient } from "@/lib/supabase/server";
 import { type Book, type BookView, BOOK_VIEW_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 import { KpiCard } from "@/components/admin/kpi-card";
-import { fmtKrw } from "@/lib/format";
+import { fmtKrw, kstToday } from "@/lib/format";
 
-function monthStartFromDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-}
+/** 'YYYY-MM-DD' → 그 달 1일. 문자열로 자른다 — Date 로컬 getter 는 서버(UTC)에서 한국 날짜와 어긋난다. */
+const monthStartOf = (ymd: string) => `${ymd.slice(0, 7)}-01`;
 
 type Row = Record<string, unknown>;
 function sumBy<T extends Row>(rows: T[] | null, key: keyof T): number {
@@ -53,12 +52,12 @@ export default async function DashboardPage({
     latestSaleRes.data?.ordered_on,
     latestPurchaseRes.data?.ordered_on,
   ].filter(Boolean) as string[];
-  const baseDate =
-    candidates.length > 0
-      ? new Date(candidates.sort().pop() as string)
-      : new Date();
-  const monthStart = monthStartFromDate(baseDate);
-  const isHistorical = baseDate < new Date(monthStartFromDate(new Date()));
+  // 기준 월 = 가장 늦은 거래일의 달(없으면 이번 달). '과거 데이터' = 그 달이 한국 날짜 기준 이번 달보다 앞.
+  // (예전엔 서버 시각의 달과 비교해 매월 1일 오전 9시 전엔 아직 지난달로 판단했다)
+  const thisMonthStart = monthStartOf(kstToday());
+  const latestOrderedOn = candidates.length > 0 ? (candidates.sort().pop() as string) : null;
+  const monthStart = latestOrderedOn ? monthStartOf(latestOrderedOn) : thisMonthStart;
+  const isHistorical = monthStart < thisMonthStart;
 
   // 5개 view·테이블 병렬 fetch
   const [pnlRes, receivableRes, payableRes, valuationRes, purchaseAggRes] =

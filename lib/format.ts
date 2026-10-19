@@ -15,6 +15,11 @@ export function fmtKstDateTime(iso: string | null | undefined): string {
   return d.toLocaleString("sv-SE", { timeZone: "Asia/Seoul", hourCycle: "h23" }).slice(0, 16);
 }
 
+/** 오늘 날짜(한국) 'YYYY-MM-DD' — 서버(Vercel)는 UTC 라 Date 로컬 getter 로는 오전 9시 전에 어제가 된다. */
+export function kstToday(): string {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+}
+
 // ── 연락처: 저장은 숫자만, 표시는 대시 포함 ──
 
 /** 숫자만 추출 (저장용). 입력에서 대시·공백 등 제거. */

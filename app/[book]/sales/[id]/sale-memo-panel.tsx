@@ -29,7 +29,7 @@ async function call<T extends { ok: boolean }>(run: () => Promise<T>): Promise<T
 }
 
 /**
- * 매출 메모 기록 — 시간순(오래된 것이 위, 새 메모는 입력칸 바로 위)으로 한국 시간·작성자와 함께.
+ * 매출 메모 기록 — 시간순(오래된 것이 위, 새 메모는 입력칸 바로 위)으로 한국 시간과 함께.
  * 맨 위 '등록 메모'는 매출 등록·수정 폼의 메모(sale.notes, 목록 메모 칸과 같은 값)라 여기선 보기만 한다.
  * 추가·삭제는 누르는 즉시 반영하고(운영에선 저장·다시 그리기에 몇 초 걸린다) 실패하면 되돌린다.
  */
@@ -62,7 +62,7 @@ export function SaleMemoPanel({
     startSaving(async () => {
       apply({
         type: "add",
-        memo: { id: tempId, body, created_at: new Date().toISOString(), created_by: currentUserId, created_by_name: null, pending: true },
+        memo: { id: tempId, body, created_at: new Date().toISOString(), created_by: currentUserId, pending: true },
       });
       const r = await call(() => addSaleMemo(saleId, body));
       if (!r.ok) {
@@ -125,7 +125,7 @@ export function SaleMemoPanel({
                   <time dateTime={m.created_at} className="tabular-nums">
                     {fmtKstDateTime(m.created_at)}
                   </time>
-                  <span>{m.pending ? "저장 중…" : (m.created_by_name ?? "")}</span>
+                  {m.pending ? <span>저장 중…</span> : null}
                   {mine ? (
                     confirmId === m.id ? (
                       <span className="ml-auto flex items-center gap-1">
@@ -175,7 +175,7 @@ export function SaleMemoPanel({
         />
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">
-            {text.length > SALE_MEMO_MAX * 0.9 ? `${text.length.toLocaleString()} / ${SALE_MEMO_MAX.toLocaleString()}자` : "남긴 시각·작성자가 함께 기록됩니다 · ⌘/Ctrl+Enter 저장"}
+            {text.length > SALE_MEMO_MAX * 0.9 ? `${text.length.toLocaleString()} / ${SALE_MEMO_MAX.toLocaleString()}자` : "남긴 시각이 함께 기록됩니다 · ⌘/Ctrl+Enter 저장"}
           </span>
           <Button type="button" size="sm" onClick={add} disabled={!text.trim()}>
             메모 추가

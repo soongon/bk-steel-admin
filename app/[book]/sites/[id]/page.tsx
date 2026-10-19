@@ -39,7 +39,7 @@ type RawSale = {
   delivery_cert_id: string | null;
   notes: string | null;
   /** 매출 상세에서 남긴 메모 기록(0080) — 현장 메모 이력에 시각과 함께 섞는다. */
-  sale_memo: Array<{ id: string; body: string; created_at: string; created_by_name: string | null }>;
+  sale_memo: Array<{ id: string; body: string; created_at: string }>;
   partner: {
     id: string;
     name: string;
@@ -112,7 +112,7 @@ export default async function SiteDetailPage({
       id, book, doc_no, ordered_on, delivered_on, status,
       subtotal_krw, vat_krw, total_krw, is_documented, tax_doc_type,
       partner_id, delivery_cert_id, notes,
-      sale_memo(id, body, created_at, created_by_name),
+      sale_memo(id, body, created_at),
       partner:partner(id, name, code, business_no, representative, address),
       sale_line(
         id, qty, unit, weight_kg, theoretical_weight_kg, line_subtotal_krw, notes,
@@ -244,7 +244,7 @@ export default async function SiteDetailPage({
         kind: "기록",
         text: m.body,
         href: `/${bookParam}/sales/${s.id}`,
-        ref: `${s.doc_no} · ${kst.slice(11)}${m.created_by_name ? ` · ${m.created_by_name}` : ""}`,
+        ref: `${s.doc_no} · ${kst.slice(11)}`,
       });
     }
   }
