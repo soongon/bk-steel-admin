@@ -1,6 +1,8 @@
 "use client";
 
+import { MessageSquareTextIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { fmtKstDateTime } from "@/lib/format";
 
 const NOTE_PREVIEW_LEN = 5;
 
@@ -20,6 +22,26 @@ export function NoteCell({ text }: { text: string | null }) {
         {preview}
       </TooltipTrigger>
       <TooltipContent className="max-w-md whitespace-pre-wrap">{text}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** 메모 기록 건수 배지 — 툴팁에 가장 최근 기록과 한국 시간. 매출 목록(상세에서 남긴 sale_memo). */
+export function NoteLogBadge({ count, latest }: { count: number; latest: { body: string; created_at: string } | null }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span className="inline-flex h-4 cursor-help items-center gap-0.5 rounded bg-emerald-100 px-1 text-[10px] text-emerald-700 tabular-nums dark:bg-emerald-950/40 dark:text-emerald-300" />
+        }
+      >
+        <MessageSquareTextIcon className="size-2.5" aria-hidden />
+        <span className="sr-only">메모 기록 </span>
+        {count}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-md whitespace-pre-wrap">
+        {`메모 기록 ${count}건${latest ? `\n최근 ${fmtKstDateTime(latest.created_at)} — ${latest.body}` : ""}`}
+      </TooltipContent>
     </Tooltip>
   );
 }

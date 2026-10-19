@@ -14,7 +14,7 @@ import {
 } from "@/components/admin/delivery-cert-form";
 import { SiteCertButton } from "./site-cert-button";
 import { QuoteButton, type QuotePartner, type QuoteItem, type QuoteRebarSpec } from "@/components/admin/quote-dialog";
-import { fmtKrw } from "@/lib/format";
+import { fmtKrw, fmtKstDateTime } from "@/lib/format";
 
 const fmtNum = (n: number) => Math.round(n).toLocaleString("ko-KR");
 
@@ -38,6 +38,8 @@ type RawSale = {
   partner_id: string;
   delivery_cert_id: string | null;
   notes: string | null;
+  /** 매출 상세에서 남긴 메모 기록(0080) — 현장 메모 이력에 시각과 함께 섞는다. */
+  sale_memo: Array<{ id: string; body: string; created_at: string; created_by_name: string | null }>;
   partner: {
     id: string;
     name: string;
@@ -110,6 +112,7 @@ export default async function SiteDetailPage({
       id, book, doc_no, ordered_on, delivered_on, status,
       subtotal_krw, vat_krw, total_krw, is_documented, tax_doc_type,
       partner_id, delivery_cert_id, notes,
+      sale_memo(id, body, created_at, created_by_name),
       partner:partner(id, name, code, business_no, representative, address),
       sale_line(
         id, qty, unit, weight_kg, theoretical_weight_kg, line_subtotal_krw, notes,
@@ -197,8 +200,9 @@ export default async function SiteDetailPage({
     }
   }
 
-  // 6. 현장 메모 이력 — 매출·매출 라인·견적 메모를 날짜순 통합 (현장 자체 비고는 상단 메타에 표시)
-  type SiteMemo = { date: string; kind: "매출" | "라인" | "견적"; text: string; href: string; ref: string };
+  // 6. 현장 메모 이력 — 매출·매출 라인·견적 메모 + 매출 메모 기록(시각 있음)을 날짜순 통합 (현장 자체 비고는 상단 메타에 표시)
+  //    at = 정렬 키(기록은 'YYYY-MM-DD HH:mm' 한국 시간, 나머지는 날짜만 — 같은 날이면 날짜만인 것이 먼저).
+  type SiteMemo = { date: string; at: string; kind: "매출" | "라인" | "견적" | "기록"; text: string; href: string; ref: string };
   let quotesQ = supabase
     .from("quote")
     .select("id, doc_no, quote_date, notes, prospect_name, partner:partner(name)")
@@ -213,6 +217,7 @@ export default async function SiteDetailPage({
     if (s.notes?.trim()) {
       memos.push({
         date: s.ordered_on,
+        at: s.ordered_on,
         kind: "매출",
         text: s.notes.trim(),
         href: `/${bookParam}/sales/${s.id}`,
@@ -223,12 +228,24 @@ export default async function SiteDetailPage({
       if (l.notes?.trim()) {
         memos.push({
           date: s.ordered_on,
+          at: s.ordered_on,
           kind: "라인",
           text: l.notes.trim(),
           href: `/${bookParam}/sales/${s.id}`,
           ref: `${s.doc_no} · ${l.item?.name ?? "품목"}`,
         });
       }
+    }
+    for (const m of s.sale_memo ?? []) {
+      const kst = fmtKstDateTime(m.created_at);
+      memos.push({
+        date: kst.slice(0, 10),
+        at: kst,
+        kind: "기록",
+        text: m.body,
+        href: `/${bookParam}/sales/${s.id}`,
+        ref: `${s.doc_no} · ${kst.slice(11)}${m.created_by_name ? ` · ${m.created_by_name}` : ""}`,
+      });
     }
   }
   for (const q of (rawQuotes ?? []) as unknown as Array<{
@@ -242,6 +259,7 @@ export default async function SiteDetailPage({
     if (q.notes?.trim()) {
       memos.push({
         date: q.quote_date,
+        at: q.quote_date,
         kind: "견적",
         text: q.notes.trim(),
         href: `/${bookParam}/quotes/${q.id}`,
@@ -249,7 +267,7 @@ export default async function SiteDetailPage({
       });
     }
   }
-  memos.sort((a, b) => a.date.localeCompare(b.date));
+  memos.sort((a, b) => a.at.localeCompare(b.at));
 
   // 견적서용 데이터 (거래처·품목·규격 + SL 공급자 명의)
   const [partnersRes, itemsRes, rebarSpecsRes, quoteCompany] = await Promise.all([
@@ -516,7 +534,9 @@ export default async function SiteDetailPage({
                       ? "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
                       : m.kind === "견적"
                         ? "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300"
-                        : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300"
+                        : m.kind === "기록"
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                          : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300"
                   }`}
                 >
                   {m.kind}

@@ -11,6 +11,8 @@ import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
+import { SaleMemoPanel } from "./sale-memo-panel";
+import { SALE_MEMO_COLUMNS, type SaleMemo } from "@/lib/sale-memo";
 import { mailStatusFor } from "@/lib/mail/document";
 import { type BuyerPartner } from "./tax-invoice-button";
 import { type SaleTaxInvoice } from "./tax-invoice-button";
@@ -156,18 +158,29 @@ export default async function SaleDetailPage({
     .eq("is_active", true)
     .order("is_primary", { ascending: false });
 
-  // 첨부 사진 fetch
-  const { data: attsData } = await supabase
-    .from("attachment")
-    .select(
-      "id, entity_type, entity_id, kind, storage, path, url, thumbnail_url, mime, bytes, width, height, caption, sort_order, created_at",
-    )
-    .eq("entity_type", "sale")
-    .eq("entity_id", id)
-    .is("deleted_at", null)
-    .order("sort_order", { ascending: true })
-    .order("created_at", { ascending: true });
+  // 첨부 사진 + 메모 기록(0080, 시간순) + 지금 사용자(본인 메모만 삭제 버튼) — 동시에.
+  // 사용자는 getClaims(JWT 확인) — getUser 는 Auth 서버 왕복이 끝날 때까지 같은 클라이언트의 다른 쿼리를 붙잡는다.
+  const [{ data: attsData }, { data: memosData }, { data: claimsData }] = await Promise.all([
+    supabase
+      .from("attachment")
+      .select(
+        "id, entity_type, entity_id, kind, storage, path, url, thumbnail_url, mime, bytes, width, height, caption, sort_order, created_at",
+      )
+      .eq("entity_type", "sale")
+      .eq("entity_id", id)
+      .is("deleted_at", null)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("sale_memo")
+      .select(SALE_MEMO_COLUMNS)
+      .eq("sale_id", id)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true }),
+    supabase.auth.getClaims(),
+  ]);
   const attachments = (attsData ?? []) as Attachment[];
+  const memos = (memosData ?? []) as SaleMemo[];
 
   // 활성 세금계산서(미취소) — 라이프사이클 계산서 단계 실상태 표시용
   const { data: taxInvoiceRow } = await supabase
@@ -503,13 +516,8 @@ export default async function SaleDetailPage({
         </div>
       </section>
 
-      {/* 메모 */}
-      {sale.notes ? (
-        <section className="rounded-lg border bg-card p-4">
-          <div className="text-xs font-medium text-muted-foreground">메모</div>
-          <p className="mt-1 whitespace-pre-wrap text-sm">{sale.notes}</p>
-        </section>
-      ) : null}
+      {/* 메모 — 등록 메모(sale.notes) + 시간순 기록(sale_memo), 바로 추가 */}
+      <SaleMemoPanel saleId={sale.id} registeredNote={sale.notes} memos={memos} currentUserId={claimsData?.claims.sub ?? null} />
 
       {/* 첨부 사진 — 클릭 시 라이트박스 */}
       {attachments.length > 0 ? (

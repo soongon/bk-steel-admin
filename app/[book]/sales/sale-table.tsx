@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { type Book, type BookView } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
-import { NoteCell } from "@/components/admin/note-cell";
+import { NoteCell, NoteLogBadge } from "@/components/admin/note-cell";
 import { LinkSpinner } from "@/components/admin/link-spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -68,6 +68,9 @@ export type SaleListRow = {
   site_id: string | null;
   delivery_cert_id: string | null;
   notes: string | null;
+  /** 상세에서 남긴 메모 기록(0080) — 건수와 가장 최근 1건. */
+  memo_count?: Array<{ count: number }>;
+  latest_memo?: Array<{ body: string; created_at: string }>;
   partner: { id: string; name: string; code: string } | null;
   site: { id: string; name: string; code: string } | null;
   sale_line: SaleLine[];
@@ -227,7 +230,7 @@ export function SaleTable({
               <TableHead className="w-28 text-right">합계</TableHead>
               <TableHead className="w-24 text-center">상태</TableHead>
               <TableHead className="w-16 text-center">미수</TableHead>
-              <TableHead className="w-20">메모</TableHead>
+              <TableHead className="w-24">메모</TableHead>
               <TableHead className="w-32 text-right">액션</TableHead>
             </TableRow>
           </TableHeader>
@@ -337,7 +340,13 @@ export function SaleTable({
                       <ReceivableCell s={s} />
                     </TableCell>
                     <TableCell>
-                      <NoteCell text={s.notes} />
+                      {/* 등록 메모(sale.notes) + 상세에서 남긴 기록 건수(툴팁에 최근 1건) */}
+                      <div className="flex flex-wrap items-center gap-1">
+                        {s.notes || !s.memo_count?.[0]?.count ? <NoteCell text={s.notes} /> : null}
+                        {s.memo_count?.[0]?.count ? (
+                          <NoteLogBadge count={s.memo_count[0].count} latest={s.latest_memo?.[0] ?? null} />
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-0.5">

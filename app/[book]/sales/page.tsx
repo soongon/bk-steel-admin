@@ -38,6 +38,7 @@ export default async function SalesPage({
       subtotal_krw, vat_krw, total_krw, site_name, site_id, is_documented,
       tax_doc_type, payment_due_on, settled_on, partner_id, delivery_cert_id, notes,
       statement_sent_on, tax_invoice_issued_on,
+      memo_count:sale_memo(count), latest_memo:sale_memo(body, created_at),
       site:site(id, name, code),
       partner:partner(id, name, code),
       sale_line(id, qty, unit, unit_price_krw, item:item(id, name, code))
@@ -45,7 +46,10 @@ export default async function SalesPage({
     )
     .is("deleted_at", null)
     .order("ordered_on", { ascending: false })
-    .order("doc_no", { ascending: false });
+    .order("doc_no", { ascending: false })
+    // 메모 기록(0080)은 건수 + 가장 최근 1건만 — 목록 메모 칸 배지·툴팁
+    .order("created_at", { referencedTable: "latest_memo", ascending: false })
+    .limit(1, { referencedTable: "latest_memo" });
 
   if (view !== "all") saleQuery = saleQuery.eq("book", view);
   if (sp.from) saleQuery = saleQuery.gte("ordered_on", sp.from);
