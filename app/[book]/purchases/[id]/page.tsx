@@ -9,6 +9,9 @@ import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { fmtKrw, formatBusinessNo } from "@/lib/format";
 import { PurchaseLifecyclePanel } from "./purchase-lifecycle-panel";
+import { MemoLogPanel } from "@/components/admin/memo-log-panel";
+import { MEMO_COLUMNS, type MemoEntry } from "@/lib/memo-log";
+import { addPurchaseMemo, deletePurchaseMemo } from "./memo-actions";
 import { type BankAccount } from "../pay-dialog";
 
 const fmtNum = (n: number, d = 0) =>
@@ -128,18 +131,29 @@ export default async function PurchaseDetailPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const lines = (purchase.purchase_line ?? []) as any[];
 
-  // 첨부 사진 fetch
-  const { data: attsData } = await supabase
-    .from("attachment")
-    .select(
-      "id, entity_type, entity_id, kind, storage, path, url, thumbnail_url, mime, bytes, width, height, caption, sort_order, created_at",
-    )
-    .eq("entity_type", "purchase")
-    .eq("entity_id", id)
-    .is("deleted_at", null)
-    .order("sort_order", { ascending: true })
-    .order("created_at", { ascending: true });
+  // 첨부 사진 + 메모 기록(0081, 시간순) + 지금 사용자(본인 메모만 삭제 버튼) — 동시에.
+  // 사용자는 getClaims(JWT 확인) — getUser 는 Auth 서버 왕복이 끝날 때까지 같은 클라이언트의 다른 쿼리를 붙잡는다.
+  const [{ data: attsData }, { data: memosData }, { data: claimsData }] = await Promise.all([
+    supabase
+      .from("attachment")
+      .select(
+        "id, entity_type, entity_id, kind, storage, path, url, thumbnail_url, mime, bytes, width, height, caption, sort_order, created_at",
+      )
+      .eq("entity_type", "purchase")
+      .eq("entity_id", id)
+      .is("deleted_at", null)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("purchase_memo")
+      .select(MEMO_COLUMNS)
+      .eq("purchase_id", id)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true }),
+    supabase.auth.getClaims(),
+  ]);
   const attachments = (attsData ?? []) as Attachment[];
+  const memos = (memosData ?? []) as MemoEntry[];
 
   // 결제 통장 (매입 책) — 라이프사이클 패널 결제 단계용
   const { data: bankAccounts } = await supabase
@@ -333,15 +347,18 @@ export default async function PurchaseDetailPage({
         </section>
       ) : null}
 
-      {/* 메모 */}
-      {purchase.notes ? (
-        <section className="px-6 pb-6">
-          <h2 className="mb-2 text-sm font-medium text-muted-foreground">메모</h2>
-          <p className="rounded-md border bg-card p-3 text-sm whitespace-pre-wrap">
-            {purchase.notes}
-          </p>
-        </section>
-      ) : null}
+      {/* 메모 — 등록 메모(purchase.notes) + 시간순 기록(purchase_memo), 바로 추가 */}
+      <section className="px-6 pb-6">
+        <MemoLogPanel
+          parentId={purchase.id}
+          registeredNote={purchase.notes}
+          registeredLabel="매입 등록·수정에서 쓴 메모"
+          memos={memos}
+          currentUserId={claimsData?.claims.sub ?? null}
+          addMemo={addPurchaseMemo}
+          deleteMemo={deletePurchaseMemo}
+        />
+      </section>
     </div>
   );
 }

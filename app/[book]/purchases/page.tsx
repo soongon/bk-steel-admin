@@ -19,6 +19,7 @@ export default async function PurchasesPage({
       id, book, doc_no, ordered_on, delivered_on, paid_on, payment_due_on, status,
       subtotal_krw, vat_krw, total_krw, is_documented,
       tax_doc_type, tax_doc_no, tax_invoice_received_on, partner_id, site_id, site_name, notes,
+      memo_count:purchase_memo(count), latest_memo:purchase_memo(body, created_at),
       partner:partner(id, name, code),
       site:site(id, name, code),
       purchase_line(id, acquired_qty, acquired_unit, unit_price_krw, actual_weight_kg, theoretical_weight_kg, item:item(id, name, code))
@@ -27,6 +28,9 @@ export default async function PurchasesPage({
     .is("deleted_at", null)
     .order("ordered_on", { ascending: false })
     .order("doc_no", { ascending: false })
+    // 메모 기록(0081)은 건수 + 가장 최근 1건만 — 목록 메모 칸 배지·툴팁
+    .order("created_at", { referencedTable: "latest_memo", ascending: false })
+    .limit(1, { referencedTable: "latest_memo" })
     .limit(100);
 
   if (view !== "all") q = q.eq("book", view);

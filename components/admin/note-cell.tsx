@@ -26,7 +26,7 @@ export function NoteCell({ text }: { text: string | null }) {
   );
 }
 
-/** 메모 기록 건수 배지 — 툴팁에 가장 최근 기록과 한국 시간. 매출 목록(상세에서 남긴 sale_memo). */
+/** 메모 기록 건수 배지 — 툴팁에 가장 최근 기록과 한국 시간. 매출·매입 목록(상세에서 남긴 sale_memo·purchase_memo). */
 export function NoteLogBadge({ count, latest }: { count: number; latest: { body: string; created_at: string } | null }) {
   return (
     <Tooltip>

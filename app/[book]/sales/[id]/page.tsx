@@ -11,8 +11,9 @@ import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { type Attachment } from "@/lib/attachment";
 import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
 import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
-import { SaleMemoPanel } from "./sale-memo-panel";
-import { SALE_MEMO_COLUMNS, type SaleMemo } from "@/lib/sale-memo";
+import { MemoLogPanel } from "@/components/admin/memo-log-panel";
+import { MEMO_COLUMNS, type MemoEntry } from "@/lib/memo-log";
+import { addSaleMemo, deleteSaleMemo } from "./memo-actions";
 import { mailStatusFor } from "@/lib/mail/document";
 import { type BuyerPartner } from "./tax-invoice-button";
 import { type SaleTaxInvoice } from "./tax-invoice-button";
@@ -173,14 +174,14 @@ export default async function SaleDetailPage({
       .order("created_at", { ascending: true }),
     supabase
       .from("sale_memo")
-      .select(SALE_MEMO_COLUMNS)
+      .select(MEMO_COLUMNS)
       .eq("sale_id", id)
       .order("created_at", { ascending: true })
       .order("id", { ascending: true }),
     supabase.auth.getClaims(),
   ]);
   const attachments = (attsData ?? []) as Attachment[];
-  const memos = (memosData ?? []) as SaleMemo[];
+  const memos = (memosData ?? []) as MemoEntry[];
 
   // 활성 세금계산서(미취소) — 라이프사이클 계산서 단계 실상태 표시용
   const { data: taxInvoiceRow } = await supabase
@@ -517,7 +518,15 @@ export default async function SaleDetailPage({
       </section>
 
       {/* 메모 — 등록 메모(sale.notes) + 시간순 기록(sale_memo), 바로 추가 */}
-      <SaleMemoPanel saleId={sale.id} registeredNote={sale.notes} memos={memos} currentUserId={claimsData?.claims.sub ?? null} />
+      <MemoLogPanel
+        parentId={sale.id}
+        registeredNote={sale.notes}
+        registeredLabel="매출 등록·수정에서 쓴 메모"
+        memos={memos}
+        currentUserId={claimsData?.claims.sub ?? null}
+        addMemo={addSaleMemo}
+        deleteMemo={deleteSaleMemo}
+      />
 
       {/* 첨부 사진 — 클릭 시 라이트박스 */}
       {attachments.length > 0 ? (

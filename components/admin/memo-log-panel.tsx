@@ -6,10 +6,9 @@ import { Loader2Icon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { fmtKstDateTime } from "@/lib/format";
-import { SALE_MEMO_MAX, type SaleMemo } from "@/lib/sale-memo";
-import { addSaleMemo, deleteSaleMemo } from "./memo-actions";
+import { MEMO_MAX, type MemoAddResult, type MemoDeleteResult, type MemoEntry } from "@/lib/memo-log";
 
-type ShownMemo = SaleMemo & { pending?: boolean };
+type ShownMemo = MemoEntry & { pending?: boolean };
 type Change = { type: "add"; memo: ShownMemo } | { type: "remove"; id: string };
 
 const byTime = (a: ShownMemo, b: ShownMemo) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
@@ -29,20 +28,28 @@ async function call<T extends { ok: boolean }>(run: () => Promise<T>): Promise<T
 }
 
 /**
- * 매출 메모 기록 — 시간순(오래된 것이 위, 새 메모는 입력칸 바로 위)으로 한국 시간과 함께.
- * 맨 위 '등록 메모'는 매출 등록·수정 폼의 메모(sale.notes, 목록 메모 칸과 같은 값)라 여기선 보기만 한다.
+ * 거래 메모 기록(매출·매입 상세 공용) — 시간순(오래된 것이 위, 새 메모는 입력칸 바로 위)으로 한국 시간과 함께.
+ * 맨 위 '등록 메모'는 거래 등록·수정 폼의 메모(notes, 목록 메모 칸과 같은 값)라 여기선 보기만 한다.
  * 추가·삭제는 누르는 즉시 반영하고(운영에선 저장·다시 그리기에 몇 초 걸린다) 실패하면 되돌린다.
+ * addMemo·deleteMemo 는 거래별 서버 액션(서버 페이지가 그대로 넘긴다).
  */
-export function SaleMemoPanel({
-  saleId,
+export function MemoLogPanel({
+  parentId,
   registeredNote,
+  registeredLabel,
   memos,
   currentUserId,
+  addMemo,
+  deleteMemo,
 }: {
-  saleId: string;
+  parentId: string;
   registeredNote: string | null;
-  memos: SaleMemo[];
+  /** 등록 메모 출처 설명 — 예: '매출 등록·수정에서 쓴 메모'. */
+  registeredLabel: string;
+  memos: MemoEntry[];
   currentUserId: string | null;
+  addMemo: (parentId: string, body: string) => Promise<MemoAddResult>;
+  deleteMemo: (memoId: string) => Promise<MemoDeleteResult>;
 }) {
   // 같은 id 는 하나만, 늘 시간순 — 삭제 실패로 되살릴 때도 원래 자리로.
   const [shown, apply] = useOptimistic<ShownMemo[], Change>(memos, (list, change) =>
@@ -64,7 +71,7 @@ export function SaleMemoPanel({
         type: "add",
         memo: { id: tempId, body, created_at: new Date().toISOString(), created_by: currentUserId, pending: true },
       });
-      const r = await call(() => addSaleMemo(saleId, body));
+      const r = await call(() => addMemo(parentId, body));
       if (!r.ok) {
         toast.error(r.error);
         // 다른 저장이 아직 진행 중이어도 실패한 줄은 바로 빼고(낙관 상태는 모든 저장이 끝나야 풀린다),
@@ -79,7 +86,7 @@ export function SaleMemoPanel({
     setConfirmId(null);
     startSaving(async () => {
       apply({ type: "remove", id: memo.id });
-      const r = await call(() => deleteSaleMemo(memo.id));
+      const r = await call(() => deleteMemo(memo.id));
       if (!r.ok) {
         toast.error(r.error);
         startSaving(() => apply({ type: "add", memo })); // 지우지 못했으면 원래 자리로 바로 되돌린다
@@ -106,7 +113,7 @@ export function SaleMemoPanel({
 
       {registeredNote ? (
         <div className="border-b bg-muted/30 px-4 py-2.5">
-          <div className="text-xs text-muted-foreground">등록 메모 · 매출 등록·수정에서 쓴 메모</div>
+          <div className="text-xs text-muted-foreground">등록 메모 · {registeredLabel}</div>
           <p className="mt-0.5 text-sm whitespace-pre-wrap">{registeredNote}</p>
         </div>
       ) : null}
@@ -168,14 +175,14 @@ export function SaleMemoPanel({
             }
           }}
           rows={2}
-          maxLength={SALE_MEMO_MAX}
+          maxLength={MEMO_MAX}
           placeholder="메모 남기기 — 통화·입금 약속·납품 변경 등"
           aria-label="새 메모"
           className="w-full resize-y rounded-md border border-input bg-background px-2.5 py-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
         />
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">
-            {text.length > SALE_MEMO_MAX * 0.9 ? `${text.length.toLocaleString()} / ${SALE_MEMO_MAX.toLocaleString()}자` : "남긴 시각이 함께 기록됩니다 · ⌘/Ctrl+Enter 저장"}
+            {text.length > MEMO_MAX * 0.9 ? `${text.length.toLocaleString()} / ${MEMO_MAX.toLocaleString()}자` : "남긴 시각이 함께 기록됩니다 · ⌘/Ctrl+Enter 저장"}
           </span>
           <Button type="button" size="sm" onClick={add} disabled={!text.trim()}>
             메모 추가

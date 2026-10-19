@@ -21,7 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { type Book, type BookView } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
-import { NoteCell } from "@/components/admin/note-cell";
+import { NoteCell, NoteLogBadge } from "@/components/admin/note-cell";
 import {
   PurchaseFormDialog,
   type Partner,
@@ -65,6 +65,9 @@ export type PurchaseListRow = {
   site_id: string | null;
   site_name: string | null;
   notes: string | null;
+  /** 상세에서 남긴 메모 기록(0081) — 건수와 가장 최근 1건. */
+  memo_count?: Array<{ count: number }>;
+  latest_memo?: Array<{ body: string; created_at: string }>;
   partner: { id: string; name: string; code: string } | null;
   site: { id: string; name: string; code: string } | null;
   purchase_line: PurchaseLine[];
@@ -211,7 +214,7 @@ export function PurchaseTable({
               <TableHead className="w-28 text-right">합계</TableHead>
               <TableHead className="w-24 text-center">상태</TableHead>
               <TableHead className="w-32 text-center">결제</TableHead>
-              <TableHead className="w-20">메모</TableHead>
+              <TableHead className="w-24">메모</TableHead>
               <TableHead className="w-32 text-right">액션</TableHead>
             </TableRow>
           </TableHeader>
@@ -276,7 +279,13 @@ export function PurchaseTable({
                       <PaidBadge paidOn={p.paid_on} dueOn={p.payment_due_on} />
                     </TableCell>
                     <TableCell>
-                      <NoteCell text={p.notes} />
+                      {/* 등록 메모(purchase.notes) + 상세에서 남긴 기록 건수(툴팁에 최근 1건) */}
+                      <div className="flex flex-wrap items-center gap-1">
+                        {p.notes || !p.memo_count?.[0]?.count ? <NoteCell text={p.notes} /> : null}
+                        {p.memo_count?.[0]?.count ? (
+                          <NoteLogBadge count={p.memo_count[0].count} latest={p.latest_memo?.[0] ?? null} />
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-0.5">
