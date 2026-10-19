@@ -28,6 +28,9 @@ import {
   type QuoteRebarSpec,
 } from "@/components/admin/quote-dialog";
 import { type LineDraft } from "@/lib/transaction-draft";
+import { MemoLogPanel } from "@/components/admin/memo-log-panel";
+import { MEMO_COLUMNS, type MemoEntry } from "@/lib/memo-log";
+import { addQuoteMemo, deleteQuoteMemo } from "./memo-actions";
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   draft: { label: "작성", cls: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300" },
@@ -50,7 +53,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
   // 단일 FK 조인은 런타임에 object — 타입 추론(배열) 우회.
   const q = data as unknown as Record<string, any>;
 
-  const [companyRes, partnersRes, itemsRes, rebarSpecsRes] = await Promise.all([
+  // 견적서 폼 데이터 + 메모 기록(0082, 시간순) + 지금 사용자(본인 메모만 삭제 버튼, getClaims — getUser 는 다른 쿼리를 붙잡는다)
+  const [companyRes, partnersRes, itemsRes, rebarSpecsRes, memosRes, claimsRes] = await Promise.all([
     supabase.from("company_profile").select("*").eq("book", q.book).maybeSingle(),
     supabase
       .from("partner")
@@ -65,7 +69,15 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
       .eq("is_active", true)
       .order("name"),
     supabase.from("rebar_spec").select("spec_code, unit_weight_kg_per_m, standard_length_m").order("display_order"),
+    supabase
+      .from("quote_memo")
+      .select(MEMO_COLUMNS)
+      .eq("quote_id", id)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true }),
+    supabase.auth.getClaims(),
   ]);
+  const memos = (memosRes.data ?? []) as MemoEntry[];
   const company = (companyRes.data ?? null) as CompanyProfile | null;
   const partners = (partnersRes.data ?? []) as QuotePartner[];
 
@@ -269,9 +281,19 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
         <div className="grid gap-3 rounded-lg border bg-card p-4 text-sm sm:grid-cols-3">
           {q.delivery_terms ? <Info label="납품조건" value={q.delivery_terms} /> : null}
           {q.payment_terms ? <Info label="결제조건" value={q.payment_terms} /> : null}
-          {q.notes ? <Info label="메모" value={q.notes} /> : null}
+          {q.notes ? <Info label="비고 (견적서에 인쇄)" value={q.notes} /> : null}
         </div>
       ) : null}
+
+      {/* 내부 메모 기록(0082) — 견적서엔 안 나간다. 인쇄되는 비고(q.notes)는 위 조건 칸에. */}
+      <MemoLogPanel
+        parentId={q.id}
+        registeredNote={null}
+        memos={memos}
+        currentUserId={claimsRes.data?.claims.sub ?? null}
+        addMemoAction={addQuoteMemo}
+        deleteMemoAction={deleteQuoteMemo}
+      />
     </div>
   );
 }

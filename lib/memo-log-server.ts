@@ -2,10 +2,11 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { MEMO_COLUMNS, MEMO_MAX, type MemoAddResult, type MemoDeleteResult, type MemoEntry } from "@/lib/memo-log";
 
-/** 메모 기록 표 — 거래별로 같은 구조(0080·0081). */
+/** 메모 기록 표 — 거래별로 같은 구조(0080·0081·0082). labelObj = 목적격 조사까지(매출을·견적서를). */
 const TABLES = {
-  sale: { table: "sale_memo", fk: "sale_id", parentTable: "sale", label: "매출" },
-  purchase: { table: "purchase_memo", fk: "purchase_id", parentTable: "purchase", label: "매입" },
+  sale: { table: "sale_memo", fk: "sale_id", parentTable: "sale", label: "매출", labelObj: "매출을" },
+  purchase: { table: "purchase_memo", fk: "purchase_id", parentTable: "purchase", label: "매입", labelObj: "매입을" },
+  quote: { table: "quote_memo", fk: "quote_id", parentTable: "quote", label: "견적서", labelObj: "견적서를" },
 } as const;
 export type MemoParent = keyof typeof TABLES;
 
@@ -22,7 +23,7 @@ function friendly(parent: MemoParent, message: string): string {
 
 /** 사용자 세션(RLS)으로 넣는다 — 작성 시각·작성자는 트리거, 권한은 그 거래의 책 staff 이상. */
 export async function insertMemo(parent: MemoParent, parentId: string, body: string): Promise<MemoAddResult> {
-  const { table, fk, parentTable, label } = TABLES[parent];
+  const { table, fk, parentTable, label, labelObj } = TABLES[parent];
   if (!UUID_RE.test(parentId)) return { ok: false, error: `잘못된 ${label}입니다.` };
   const text = body.trim();
   if (!text) return { ok: false, error: "메모 내용을 입력해 주세요." };
@@ -36,7 +37,7 @@ export async function insertMemo(parent: MemoParent, parentId: string, body: str
     // FK 오류로는 오지 않는다. 거래가 아직 보이는지 한 번 더 보고 갈라 안내한다.
     if (message.includes("row-level security")) {
       const { data: parentRow } = await supabase.from(parentTable).select("id").eq("id", parentId).is("deleted_at", null).maybeSingle();
-      return { ok: false, error: parentRow ? NO_PERMISSION : `${label}을 찾을 수 없습니다(취소·삭제됐을 수 있음). 새로고침해 주세요.` };
+      return { ok: false, error: parentRow ? NO_PERMISSION : `${labelObj} 찾을 수 없습니다(취소·삭제됐을 수 있음). 새로고침해 주세요.` };
     }
     return { ok: false, error: friendly(parent, message) };
   }

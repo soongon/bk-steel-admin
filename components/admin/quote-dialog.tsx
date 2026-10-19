@@ -605,12 +605,13 @@ export function QuoteDialog({
               </Field>
             </div>
 
-            <Field label="메모">
+            {/* quote.notes 는 견적서에 '비고'로 인쇄된다 — 내부 메모는 견적서 상세의 메모 칸(0082)에 */}
+            <Field label="비고 (견적서에 인쇄)">
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                placeholder="기타 견적 조건 등"
+                placeholder="기타 견적 조건 등 — 내부 메모는 저장 후 상세의 메모 칸에"
                 className="resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
             </Field>

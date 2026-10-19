@@ -44,8 +44,8 @@ export function MemoLogPanel({
 }: {
   parentId: string;
   registeredNote: string | null;
-  /** 등록 메모 출처 설명 — 예: '매출 등록·수정에서 쓴 메모'. */
-  registeredLabel: string;
+  /** 등록 메모 출처 설명 — 예: '매출 등록·수정에서 쓴 메모'. registeredNote 가 있을 때만 쓴다. */
+  registeredLabel?: string;
   memos: MemoEntry[];
   currentUserId: string | null;
   addMemoAction: (parentId: string, body: string) => Promise<MemoAddResult>;
@@ -113,7 +113,7 @@ export function MemoLogPanel({
 
       {registeredNote ? (
         <div className="border-b bg-muted/30 px-4 py-2.5">
-          <div className="text-xs text-muted-foreground">등록 메모 · {registeredLabel}</div>
+          <div className="text-xs text-muted-foreground">등록 메모{registeredLabel ? ` · ${registeredLabel}` : ""}</div>
           <p className="mt-0.5 text-sm whitespace-pre-wrap">{registeredNote}</p>
         </div>
       ) : null}
