@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 
 import { type BookView } from "@/lib/book";
+import { HOMEPAGE_URL } from "@/lib/inquiry";
 import {
   Sidebar,
   SidebarContent,
@@ -49,6 +50,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
@@ -65,10 +67,13 @@ type MenuItem = {
   more?: boolean;
   /** true면 다른 사이트 — href 는 전체 주소, 새 탭으로 열고 바깥 링크 표시. */
   external?: boolean;
+  /** 메뉴 오른쪽 숫자 배지 — AdminSidebar 의 같은 이름 prop(서버가 넘긴 promise)으로 그린다. */
+  badge?: keyof MenuBadges;
 };
 
-/** 홈페이지(별도 repo sl-steel·별도 Supabase·별도 로그인) — 관리 기능은 아직 거기 있고 여기선 메뉴 링크만. */
-const HOMEPAGE = "https://www.sl-steel.co.kr";
+/** 메뉴 배지 숫자 — 레이아웃이 기다리지 않고 promise 로 넘긴다(느려도 메뉴는 먼저 뜬다). null·0 이면 배지 없음. */
+type MenuBadges = { newInquiries?: Promise<number | null> };
+const BADGE_LABEL: Record<keyof MenuBadges, string> = { newInquiries: "새 문의" };
 
 type MenuGroup = {
   label: string;
@@ -108,13 +113,14 @@ function buildMenuGroups(): MenuGroup[] {
       ],
     },
     {
+      // 문의는 이 어드민에서(홈페이지 DB 를 직접 읽음). 블로그 관리는 아직 홈페이지 관리자(별도 로그인) — 새 탭 링크.
       label: "홈페이지",
       items: [
-        { label: "문의 관리", href: `${HOMEPAGE}/admin/inquiries`, icon: InboxIcon, external: true },
-        { label: "블로그 글", href: `${HOMEPAGE}/admin`, icon: NewspaperIcon, external: true },
-        { label: "빠른 글쓰기", href: `${HOMEPAGE}/admin/quick-post`, icon: PenLineIcon, external: true, more: true },
-        { label: "모바일 글쓰기", href: `${HOMEPAGE}/admin/mobile-post`, icon: SmartphoneIcon, external: true, more: true },
-        { label: "블로그 보기", href: `${HOMEPAGE}/blog`, icon: GlobeIcon, external: true, more: true },
+        { label: "문의 관리", href: "/inquiries", icon: InboxIcon, badge: "newInquiries" },
+        { label: "블로그 글", href: `${HOMEPAGE_URL}/admin`, icon: NewspaperIcon, external: true },
+        { label: "빠른 글쓰기", href: `${HOMEPAGE_URL}/admin/quick-post`, icon: PenLineIcon, external: true, more: true },
+        { label: "모바일 글쓰기", href: `${HOMEPAGE_URL}/admin/mobile-post`, icon: SmartphoneIcon, external: true, more: true },
+        { label: "블로그 보기", href: `${HOMEPAGE_URL}/blog`, icon: GlobeIcon, external: true, more: true },
       ],
     },
     {
@@ -150,7 +156,37 @@ function buildMenuGroups(): MenuGroup[] {
   ];
 }
 
-export function AdminSidebar({ book }: { book: BookView }) {
+/**
+ * 숫자 배지(펼친 메뉴) + 빨간 점(아이콘만 보이는 접힌 메뉴).
+ * use()로 기다리지 않는다 — 서버 액션 뒤 레이아웃이 다시 그려질 때마다 화면 갱신이 홈페이지 DB 응답까지 멈춘다.
+ * 새 숫자가 올 때까지는 이전 숫자를 둔다.
+ */
+function MenuCountBadge({ count, label }: { count: Promise<number | null>; label: string }) {
+  const [n, setN] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    count.then(
+      (v) => alive && setN(v),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, [count]);
+  if (!n) return null;
+  return (
+    <>
+      <SidebarMenuBadge className="rounded-full bg-red-500 text-white peer-hover/menu-button:text-white peer-data-active/menu-button:text-white">
+        <span className="sr-only">{label} </span>
+        {n > 99 ? "99+" : n}
+        <span className="sr-only">건</span>
+      </SidebarMenuBadge>
+      <span aria-hidden className="pointer-events-none absolute top-1 right-1 hidden size-2 rounded-full bg-red-500 group-data-[collapsible=icon]:block" />
+    </>
+  );
+}
+
+export function AdminSidebar({ book, badges = {} }: { book: BookView; badges?: MenuBadges }) {
   const pathname = usePathname();
   const groups = buildMenuGroups();
   // [더보기]로 펼친 그룹 — 처음엔 접힌 상태(more 항목은 기본으로 안 보임).
@@ -179,6 +215,7 @@ export function AdminSidebar({ book }: { book: BookView }) {
                     const isActive = !item.external && (pathname === fullHref || pathname.startsWith(fullHref + "/"));
                     if (item.more && !open && !isActive) return null;
                     const Icon = item.icon;
+                    const badgeCount = item.badge ? badges[item.badge] : undefined;
                     return (
                       <SidebarMenuItem key={item.href}>
                         <SidebarMenuButton
@@ -191,6 +228,7 @@ export function AdminSidebar({ book }: { book: BookView }) {
                           }
                           isActive={isActive}
                           tooltip={item.label}
+                          className={badgeCount ? "group-has-data-[sidebar=menu-badge]/menu-item:pr-8" : undefined}
                         >
                           <Icon className="size-4" />
                           <span>
@@ -203,6 +241,7 @@ export function AdminSidebar({ book }: { book: BookView }) {
                             </span>
                           ) : null}
                         </SidebarMenuButton>
+                        {badgeCount ? <MenuCountBadge count={badgeCount} label={BADGE_LABEL[item.badge!]} /> : null}
                       </SidebarMenuItem>
                     );
                   })}

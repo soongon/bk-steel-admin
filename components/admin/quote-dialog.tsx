@@ -18,6 +18,7 @@ import { type CompanyProfile } from "@/lib/company-profile";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 import { QuoteDocument, type QuoteDocumentData } from "@/components/admin/quote-document";
+import { ReferenceNote } from "@/components/admin/reference-note";
 import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import {
   type LineDraft,
@@ -99,6 +100,7 @@ export function QuoteDialog({
   defaultPartnerName = "",
   editing,
   sourceProjectId,
+  reference,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -110,6 +112,8 @@ export function QuoteDialog({
   editing?: EditingQuote | null; // 있으면 수정 모드(프리필 + updateQuote)
   /** 발주 레이더 행에서 열었을 때 그 행 id — 신규 견적에 출처로 저장(문자 가드·레이더 유래 매출 집계). */
   sourceProjectId?: string;
+  /** 폼 위에 참고로 보여 줄 원문(홈페이지 문의 내용) — 저장·출력하지 않는다. */
+  reference?: string | null;
 }) {
   const { partners, items, rebarSpecs } = sources;
   const saveMode = book !== undefined; // 저장 모드(견적 메뉴) vs 미리보기(현장 진입)
@@ -349,6 +353,7 @@ export function QuoteDialog({
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto pr-1">
+            {!editing && reference ? <ReferenceNote text={reference} /> : null}
             {/* 책 선택 (저장 모드 — 견적은 어느 책 소유인지 지정). 전체보기에서도 작성 가능. */}
             {saveMode ? (
               <Field label="책 *">

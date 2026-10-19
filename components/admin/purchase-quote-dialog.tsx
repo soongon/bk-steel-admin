@@ -33,6 +33,7 @@ import {
 } from "@/lib/purchase-quote";
 import { PurchaseQuoteDocument, type PurchaseQuoteDocumentData } from "@/components/admin/purchase-quote-document";
 import { PurchaseQuoteCardPicker, revokeStagedCards, type StagedCard } from "@/components/admin/purchase-quote-cards";
+import { ReferenceNote } from "@/components/admin/reference-note";
 import { createPurchaseQuote, updatePurchaseQuote } from "@/app/[book]/purchase-quotes/actions";
 
 export type PurchaseQuotePartner = {
@@ -71,6 +72,16 @@ export type PurchaseQuoteSources = {
   companies?: Partial<Record<Book, CompanyProfile>>;
 };
 
+/** 새로 작성할 때 미리 채울 값(홈페이지 문의 → 매입견적서 등). 수정(editing)이면 쓰지 않는다. */
+export type PurchaseQuoteDefaults = {
+  partner_name?: string;
+  site_name?: string;
+  lead_source?: LeadSource | null;
+  lead_note?: string;
+  /** 폼 위에 참고로 보여 줄 원문(문의 내용) — 저장·출력하지 않는다. */
+  reference?: string | null;
+};
+
 /** 자주 쓰는 매입 품목 — 품목 마스터에 없어도 바로 고를 수 있게 datalist 상단에 둔다. */
 const COMMON_NAMES = ["중고철근", "고철(생철)", "고철(중량)", "고철(경량)", "철근 잔재", "혼합 고철"];
 
@@ -85,6 +96,7 @@ export function PurchaseQuoteDialog({
   book,
   onSaved,
   editing,
+  defaults,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -92,6 +104,8 @@ export function PurchaseQuoteDialog({
   book: BookView;
   onSaved?: (id: string) => void;
   editing?: EditingPurchaseQuote | null;
+  /** 새 작성 프리필 — 열릴 때마다 다시 채우므로 렌더마다 새 객체를 만들지 말 것(서버 props 나 useMemo). */
+  defaults?: PurchaseQuoteDefaults | null;
 }) {
   const { partners, items } = sources;
   const [selectedBook, setSelectedBook] = useState<Book>(book !== "all" ? book : "sl");
@@ -172,19 +186,19 @@ export function PurchaseQuoteDialog({
       setLeadNote(editing.lead_note ?? "");
       setLines(editing.lines);
     } else {
-      setPartnerInput("");
-      setSiteName("");
+      setPartnerInput(defaults?.partner_name ?? "");
+      setSiteName(defaults?.site_name ?? "");
       setValidUntil("");
       setUndocumented(false);
       setWeighingTerms("");
       setDeliveryTerms("");
       setPaymentTerms("");
       setNotes("");
-      setLeadSource(null);
-      setLeadNote("");
+      setLeadSource(defaults?.lead_source ?? null);
+      setLeadNote(defaults?.lead_note ?? "");
       setLines([]);
     }
-  }, [open, book, editing]);
+  }, [open, book, editing, defaults]);
 
   function addLine() {
     if (!name.trim()) { setError("품목명을 입력해주세요."); return; }
@@ -324,6 +338,7 @@ export function PurchaseQuoteDialog({
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto pr-1">
+            {!editing && defaults?.reference ? <ReferenceNote text={defaults.reference} /> : null}
             <Field label="책 *">
               {book === "all" && !editing ? (
                 <div className="flex gap-2">

@@ -7,6 +7,14 @@ export const fmtKrw = (n: number) => `₩${Math.round(n).toLocaleString("ko-KR")
 export const fmtNum = (n: number, d = 1) =>
   n.toLocaleString("ko-KR", { maximumFractionDigits: d });
 
+/** ISO 시각 → 한국시간 'YYYY-MM-DD HH:mm' (서버가 UTC 여도 같게). */
+export function fmtKstDateTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("sv-SE", { timeZone: "Asia/Seoul", hourCycle: "h23" }).slice(0, 16);
+}
+
 // ── 연락처: 저장은 숫자만, 표시는 대시 포함 ──
 
 /** 숫자만 추출 (저장용). 입력에서 대시·공백 등 제거. */

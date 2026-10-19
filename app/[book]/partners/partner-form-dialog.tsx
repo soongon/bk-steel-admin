@@ -43,6 +43,8 @@ export type PartnerPrefill = {
   from_card_id?: string;
   /** 발주 레이더 행 — 저장 후 그 행(낙찰이면 같은 사업자번호 계정)에 거래처 연결(★) */
   from_radar_id?: string;
+  /** 홈페이지 문의 id — 제목·안내 문구만 바뀐다(연결 저장 없음: 문의는 전화번호로 거래처를 찾는다). */
+  from_inquiry_id?: string;
 };
 
 export function PartnerFormDialog({
@@ -50,11 +52,14 @@ export function PartnerFormDialog({
   onOpenChange,
   editing,
   prefill,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing: PartnerRow | null;
   prefill?: PartnerPrefill | null;
+  /** 저장 성공 뒤(다이얼로그 닫힌 다음) — 거래처 화면 밖에서 열었을 때 그 화면을 새로 그리는 데 쓴다. */
+  onSaved?: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +79,7 @@ export function PartnerFormDialog({
         toast.success(result.message ?? (editing ? "거래처가 수정되었습니다" : "거래처가 추가되었습니다"));
         if (result.warning) toast.warning(result.warning);
         onOpenChange(false);
+        onSaved?.();
       } else {
         setError(result.error);
       }
@@ -93,14 +99,18 @@ export function PartnerFormDialog({
               : isPrefill
                 ? prefill?.from_radar_id
                   ? "신규 거래처 등록 (발주 레이더)"
-                  : "신규 거래처 등록 (명함 기반)"
+                  : prefill?.from_inquiry_id
+                    ? "신규 거래처 등록 (홈페이지 문의)"
+                    : "신규 거래처 등록 (명함 기반)"
                 : "신규 거래처 등록"}
           </DialogTitle>
           <DialogDescription>
             {isPrefill
               ? prefill?.from_radar_id
                 ? "레이더 기록으로 채워진 폼입니다. 저장하면 레이더 행에 거래처로 연결됩니다(★). 같은 이름·사업자번호의 거래처가 이미 있으면 새로 만들지 않고 그 거래처에 연결합니다."
-                : "명함 정보로 채워진 폼입니다. 검토 후 저장하면 명함에 자동 매핑됩니다."
+                : prefill?.from_inquiry_id
+                  ? "문의에 적힌 이름·연락처로 채워진 폼입니다. 상호·대표자는 통화로 확인해 고쳐 주세요. 저장하면 문의 화면에 거래처로 표시됩니다(같은 전화번호)."
+                  : "명함 정보로 채워진 폼입니다. 검토 후 저장하면 명함에 자동 매핑됩니다."
               : "공유 마스터 — 매출·매입에서 거래처명 정합성의 기준이 됩니다."}
           </DialogDescription>
         </DialogHeader>
@@ -109,7 +119,7 @@ export function PartnerFormDialog({
           action={handleSubmit}
           className="flex flex-col gap-3"
           // key로 dialog 새로 열릴 때마다 form state 리셋
-          key={editing?.id ?? prefill?.from_card_id ?? prefill?.from_radar_id ?? "new"}
+          key={editing?.id ?? prefill?.from_card_id ?? prefill?.from_radar_id ?? prefill?.from_inquiry_id ?? "new"}
         >
           {prefill?.from_card_id ? (
             <input type="hidden" name="from_card" value={prefill.from_card_id} />
