@@ -23,7 +23,7 @@ import { type PurchaseQuoteDefaults, type PurchaseQuoteItemOption, type Purchase
 import { type PartnerPrefill } from "@/app/[book]/partners/partner-form-dialog";
 import { cn } from "@/lib/utils";
 import { InquiryUnavailable } from "../inquiry-unavailable";
-import { InquiryActions, InquiryStatusButtons } from "./inquiry-actions";
+import { InquiryActions, InquiryStatusBadge, InquiryStatusButtons, InquiryStatusProvider } from "./inquiry-actions";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -71,7 +71,6 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
 
   const kind = inquiryKind(inq.inquiry_type);
   const kindLabel = inquiryKindLabel(inq.inquiry_type);
-  const st = inquiryStatusMeta(inq.status);
   const lead = guessLeadSource(inq.source);
   const srcText = describeSource(inq.source);
   const received = fmtKstDateTime(inq.created_at);
@@ -123,22 +122,25 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
         </Link>
       </div>
 
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={cn("inline-flex h-5 items-center rounded-full px-2 text-xs", kind ? INQUIRY_KIND_CLS[kind] : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300")}>
-              {kindLabel}
-            </span>
-            <h1 className="text-xl font-semibold">{inq.name}</h1>
-            <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${st.cls}`}>{st.label}</span>
+      {/* 상태는 누르는 즉시 배지·버튼에 반영(저장은 뒤에서) */}
+      <InquiryStatusProvider id={inq.id} status={inq.status}>
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn("inline-flex h-5 items-center rounded-full px-2 text-xs", kind ? INQUIRY_KIND_CLS[kind] : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300")}>
+                {kindLabel}
+              </span>
+              <h1 className="text-xl font-semibold">{inq.name}</h1>
+              <InquiryStatusBadge />
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              홈페이지 {inq.inquiry_type} · 접수 {received}
+              {(inq.submit_count ?? 1) > 1 ? ` · ${inq.submit_count}회 제출(합침)` : ""}
+            </p>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            홈페이지 {inq.inquiry_type} · 접수 {received}
-            {(inq.submit_count ?? 1) > 1 ? ` · ${inq.submit_count}회 제출(합침)` : ""}
-          </p>
-        </div>
-        <InquiryStatusButtons id={inq.id} status={inq.status} />
-      </header>
+          <InquiryStatusButtons />
+        </header>
+      </InquiryStatusProvider>
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-6">
