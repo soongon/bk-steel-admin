@@ -1,0 +1,54 @@
+name: 홈택스 계산서 수집 · 매일
+
+# 팝빌 홈택스 연계(정액제)로 매출·매입 (세금)계산서를 수집해 hometax_invoice 에 쌓는다(전송일 기준 최근 7일).
+# 새 건·실패가 있을 때만 카카오워크 요약. 수동 실행 시 기간·기준일·책을 지정할 수 있다(소급).
+on:
+  schedule:
+    - cron: '0 21 * * *'   # 매일 06:00 KST (전날 21:00 UTC)
+  workflow_dispatch:
+    inputs:
+      from:
+        description: '시작일 YYYY-MM-DD (비우면 최근 7일)'
+        required: false
+      to:
+        description: '종료일 YYYY-MM-DD'
+        required: false
+      dtype:
+        description: '기준일 W=작성일 I=발행일 S=전송일'
+        required: false
+        default: 'S'
+      book:
+        description: '책 (sl 또는 bk, 쉼표 구분)'
+        required: false
+
+concurrency:
+  group: hometax-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: 홈택스 수집
+        run: >
+          npx tsx scripts/hometax-collect.ts
+          ${{ inputs.from && format('--from {0}', inputs.from) || '' }}
+          ${{ inputs.to && format('--to {0}', inputs.to) || '' }}
+          ${{ inputs.dtype && format('--dtype {0}', inputs.dtype) || '' }}
+          ${{ inputs.book && format('--book {0}', inputs.book) || '' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          POPBILL_LINK_ID: ${{ secrets.POPBILL_LINK_ID }}
+          POPBILL_SECRET_KEY: ${{ secrets.POPBILL_SECRET_KEY }}
+          POPBILL_IS_TEST: ${{ vars.POPBILL_IS_TEST || 'true' }}
+          HOMETAX_BOOKS: ${{ vars.HOMETAX_BOOKS || 'sl' }}
+          KAKAOWORK_WEBHOOK_URL: ${{ secrets.KAKAOWORK_WEBHOOK_URL }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
