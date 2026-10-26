@@ -114,7 +114,7 @@ export default async function SaleDetailPage({
       `
       id, book, doc_no, ordered_on, delivered_on, status,
       subtotal_krw, vat_krw, total_krw, vat_rate, site_name, site_id, partner_id, is_documented,
-      tax_doc_type, tax_doc_no, payment_due_on, settled_on, notes, delivery_cert_id,
+      tax_doc_type, tax_doc_no, payment_due_on, settled_on, notes, delivery_cert_id, origin, origin_ref,
       statement_sent_on, tax_invoice_issued_on, source_quote_id,
       partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email, email2),
       site:site(id, code, name),
@@ -336,6 +336,14 @@ export default async function SaleDetailPage({
           {!sale.is_documented ? (
             <span className="inline-flex h-5 items-center rounded-full bg-amber-100 px-2 text-xs text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
               무자료
+            </span>
+          ) : null}
+          {sale.origin === "hometax" ? (
+            <span
+              className="inline-flex h-5 items-center gap-1 rounded-full bg-orange-100 px-2 text-xs text-orange-700 dark:bg-orange-950/40 dark:text-orange-300"
+              title={`홈택스 직접 발행 계산서로 자동 생성${sale.origin_ref ? ` · 승인 ${sale.origin_ref}` : ""} — 품목·중량·현장은 수정에서 채우세요`}
+            >
+              <span className="size-1.5 rounded-full bg-orange-500" /> 홈택스 생성
             </span>
           ) : null}
           {sourceQuote ? (

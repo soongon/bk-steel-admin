@@ -46,7 +46,7 @@ export type Decision = {
   total: number;
   isModify: boolean;
   origNts: string | null;
-  case: "B_popbill" | "A_link" | "D_modify" | "X_amount" | "N_missing" | "S_skip";
+  case: "B_popbill" | "A_link" | "D_modify" | "X_amount" | "N_missing" | "D_dup" | "S_skip";
   status: HometaxMatchStatus;
   saleId?: string;
   saleDocNo?: string;
@@ -55,6 +55,8 @@ export type Decision = {
   note: string;
   candidates?: Array<{ doc_no: string; total: number; ordered_on: string; settled: boolean; has_invoice: boolean }>;
   partnerFix?: { partner_id: string; name: string; old_biz: string | null; new_biz: string };
+  /** N_missing 일 때 매출 생성에 쓸 거래처 — 기존 id 또는 신규 생성 */
+  partnerForCreate?: { partner_id: string | null; name: string; isNew: boolean };
 };
 
 export type Action =
@@ -64,6 +66,8 @@ export type Action =
   | { type: "memo_created"; memo_id: string; sale_id: string }
   | { type: "partner_biz_filled"; partner_id: string; prev: string | null; next: string }
   | { type: "payment_adjusted"; bank_transaction_id: string; sale_id: string; prev_amount: number; next_amount: number }
+  | { type: "sale_created"; sale_id: string; doc_no: string }
+  | { type: "partner_created"; partner_id: string; name: string }
   | {
       type: "sale_aligned";
       sale_id: string;
@@ -87,7 +91,7 @@ async function loadSystem(sb: SupabaseClient, book: Book, from: string, to: stri
       .eq("book", book)
       .is("deleted_at", null)
       .neq("status", "cancelled")
-      .gte("ordered_on", pad(from, -60))
+      .gte("ordered_on", pad(from, -180)) // 중복 가드(같은 금액 매출 180일) — 8월 납품분을 10월에 발행하는 사례
       .lte("ordered_on", pad(to, 31)),
     sb.from("tax_invoice").select("id, sale_id, nts_confirm_num, state, provider, total_krw").eq("book", book).is("deleted_at", null).neq("state", "cancelled"),
     sb.from("partner").select("id, name, business_no").is("deleted_at", null),
@@ -196,6 +200,19 @@ export async function planReconcile(
     const cands = sales.filter((s) => s.partner_id && partnerIds.has(s.partner_id) && isDocSale(s));
     const exact = cands.filter((s) => Math.abs(s.total_krw - ins.total_amount) < 1 && !saleHasInvoice.has(s.id) && !coveredSaleIds.has(s.id));
     const toCand = (s: SaleLite) => ({ doc_no: s.doc_no, total: s.total_krw, ordered_on: s.ordered_on, settled: !!s.settled_on, has_invoice: saleHasInvoice.has(s.id) });
+    const daysBetween = (a: string, b: string) => Math.abs((new Date(a).getTime() - new Date(b).getTime()) / 86_400_000);
+    const partnerForCreate: Decision["partnerForCreate"] = {
+      partner_id: byBiz[0]?.id ?? byName[0]?.id ?? null,
+      name: party.name ?? party.biz_no,
+      isNew: byBiz.length === 0 && byName.length === 0,
+    };
+    // 중복 가드: 같은 거래처에 같은 금액 매출이 180일 안에 이미 있으면(발행됐든 아니든) 새로 만들지 않는다 — 수정분 뒤 재발행·이중 발급 의심
+    // (이번 파일의 다른 계산서로 이미 짝지어진 매출도 포함 — 팝빌 발행 후 수정분으로 지우고 홈택스에서 재발행한 사례가 그렇다)
+    const dup = cands.find((s) => Math.abs(s.total_krw - ins.total_amount) < 1 && (saleHasInvoice.has(s.id) || coveredSaleIds.has(s.id) || exact.length === 0) && daysBetween(s.ordered_on, ins.write_date) <= 180);
+    if (exact.length === 0 && dup) {
+      decisions.push({ ...base, case: "D_dup", status: "candidate", partnerFix, candidates: [toCand(dup)], note: `같은 금액 매출 ${dup.doc_no}(${saleHasInvoice.has(dup.id) ? "발행됨" : "미발행"}) 있음 — 재발행·이중 발급 의심, 생성 안 함` });
+      continue;
+    }
     if (exact.length === 1) {
       const s = exact[0];
       coveredSaleIds.add(s.id);
@@ -206,19 +223,30 @@ export async function planReconcile(
       decisions.push({ ...base, case: "X_amount", status: "candidate", partnerFix, candidates: exact.map(toCand), note: `같은 금액 매출 ${exact.length}건 — 선택 필요` });
       continue;
     }
-    if (cands.length > 0) {
-      const open = cands.filter((s) => !saleHasInvoice.has(s.id)).sort((a, b) => Math.abs(a.total_krw - ins.total_amount) - Math.abs(b.total_krw - ins.total_amount));
+    // X 후보 [결정 §13]: 같은 거래처의 미발행 매출 중 작성일 ±10일 · 금액 차이 10% 또는 10만 원 이내일 때만. 그 밖은 누락(N).
+    const tolerance = Math.max(ins.total_amount * 0.1, 100_000);
+    const near = cands
+      .filter((s) => !saleHasInvoice.has(s.id) && !coveredSaleIds.has(s.id) && daysBetween(s.ordered_on, ins.write_date) <= 10 && Math.abs(s.total_krw - ins.total_amount) <= tolerance)
+      .sort((a, b) => Math.abs(a.total_krw - ins.total_amount) - Math.abs(b.total_krw - ins.total_amount));
+    if (near.length > 0) {
       decisions.push({
         ...base,
         case: "X_amount",
         status: "candidate",
         partnerFix,
-        candidates: open.slice(0, 5).map(toCand),
-        note: open.length ? `거래처 있음 · 금액 불일치(가장 가까운 ${open[0].doc_no} ${open[0].total_krw.toLocaleString("ko-KR")})` : "거래처 있음 · 발행 안 된 매출 없음",
+        candidates: near.slice(0, 5).map(toCand),
+        note: `거래처 있음 · 금액 불일치(가장 가까운 ${near[0].doc_no} ${near[0].total_krw.toLocaleString("ko-KR")}) → --align 으로 계산서 금액에 맞춤`,
       });
       continue;
     }
-    decisions.push({ ...base, case: "N_missing", status: "unmatched", partnerFix, note: partnerIds.size ? "거래처는 있으나 자료 매출 없음" : "시스템에 거래처·매출 없음" });
+    decisions.push({
+      ...base,
+      case: "N_missing",
+      status: "unmatched",
+      partnerFix,
+      partnerForCreate,
+      note: partnerForCreate.isNew ? "시스템에 거래처·매출 없음 → 거래처 생성 + 매출 생성" : "거래처는 있으나 해당 매출 없음 → 매출 생성",
+    });
   }
 
   // E: 엑셀 기간(월) 안의 자료 매출 중 발행 기록 없고 어느 수집본에도 안 잡힌 것
@@ -269,6 +297,7 @@ export async function applyReconcile(
   log(`수집본 저장: 신규 ${toInsert.length} · 갱신 ${toUpdate.length}`);
 
   // 2) 결정 반영
+  const createdPartners = new Map<string, string>(); // 이번 실행에서 만든 거래처(사업자번호 → id)
   for (const d of report.decisions) {
     if (d.case === "S_skip") continue;
     const row = byNts.get(d.nts);
@@ -279,12 +308,43 @@ export async function applyReconcile(
       : { match_status: "unmatched", sale_id: null, tax_invoice_id: null, notes: null };
 
     let taxInvoiceId = d.taxInvoiceId ?? null;
-    if (d.case === "A_link" && d.saleId) {
+    let createdSaleId: string | null = null;
+    let createdDocNo: string | null = null;
+    if (d.case === "N_missing" && d.partnerForCreate) {
+      const ins = row.insert;
+      // 거래처 — 기존 id 또는 신규(사업자번호·상호·대표자·이메일; 주소·전화는 엑셀에 없음).
+      // 같은 파일에 같은 거래처 계산서가 여러 장이면 한 번만 만든다(이번 실행에서 만든 것 + DB 재조회).
+      let partnerId = d.partnerForCreate.partner_id;
+      const bizKeyOf = ins.invoicee.biz_no || `name:${ins.invoicee.name ?? ""}`;
+      if (!partnerId && createdPartners.has(bizKeyOf)) partnerId = createdPartners.get(bizKeyOf)!;
+      if (!partnerId && ins.invoicee.biz_no) {
+        const { data: found } = await sb.from("partner").select("id").eq("business_no", ins.invoicee.biz_no).is("deleted_at", null).order("created_at").limit(1).maybeSingle();
+        if (found) partnerId = String(found.id);
+      }
+      if (!partnerId) {
+        const { data: p, error: pErr } = await sb
+          .from("partner")
+          .insert({ name: ins.invoicee.name ?? ins.invoicee.biz_no, business_no: ins.invoicee.biz_no || null, representative: ins.invoicee.ceo, email: ins.invoicee.email, notes: `홈택스 수집본에서 자동 생성 (${ins.write_date} 계산서)` })
+          .select("id")
+          .single();
+        if (pErr || !p) throw new Error(`거래처 생성 실패(${ins.invoicee.name}): ${pErr?.message}`);
+        partnerId = String(p.id);
+        createdPartners.set(bizKeyOf, partnerId);
+        actions.push({ type: "partner_created", partner_id: partnerId, name: ins.invoicee.name ?? "" });
+        log(`거래처 생성: ${ins.invoicee.name} (${ins.invoicee.biz_no})`);
+      }
+      const created = await createSaleFromInvoice(sb, book, ins, partnerId, log);
+      createdSaleId = created.saleId;
+      createdDocNo = created.docNo;
+      actions.push({ type: "sale_created", sale_id: created.saleId, doc_no: created.docNo });
+    }
+    const linkSaleId = createdSaleId ?? (d.case === "A_link" ? (d.saleId ?? null) : null);
+    if (linkSaleId) {
       // 발행 기록 생성 — 기존 RPC(provider hometax). 이전 sale 발행 필드를 롤백용으로 보관.
-      const { data: saleBefore } = await sb.from("sale").select("tax_invoice_issued_on, tax_doc_no").eq("id", d.saleId).single();
+      const { data: saleBefore } = await sb.from("sale").select("tax_invoice_issued_on, tax_doc_no").eq("id", linkSaleId).single();
       const ins = row.insert;
       const { data: tiId, error } = await sb.rpc("record_sale_tax_invoice", {
-        p_sale_id: d.saleId,
+        p_sale_id: linkSaleId,
         p_invoice: {
           provider: "hometax",
           mgt_key: `hometax-${d.nts}`,
@@ -308,16 +368,15 @@ export async function applyReconcile(
       actions.push({
         type: "tax_invoice_created",
         tax_invoice_id: taxInvoiceId,
-        sale_id: d.saleId,
+        sale_id: linkSaleId,
         prev_sale: { tax_invoice_issued_on: (saleBefore?.tax_invoice_issued_on as string | null) ?? null, tax_doc_no: (saleBefore?.tax_doc_no as string | null) ?? null },
       });
-      const { data: memo, error: mErr } = await sb
-        .from("sale_memo")
-        .insert({ sale_id: d.saleId, body: `[홈택스 대조] 홈택스 직접 발행분과 연결 — 승인번호 ${d.nts}, 작성일 ${ins.write_date}, 합계 ${ins.total_amount.toLocaleString("ko-KR")}원 (팝빌 엑셀 ${ins.write_date.slice(0, 7)})` })
-        .select("id")
-        .single();
-      if (!mErr && memo) actions.push({ type: "memo_created", memo_id: String(memo.id), sale_id: d.saleId });
-      log(`A 연결: ${d.saleDocNo} ← ${d.nts}`);
+      const body = createdSaleId
+        ? `[홈택스 대조] 홈택스 직접 발행 계산서로 매출 생성 — 승인번호 ${d.nts}, 작성일 ${ins.write_date}, 합계 ${ins.total_amount.toLocaleString("ko-KR")}원, 품목 "${ins.item_summary ?? ""}" · 품목·중량·현장 미정 → 수정에서 채울 것 (팝빌 엑셀 ${ins.write_date.slice(0, 7)})`
+        : `[홈택스 대조] 홈택스 직접 발행분과 연결 — 승인번호 ${d.nts}, 작성일 ${ins.write_date}, 합계 ${ins.total_amount.toLocaleString("ko-KR")}원 (팝빌 엑셀 ${ins.write_date.slice(0, 7)})`;
+      const { data: memo, error: mErr } = await sb.from("sale_memo").insert({ sale_id: linkSaleId, body }).select("id").single();
+      if (!mErr && memo) actions.push({ type: "memo_created", memo_id: String(memo.id), sale_id: linkSaleId });
+      log(createdSaleId ? `N 생성: ${createdDocNo} ← ${d.nts} (${ins.invoicee.name} ${ins.total_amount.toLocaleString("ko-KR")})` : `A 연결: ${d.saleDocNo} ← ${d.nts}`);
     }
     if (d.partnerFix) {
       const { error } = await sb.from("partner").update({ business_no: d.partnerFix.new_biz }).eq("id", d.partnerFix.partner_id);
@@ -329,14 +388,15 @@ export async function applyReconcile(
     const notes = [d.note, d.candidates?.length ? `후보: ${d.candidates.map((c) => `${c.doc_no} ${c.total.toLocaleString("ko-KR")}${c.settled ? "(수금완료)" : ""}`).join(", ")}` : null]
       .filter(Boolean)
       .join(" | ");
+    const finalStatus: HometaxMatchStatus = createdSaleId ? "linked" : d.status;
     const { error: uErr } = await sb
       .from("hometax_invoice")
       .update({
-        match_status: d.status,
-        sale_id: d.saleId ?? null,
+        match_status: finalStatus,
+        sale_id: createdSaleId ?? d.saleId ?? null,
         tax_invoice_id: taxInvoiceId,
-        matched_at: ["matched", "linked"].includes(d.status) ? new Date().toISOString() : null,
-        notes,
+        matched_at: ["matched", "linked"].includes(finalStatus) ? new Date().toISOString() : null,
+        notes: createdSaleId ? `매출 ${createdDocNo} 생성(홈택스 직접 발행분) · 품목 미정` : notes,
       })
       .eq("nts_confirm_num", d.nts);
     if (uErr) throw new Error(`상태 갱신 실패(${d.nts}): ${uErr.message}`);
@@ -357,6 +417,19 @@ export async function rollbackActions(sb: SupabaseClient, actions: Action[], log
       await sb.from("tax_invoice").delete().eq("id", a.tax_invoice_id).eq("provider", "hometax");
       await sb.from("sale").update({ tax_invoice_issued_on: a.prev_sale.tax_invoice_issued_on, tax_doc_no: a.prev_sale.tax_doc_no }).eq("id", a.sale_id);
       log(`발행 기록 삭제·매출 필드 복원: ${a.sale_id}`);
+    } else if (a.type === "sale_created") {
+      // 우리가 만든 매출 — 발행 기록·메모는 앞선 액션에서 지워졌으므로 라인·매출만 hard delete
+      await sb.from("sale_line").delete().eq("sale_id", a.sale_id);
+      const { error } = await sb.from("sale").delete().eq("id", a.sale_id).eq("origin", "hometax");
+      if (error) throw new Error(`생성 매출 삭제 실패(${a.doc_no}): ${error.message}`);
+      log(`생성 매출 삭제: ${a.doc_no}`);
+    } else if (a.type === "partner_created") {
+      const { count } = await sb.from("sale").select("id", { count: "exact", head: true }).eq("partner_id", a.partner_id);
+      const { count: pc } = await sb.from("purchase").select("id", { count: "exact", head: true }).eq("partner_id", a.partner_id);
+      if ((count ?? 0) === 0 && (pc ?? 0) === 0) {
+        await sb.from("partner").delete().eq("id", a.partner_id);
+        log(`생성 거래처 삭제: ${a.name}`);
+      } else log(`거래처 ${a.name} 는 다른 거래가 있어 남김`);
     } else if (a.type === "payment_adjusted") {
       await sb.from("bank_transaction").update({ amount_krw: a.prev_amount }).eq("id", a.bank_transaction_id);
       log(`입금 기록 복원: ${a.bank_transaction_id} → ${a.prev_amount}`);
@@ -500,4 +573,70 @@ export async function alignSaleToInvoice(
     .eq("nts_confirm_num", input.nts);
   actions.push({ type: "invoice_status", nts: input.nts, prev: prevState });
   return actions;
+}
+
+// ------------------------------------------------------------
+// 누락(N) — 홈택스 직접 발행 계산서로 매출 생성 (사장 결정 2026-10-26, 기획 §14)
+//   주문일·납품일 = 작성일, 납품완료, 자료거래, 금액 라인 1줄(철제 직접입력 "홈택스 계산서분 — 품목", 중량 없음 → 재고 미반영 = 품목 미정),
+//   수금예정일 = 작성일 + 30(거래처 기본조건 컬럼이 없음), origin='hometax' 로 목록에 표시. 발행 기록·메모는 호출자가 붙인다.
+// ------------------------------------------------------------
+const STEEL_CUSTOM_ITEM_ID = "00000000-0000-0000-0000-0000000057ee";
+const addDays = (iso: string, d: number) => new Date(new Date(iso).getTime() + d * 86_400_000).toISOString().slice(0, 10);
+
+async function nextSaleDocNo(sb: SupabaseClient, orderedOn: string): Promise<string> {
+  // 앱 generateDocNo 와 같은 규칙(책 무관, 일자별 순번). 충돌 시 호출자가 재시도.
+  const { count } = await sb.from("sale").select("id", { count: "exact", head: true }).eq("ordered_on", orderedOn);
+  return `${orderedOn.replace(/-/g, "")}-${String((count ?? 0) + 1).padStart(3, "0")}`;
+}
+
+export async function createSaleFromInvoice(
+  sb: SupabaseClient,
+  book: Book,
+  ins: HometaxInvoiceInsert,
+  partnerId: string,
+  log: (m: string) => void = () => {},
+): Promise<{ saleId: string; docNo: string }> {
+  const isFree = ins.kind === "invoice";
+  const header = {
+    book,
+    partner_id: partnerId,
+    site_id: "",
+    site_name: "",
+    ordered_on: ins.write_date,
+    delivered_on: ins.write_date,
+    is_documented: true,
+    tax_doc_type: isFree ? "invoice" : "tax_invoice_electronic",
+    vat_type: isFree ? "exempt" : "standard_10",
+    vat_rate: isFree ? 0 : 10,
+    subtotal_krw: ins.supply_amount,
+    vat_krw: ins.tax_amount,
+    total_krw: ins.total_amount,
+    payment_due_on: addDays(ins.write_date, 30),
+    settled_on: "",
+    status: "delivered",
+    notes: `홈택스 직접 발행 계산서(승인 ${ins.nts_confirm_num})로 자동 생성 — 품목·중량·현장은 수정에서 채울 것`,
+  };
+  const lines = [
+    {
+      item_id: STEEL_CUSTOM_ITEM_ID,
+      unit: "ea",
+      qty: 1,
+      unit_price_krw: ins.supply_amount,
+      weight_kg: "",
+      line_subtotal_krw: ins.supply_amount,
+      display_name: `홈택스 계산서분 — ${ins.item_summary ?? "품목 미정"}`,
+    },
+  ];
+  let saleId: string | null = null;
+  let docNo = "";
+  for (let attempt = 0; attempt < 3 && !saleId; attempt++) {
+    docNo = await nextSaleDocNo(sb, ins.write_date);
+    const { data, error } = await sb.rpc("create_sale_with_lines", { p_sale: { ...header, doc_no: docNo }, p_lines: lines });
+    if (!error) saleId = String(data);
+    else if (!/sale_doc_no_key|duplicate key/.test(error.message)) throw new Error(`매출 생성 실패(${ins.invoicee.name}): ${error.message}`);
+  }
+  if (!saleId) throw new Error(`매출 번호 충돌로 생성 실패: ${docNo}`);
+  const { error: oErr } = await sb.from("sale").update({ origin: "hometax", origin_ref: ins.nts_confirm_num }).eq("id", saleId);
+  if (oErr) log(`  origin 표시 실패(${docNo}): ${oErr.message}`);
+  return { saleId, docNo };
 }

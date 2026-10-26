@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { STEEL_CUSTOM_ITEM_ID } from "@/lib/transaction-draft";
 import Link from "next/link";
 import {
   CheckCircleIcon,
@@ -68,6 +69,9 @@ export type SaleListRow = {
   site_id: string | null;
   delivery_cert_id: string | null;
   notes: string | null;
+  /** 출처(0087) — hometax: 홈택스 수집본에서 자동 생성. 라인이 금액 1줄(철제 직접입력)뿐이면 '품목 미정' */
+  origin?: string | null;
+  origin_ref?: string | null;
   /** 상세에서 남긴 메모 기록(0080) — 건수와 가장 최근 1건. */
   memo_count?: Array<{ count: number }>;
   latest_memo?: Array<{ body: string; created_at: string }>;
@@ -84,6 +88,12 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   overdue:   { label: "연체",     className: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300" },
   cancelled: { label: "취소",     className: "bg-zinc-200 text-zinc-600 line-through dark:bg-zinc-800 dark:text-zinc-400" },
 };
+
+/** 홈택스 생성 매출의 라인이 아직 금액 1줄(철제 직접입력, 수량 1)뿐인지 — 품목·중량 미정. */
+function isItemsPending(s: SaleListRow): boolean {
+  const lines = s.sale_line ?? [];
+  return lines.length > 0 && lines.every((l) => l.item?.id === STEEL_CUSTOM_ITEM_ID && Number(l.qty) === 1 && l.unit === "ea");
+}
 
 function StatusBadge({ status }: { status: string }) {
   const s = STATUS_LABEL[status] ?? { label: status, className: "" };
@@ -267,6 +277,31 @@ export function SaleTable({
                       </Link>
                       {!s.is_documented ? (
                         <div className="text-[10px] text-amber-600">무자료</div>
+                      ) : null}
+                      {s.origin === "hometax" ? (
+                        <div className="mt-0.5 flex flex-wrap gap-1">
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <span className="inline-flex items-center gap-1 rounded bg-orange-100 px-1 py-0 text-[9px] font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-300" />
+                              }
+                            >
+                              <span className="size-1.5 rounded-full bg-orange-500" />
+                              홈택스
+                            </TooltipTrigger>
+                            <TooltipContent>홈택스 직접 발행 계산서로 자동 생성된 매출{s.origin_ref ? ` · 승인 …${s.origin_ref.slice(-6)}` : ""}</TooltipContent>
+                          </Tooltip>
+                          {isItemsPending(s) ? (
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={<span className="inline-flex items-center rounded border border-red-300 px-1 py-0 text-[9px] font-medium text-red-700 dark:border-red-800 dark:text-red-300" />}
+                              >
+                                품목 미정
+                              </TooltipTrigger>
+                              <TooltipContent>금액 1줄만 있고 품목·중량이 없어 재고에 안 잡힘 — 수정에서 품목을 채우세요</TooltipContent>
+                            </Tooltip>
+                          ) : null}
+                        </div>
                       ) : null}
                       {s.delivery_cert_id ? (
                         <Tooltip>

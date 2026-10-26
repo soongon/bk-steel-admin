@@ -20,6 +20,10 @@ const DOC_OPTS = [
   { v: "y", l: "자료" },
   { v: "n", l: "무자료" },
 ];
+const ORIGIN_OPTS = [
+  { v: "", l: "출처 전체" },
+  { v: "hometax", l: "홈택스 생성" },
+];
 const GRADE_OPTS = [
   { v: "", l: "미수 전체" },
   { v: "normal", l: "정상" },
@@ -28,7 +32,7 @@ const GRADE_OPTS = [
   { v: "long", l: "장기(31+)" },
 ];
 
-const FILTER_KEYS = ["from", "to", "partner", "status", "doc", "grade"];
+const FILTER_KEYS = ["from", "to", "partner", "status", "doc", "grade", "origin"];
 
 /** 매출 목록 필터 — 기간·거래처·상태·자료성은 서버 쿼리, 미수등급은 클라 적용. URL searchParams 동기화. */
 export function SaleFilters({ partners }: { partners: PartnerOpt[] }) {
@@ -73,6 +77,9 @@ export function SaleFilters({ partners }: { partners: PartnerOpt[] }) {
       </Field>
       <Field label="자료성">
         <Sel value={get("doc")} opts={DOC_OPTS} onChange={(v) => setParam("doc", v)} />
+      </Field>
+      <Field label="출처">
+        <Sel value={get("origin")} opts={ORIGIN_OPTS} onChange={(v) => setParam("origin", v)} />
       </Field>
       <Field label="미수등급">
         <Sel value={get("grade")} opts={GRADE_OPTS} onChange={(v) => setParam("grade", v)} />

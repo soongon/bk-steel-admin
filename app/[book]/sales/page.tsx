@@ -12,6 +12,7 @@ type SearchParams = {
   status?: string;
   doc?: string;
   grade?: string;
+  origin?: string; // hometax = 홈택스 수집본에서 자동 생성된 매출(0087)
 };
 
 export default async function SalesPage({
@@ -26,7 +27,7 @@ export default async function SalesPage({
   const view = book as BookView;
   const supabase = await createClient();
 
-  const hasServerFilter = !!(sp.from || sp.to || sp.partner || sp.status || sp.doc);
+  const hasServerFilter = !!(sp.from || sp.to || sp.partner || sp.status || sp.doc || sp.origin);
   const hasAnyFilter = hasServerFilter || !!sp.grade;
 
   // 매출 + 거래처 + 라인 + 품목 nested fetch (필터 시 상한 확대)
@@ -37,7 +38,7 @@ export default async function SalesPage({
       id, book, doc_no, ordered_on, delivered_on, status,
       subtotal_krw, vat_krw, total_krw, site_name, site_id, is_documented,
       tax_doc_type, payment_due_on, settled_on, partner_id, delivery_cert_id, notes,
-      statement_sent_on, tax_invoice_issued_on,
+      statement_sent_on, tax_invoice_issued_on, origin, origin_ref,
       memo_count:sale_memo(count), latest_memo:sale_memo(body, created_at),
       site:site(id, name, code),
       partner:partner(id, name, code),
@@ -58,6 +59,7 @@ export default async function SalesPage({
   if (sp.status) saleQuery = saleQuery.eq("status", sp.status);
   if (sp.doc === "y") saleQuery = saleQuery.eq("is_documented", true);
   else if (sp.doc === "n") saleQuery = saleQuery.eq("is_documented", false);
+  if (sp.origin === "hometax") saleQuery = saleQuery.eq("origin", "hometax");
   saleQuery = saleQuery.limit(hasAnyFilter ? 500 : 100);
 
   const [salesRes, partnersRes, itemsRes, rebarSpecsRes, sitesRes, bankAccountsRes, companies] = await Promise.all([

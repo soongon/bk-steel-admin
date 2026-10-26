@@ -54,7 +54,8 @@ async function writeReport(file: string, report: ReconcileReport, meta: { book: 
     ["B_popbill", report.summary.B_popbill ?? 0, "팝빌 발행분 — 승인번호로 발행 기록과 일치(자동)"],
     ["A_link", report.summary.A_link ?? 0, "매출 일치·발행 기록 없음 → 발행 기록 생성 + 메모(자동)"],
     ["X_amount", report.summary.X_amount ?? 0, "거래처 있음·금액 불일치 → 사장 판단(계산서 금액으로 맞춤 + 메모)"],
-    ["N_missing", report.summary.N_missing ?? 0, "시스템에 매출 없음 → 사장 직접 입력 + 메모"],
+    ["N_missing", report.summary.N_missing ?? 0, "시스템에 매출 없음 → 거래처·매출 자동 생성(품목 미정) + 발행 기록 + 메모"],
+    ["D_dup", report.summary.D_dup ?? 0, "같은 금액 매출이 이미 있음(재발행·이중 발급 의심) → 생성 안 함, 사장 확인"],
     ["D_modify", report.summary.D_modify ?? 0, "수정세금계산서 — 당초와 묶어 확인"],
     ["S_skip", report.summary.S_skip ?? 0, "이미 처리된 건"],
     ["E_system_only", report.summary.E_system_only ?? 0, "시스템 자료 매출인데 홈택스에 없음 → 미발행?"],
@@ -96,10 +97,10 @@ async function writeReport(file: string, report: ReconcileReport, meta: { book: 
   });
   const s1 = wb.addWorksheet("판단 필요");
   head(s1, cols);
-  for (const d of report.decisions.filter((x) => ["X_amount", "N_missing", "D_modify"].includes(x.case))) s1.addRow(toRow(d));
+  for (const d of report.decisions.filter((x) => ["X_amount", "D_modify", "D_dup"].includes(x.case))) s1.addRow(toRow(d));
   const s2 = wb.addWorksheet("자동 처리");
   head(s2, cols);
-  for (const d of report.decisions.filter((x) => ["B_popbill", "A_link", "S_skip"].includes(x.case))) s2.addRow(toRow(d));
+  for (const d of report.decisions.filter((x) => ["B_popbill", "A_link", "N_missing", "S_skip"].includes(x.case))) s2.addRow(toRow(d));
   const s3 = wb.addWorksheet("시스템에만 있음(E)");
   head(s3, [
     { header: "매출번호", key: "doc_no", width: 14 },
