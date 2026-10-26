@@ -6,7 +6,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Book } from "@/lib/book";
 import { digitsOnly } from "@/lib/format";
-import { friendlyHometaxError, normalizeInvoice, toPopbillDate } from "./normalize";
+import { friendlyHometaxError, normalizeInvoice, normalizeNts, toPopbillDate } from "./normalize";
 import { htGetTaxinvoice, htRequestJob, htSearchAll, htWaitJob } from "./popbill-ht";
 import { HOMETAX_DIRECTIONS, type HometaxDateType, type HometaxDirection, type HometaxInvoiceInsert } from "./types";
 
@@ -76,7 +76,7 @@ export async function collectHometax(sb: SupabaseClient, input: CollectInput): P
     log(`  팝빌 결과 ${list.length}건`);
 
     // 이미 있는 승인번호 — 새 건만 상세를 받는다
-    const ntsList = list.map((a) => String(a.ntsconfirmNum ?? a.ntsConfirmNum ?? "").replace(/\D/g, "")).filter((n) => n.length === 24);
+    const ntsList = list.map((a) => normalizeNts(a.ntsconfirmNum ?? a.ntsConfirmNum)).filter((n) => n.length === 24);
     const existing = new Set<string>();
     for (let i = 0; i < ntsList.length; i += 500) {
       const { data } = await sb.from("hometax_invoice").select("nts_confirm_num").in("nts_confirm_num", ntsList.slice(i, i + 500));
@@ -86,7 +86,7 @@ export async function collectHometax(sb: SupabaseClient, input: CollectInput): P
     const rows: HometaxInvoiceInsert[] = [];
     let skipped = 0;
     for (const abbr of list) {
-      const nts = String(abbr.ntsconfirmNum ?? abbr.ntsConfirmNum ?? "").replace(/\D/g, "");
+      const nts = normalizeNts(abbr.ntsconfirmNum ?? abbr.ntsConfirmNum);
       let detail: Record<string, unknown> | null = null;
       if (input.fetchDetails !== false && nts.length === 24 && !existing.has(nts)) {
         try {

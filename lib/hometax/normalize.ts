@@ -19,6 +19,11 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 export const digits = (v: unknown): string => (v == null ? "" : String(v).replace(/\D/g, ""));
+/**
+ * 국세청 승인번호 정규화 — 하이픈 제거 + 소문자. 승인번호는 숫자만이 아니라 **16진수 문자가 섞인다**
+ * (실데이터 예: 20261023-41000203-000048fb → 2026102341000203000048fb, 24자). 시스템 발행 기록과 맞출 때도 이 함수로.
+ */
+export const normalizeNts = (v: unknown): string => (v == null ? "" : String(v).replace(/[^0-9A-Za-z]/g, "").toLowerCase());
 
 /** 'YYYYMMDD' | 'YYYY-MM-DD' | 'YYYYMMDDHHmmss' → 'YYYY-MM-DD'. 못 읽으면 null. */
 export function toIsoDate(v: unknown): string | null {
@@ -63,10 +68,16 @@ export function normalizeItems(detail: Rec | null | undefined): HometaxItem[] | 
   });
 }
 
-/** 면세(계산서) 판정 — taxType '면세' 또는 invoiceType 에 '계산서'만 있고 '세금'이 없을 때. */
-export function kindOf(taxType: string | null, invoiceType: string | null): HometaxKind {
+/**
+ * 면세(계산서) 판정 — taxType '면세', 또는 invoiceType 이 숫자 코드(웹훅·상세: 101~105 과세, 201~205 수정 과세,
+ * 301/303/304 면세, 401/403/404 수정 면세)면 3xx·4xx, 문자열이면 '계산서'만 있고 '세금'이 없을 때.
+ */
+export function kindOf(taxType: string | null, invoiceType: string | number | null): HometaxKind {
   if (taxType === "면세") return "invoice";
-  if (invoiceType && invoiceType.includes("계산서") && !invoiceType.includes("세금")) return "invoice";
+  if (invoiceType !== null && invoiceType !== undefined && /^\d{3}$/.test(String(invoiceType))) {
+    return Number(invoiceType) >= 300 ? "invoice" : "tax_invoice";
+  }
+  if (typeof invoiceType === "string" && invoiceType.includes("계산서") && !invoiceType.includes("세금")) return "invoice";
   return "tax_invoice";
 }
 
@@ -82,14 +93,12 @@ export function normalizeInvoice(
   nowIso: string = new Date().toISOString(),
 ): HometaxInvoiceInsert | null {
   const src: Rec = { ...abbr, ...(detail ?? {}) };
-  const nts = digits(src.ntsconfirmNum ?? src.ntsConfirmNum).length === 24
-    ? digits(src.ntsconfirmNum ?? src.ntsConfirmNum)
-    : str(src.ntsconfirmNum ?? src.ntsConfirmNum);
+  const nts = normalizeNts(src.ntsconfirmNum ?? src.ntsConfirmNum);
   const writeDate = toIsoDate(src.writeDate);
-  if (!nts || nts.length !== 24 || !writeDate) return null;
+  if (nts.length !== 24 || !writeDate) return null;
 
   const taxType = str(src.taxType);
-  const invoiceType = str(src.invoiceType);
+  const invoiceType = typeof src.invoiceType === "number" ? src.invoiceType : str(src.invoiceType);
   const modifyCodeRaw = num(src.modifyCode);
   const modifyYN = src.modifyYN === true || String(src.modifyYN ?? "").toUpperCase() === "Y";
   const modify_code = modifyCodeRaw && modifyCodeRaw > 0 ? modifyCodeRaw : modifyYN ? -1 : null; // -1 = 수정분인데 사유 미상(상세 전)
@@ -109,9 +118,9 @@ export function normalizeInvoice(
     issue_type: str(src.issueType),
     purpose: str(src.purposeType),
     modify_code,
-    orig_nts_confirm_num: orig && orig !== nts ? digits(orig) || orig : null,
+    orig_nts_confirm_num: orig && normalizeNts(orig) !== nts ? normalizeNts(orig) || null : null,
     write_date: writeDate,
-    issue_date: toIsoDate(src.issueDate),
+    issue_date: toIsoDate(src.issueDate ?? src.issueDT), // 상세·웹훅은 issueDT(yyyyMMddHHmmss)
     send_date: toIsoDate(src.sendDate),
     supplier: party(src, "invoicer"),
     invoicee: party(src, "invoicee"),

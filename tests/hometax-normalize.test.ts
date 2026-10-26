@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { friendlyHometaxError, kindOf, normalizeInvoice, recentRange, toIsoDate, toPopbillDate } from "../lib/hometax/normalize";
+import { friendlyHometaxError, kindOf, normalizeInvoice, normalizeNts, recentRange, toIsoDate, toPopbillDate } from "../lib/hometax/normalize";
 
 const abbr = {
   ntsconfirmNum: "202605123456789012345678",
@@ -74,10 +74,27 @@ test("수정분인데 상세 전이면 modify_code -1", () => {
   assert.equal(r?.modify_code, -1);
 });
 
-test("면세는 계산서", () => {
+test("면세는 계산서 — 문자열·숫자 코드(웹훅) 모두", () => {
   assert.equal(kindOf("면세", null), "invoice");
   assert.equal(kindOf("과세", "전자세금계산서"), "tax_invoice");
   assert.equal(kindOf(null, "전자계산서"), "invoice");
+  assert.equal(kindOf("과세", 101), "tax_invoice");
+  assert.equal(kindOf("과세", 201), "tax_invoice");
+  assert.equal(kindOf(null, 303), "invoice");
+  assert.equal(kindOf(null, "404"), "invoice");
+});
+
+test("웹훅 바디 형식(issueDT 14자리·invoiceType 숫자) 정규화", () => {
+  const r = normalizeInvoice("sl", "buy", { ...abbr, issueDate: undefined, issueDT: "20260512143000", invoiceType: 101 }, null);
+  assert.equal(r?.issue_date, "2026-05-12");
+  assert.equal(r?.kind, "tax_invoice");
+});
+
+test("승인번호: 하이픈 제거·16진수 문자 유지·소문자(실데이터 형식)", () => {
+  assert.equal(normalizeNts("20261023-41000203-000048FB"), "2026102341000203000048fb");
+  const r = normalizeInvoice("sl", "sell", { ...abbr, ntsconfirmNum: "20261023-41000203-000048fb", orgNTSConfirmNum: "20261001-41000203-0000AB12" }, null);
+  assert.equal(r?.nts_confirm_num, "2026102341000203000048fb");
+  assert.equal(r?.orig_nts_confirm_num, "20261001410002030000ab12");
 });
 
 test("승인번호·작성일 없으면 null", () => {
