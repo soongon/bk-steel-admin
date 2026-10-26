@@ -63,6 +63,7 @@ export type Action =
   | { type: "tax_invoice_created"; tax_invoice_id: string; sale_id: string; prev_sale: { tax_invoice_issued_on: string | null; tax_doc_no: string | null } }
   | { type: "memo_created"; memo_id: string; sale_id: string }
   | { type: "partner_biz_filled"; partner_id: string; prev: string | null; next: string }
+  | { type: "payment_adjusted"; bank_transaction_id: string; sale_id: string; prev_amount: number; next_amount: number }
   | {
       type: "sale_aligned";
       sale_id: string;
@@ -356,6 +357,9 @@ export async function rollbackActions(sb: SupabaseClient, actions: Action[], log
       await sb.from("tax_invoice").delete().eq("id", a.tax_invoice_id).eq("provider", "hometax");
       await sb.from("sale").update({ tax_invoice_issued_on: a.prev_sale.tax_invoice_issued_on, tax_doc_no: a.prev_sale.tax_doc_no }).eq("id", a.sale_id);
       log(`발행 기록 삭제·매출 필드 복원: ${a.sale_id}`);
+    } else if (a.type === "payment_adjusted") {
+      await sb.from("bank_transaction").update({ amount_krw: a.prev_amount }).eq("id", a.bank_transaction_id);
+      log(`입금 기록 복원: ${a.bank_transaction_id} → ${a.prev_amount}`);
     } else if (a.type === "sale_aligned") {
       const { error } = await sb.rpc("revert_sale_invoice_adjustment", {
         p_sale_id: a.sale_id,
@@ -379,6 +383,31 @@ export async function rollbackActions(sb: SupabaseClient, actions: Action[], log
 // 기존 품목 라인은 그대로 두고 "계산서 금액 맞춤" 조정 라인(철제 직접입력, 중량 없음)을 하나 더해 합계를 맞춘다.
 // 발행 기록(provider hometax) 연결 + 매출 메모. 재고 할당이 있는 매출은 라인 교체로 할당이 지워지므로 거부한다.
 // ------------------------------------------------------------
+/**
+ * 수금완료 매출의 입금 기록을 새 합계에 맞춘다 — 사장 결정(2026-10-26): "국세청 계산서 기준으로 데이터를 바꾸고 미수를 남기지 않는다".
+ * 이 매출에 연결된 입금(bank_transaction, 양수) 합이 합계와 다르면 가장 최근 입금 1건의 금액을 차액만큼 고친다.
+ * 통장 거래 금액이 바뀌므로 시스템 통장 잔액이 실제 은행과 어긋날 수 있다 — 메모에 남긴다.
+ */
+export async function alignPaymentToTotal(
+  sb: SupabaseClient,
+  saleId: string,
+  totalKrw: number,
+  log: (m: string) => void = () => {},
+): Promise<{ actions: Action[]; diff: number; prevReceived: number } | null> {
+  const { data: bts } = await sb.from("bank_transaction").select("id, txn_on, amount_krw").eq("sale_id", saleId).is("deleted_at", null).gt("amount_krw", 0).order("txn_on", { ascending: false }).order("created_at", { ascending: false });
+  const rows = (bts ?? []) as Array<{ id: string; txn_on: string; amount_krw: number }>;
+  if (rows.length === 0) return null;
+  const received = rows.reduce((a, r) => a + Number(r.amount_krw), 0);
+  const diff = totalKrw - received;
+  if (diff === 0) return { actions: [], diff: 0, prevReceived: received };
+  const last = rows[0];
+  const next = Number(last.amount_krw) + diff;
+  const { error } = await sb.from("bank_transaction").update({ amount_krw: next }).eq("id", last.id);
+  if (error) throw new Error(`입금 기록 수정 실패: ${error.message}`);
+  log(`입금 기록 ${last.txn_on}: ${Number(last.amount_krw).toLocaleString("ko-KR")} → ${next.toLocaleString("ko-KR")} (${diff >= 0 ? "+" : ""}${diff.toLocaleString("ko-KR")})`);
+  return { actions: [{ type: "payment_adjusted", bank_transaction_id: last.id, sale_id: saleId, prev_amount: Number(last.amount_krw), next_amount: next }], diff, prevReceived: received };
+}
+
 export async function alignSaleToInvoice(
   sb: SupabaseClient,
   input: { saleId: string; nts: string; reason?: string },
@@ -417,6 +446,16 @@ export async function alignSaleToInvoice(
     log(`매출 ${sale.doc_no}: 금액이 이미 같음 — 발행 기록만 연결`);
   }
 
+  // 수금완료 건: 입금 기록도 계산서 합계로 맞춰 미수를 남기지 않는다(사장 결정)
+  let paymentNote = "";
+  if (sale.settled_on) {
+    const pay = await alignPaymentToTotal(sb, input.saleId, Number(inv.total_amount), log);
+    if (pay && pay.diff !== 0) {
+      actions.push(...pay.actions);
+      paymentNote = ` · 입금 기록도 계산서 금액으로 맞춤(${won(pay.prevReceived)} → ${won(Number(inv.total_amount))}, 통장 잔액 확인)`;
+    }
+  }
+
   // 발행 기록 + 메모 + 수집본 상태 (applyReconcile 의 A 와 같은 형태)
   const { data: saleBefore } = await sb.from("sale").select("tax_invoice_issued_on, tax_doc_no").eq("id", input.saleId).single();
   const { data: tiId, error: tiErr } = await sb.rpc("record_sale_tax_invoice", {
@@ -451,7 +490,7 @@ export async function alignSaleToInvoice(
     ` — 홈택스 직접 발행 승인번호 ${input.nts}, 작성일 ${inv.write_date}` +
     (diffSupply !== 0 || diffVat !== 0 ? ` · 조정 라인 1줄 추가(공급가액 ${diffSupply >= 0 ? "+" : ""}${won(diffSupply)}, 세액 ${diffVat >= 0 ? "+" : ""}${won(diffVat)})` : "") +
     (input.reason ? ` · 사유: ${input.reason}` : "") +
-    (sale.settled_on ? ` · 수금완료(${sale.settled_on}) 건이라 입금액 확인 필요` : "");
+    paymentNote;
   const { data: memo } = await sb.from("sale_memo").insert({ sale_id: input.saleId, body }).select("id").single();
   if (memo) actions.push({ type: "memo_created", memo_id: String(memo.id), sale_id: input.saleId });
   const prevState = { match_status: String(inv.match_status), sale_id: (inv.sale_id as string | null) ?? null, tax_invoice_id: (inv.tax_invoice_id as string | null) ?? null, notes: (inv.notes as string | null) ?? null };
