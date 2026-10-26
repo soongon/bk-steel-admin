@@ -3,6 +3,7 @@
  *   npx tsx scripts/hometax-excel.ts <파일.xlsx> --book sl --dry-run        # 쓰기 없이 결정·대조표만
  *   npx tsx scripts/hometax-excel.ts <파일.xlsx> --book sl                  # 운영 반영(작업 1건 기록, 되돌리기 가능)
  *   npx tsx scripts/hometax-excel.ts --rollback <jobId>                     # 그 작업이 쓴 것 전부 되돌림
+ *   npx tsx scripts/hometax-excel.ts --align <승인번호> --sale <매출번호> [--reason "..."]  # 금액 불일치: 매출을 계산서 금액으로(조정 라인+발행 기록+메모)
  *   옵션: --out <폴더>(대조표 저장 위치, 기본 ~/Downloads)
  * 자동: B 팝빌 발행분 일치 · A 매출 일치→발행 기록 생성+메모 · C 거래처 사업자번호 채움.
  * 사람: 금액 불일치 · 누락 · 수정분 · 시스템에만 있는 자료 매출(E) — 대조표 '판단 필요' 시트.
@@ -16,7 +17,7 @@ import ExcelJS from "exceljs";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isValidBook, type Book } from "../lib/book";
 import { parsePopbillHometaxExcel } from "../lib/hometax/excel";
-import { applyReconcile, planReconcile, rollbackActions, type Action, type ReconcileReport } from "../lib/hometax/reconcile";
+import { alignSaleToInvoice, applyReconcile, planReconcile, rollbackActions, type Action, type ReconcileReport } from "../lib/hometax/reconcile";
 import { corpNumForBook } from "../lib/hometax/collect";
 import type { HometaxMatchStatus } from "../lib/hometax/types";
 
@@ -137,6 +138,29 @@ async function main() {
     await rollbackActions(sb, actions, log);
     await sb.from("hometax_collection_job").update({ state: "rolled_back", rolled_back_at: new Date().toISOString() }).eq("id", jobId);
     log("완료.");
+    return;
+  }
+
+  if (has("align")) {
+    const nts = (arg("align") ?? "").replace(/[^0-9A-Za-z]/g, "").toLowerCase();
+    const docNo = arg("sale");
+    if (!nts || !docNo) throw new Error("--align <승인번호> --sale <매출번호>");
+    const { data: sale, error } = await sb.from("sale").select("id, book, doc_no").eq("doc_no", docNo).is("deleted_at", null).single();
+    if (error || !sale) throw new Error(`매출을 찾을 수 없습니다: ${docNo}`);
+    const { data: job, error: jErr } = await sb
+      .from("hometax_collection_job")
+      .insert({ book: sale.book, direction: "sell", date_type: "W", from_date: new Date().toISOString().slice(0, 10), to_date: new Date().toISOString().slice(0, 10), state: "running", source: "manual", file_name: `align ${docNo} ← ${nts}` })
+      .select("id")
+      .single();
+    if (jErr || !job) throw new Error(`작업 기록 실패: ${jErr?.message}`);
+    try {
+      const actions = await alignSaleToInvoice(sb, { saleId: String(sale.id), nts, reason: arg("reason") }, log);
+      await sb.from("hometax_collection_job").update({ state: "done", found: 1, inserted: 0, updated: 1, details: { actions }, finished_at: new Date().toISOString() }).eq("id", job.id);
+      log(`완료 — 작업 ${job.id} · 쓰기 ${actions.length}건. 되돌리기: npx tsx scripts/hometax-excel.ts --rollback ${job.id}`);
+    } catch (e) {
+      await sb.from("hometax_collection_job").update({ state: "failed", error: (e as Error).message, finished_at: new Date().toISOString() }).eq("id", job.id);
+      throw e;
+    }
     return;
   }
 

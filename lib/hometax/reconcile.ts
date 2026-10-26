@@ -62,7 +62,13 @@ export type Action =
   | { type: "invoice_status"; nts: string; prev: { match_status: string; sale_id: string | null; tax_invoice_id: string | null; notes: string | null } }
   | { type: "tax_invoice_created"; tax_invoice_id: string; sale_id: string; prev_sale: { tax_invoice_issued_on: string | null; tax_doc_no: string | null } }
   | { type: "memo_created"; memo_id: string; sale_id: string }
-  | { type: "partner_biz_filled"; partner_id: string; prev: string | null; next: string };
+  | { type: "partner_biz_filled"; partner_id: string; prev: string | null; next: string }
+  | {
+      type: "sale_aligned";
+      sale_id: string;
+      line_id: string; // adjust_sale_to_invoice 가 만든 조정 라인
+      prev: { subtotal_krw: number; vat_krw: number; total_krw: number };
+    };
 
 export type ReconcileReport = {
   decisions: Decision[];
@@ -350,10 +356,109 @@ export async function rollbackActions(sb: SupabaseClient, actions: Action[], log
       await sb.from("tax_invoice").delete().eq("id", a.tax_invoice_id).eq("provider", "hometax");
       await sb.from("sale").update({ tax_invoice_issued_on: a.prev_sale.tax_invoice_issued_on, tax_doc_no: a.prev_sale.tax_doc_no }).eq("id", a.sale_id);
       log(`발행 기록 삭제·매출 필드 복원: ${a.sale_id}`);
+    } else if (a.type === "sale_aligned") {
+      const { error } = await sb.rpc("revert_sale_invoice_adjustment", {
+        p_sale_id: a.sale_id,
+        p_line_id: a.line_id,
+        p_prev_supply_krw: a.prev.subtotal_krw,
+        p_prev_vat_krw: a.prev.vat_krw,
+        p_prev_total_krw: a.prev.total_krw,
+      });
+      if (error) throw new Error(`매출 금액 복원 실패(${a.sale_id}): ${error.message}`);
+      log(`조정 라인 제거·매출 금액 복원: ${a.sale_id}`);
     } else if (a.type === "partner_biz_filled") {
       await sb.from("partner").update({ business_no: a.prev }).eq("id", a.partner_id);
     } else if (a.type === "invoice_insert") {
       await sb.from("hometax_invoice").delete().eq("nts_confirm_num", a.nts);
     }
   }
+}
+
+// ------------------------------------------------------------
+// 금액 불일치 — 홈택스 계산서 금액이 맞다고 보고 시스템 매출을 그 금액으로 맞춘다 (사장 결정 2026-10-26).
+// 기존 품목 라인은 그대로 두고 "계산서 금액 맞춤" 조정 라인(철제 직접입력, 중량 없음)을 하나 더해 합계를 맞춘다.
+// 발행 기록(provider hometax) 연결 + 매출 메모. 재고 할당이 있는 매출은 라인 교체로 할당이 지워지므로 거부한다.
+// ------------------------------------------------------------
+export async function alignSaleToInvoice(
+  sb: SupabaseClient,
+  input: { saleId: string; nts: string; reason?: string },
+  log: (m: string) => void = () => {},
+): Promise<Action[]> {
+  const actions: Action[] = [];
+  const { data: inv, error: invErr } = await sb.from("hometax_invoice").select("*").eq("nts_confirm_num", input.nts).single();
+  if (invErr || !inv) throw new Error(`수집본을 찾을 수 없습니다: ${input.nts}`);
+  if (inv.direction !== "sell") throw new Error("매출 계산서만 맞출 수 있습니다.");
+  const { data: sale, error: sErr } = await sb.from("sale").select("*").eq("id", input.saleId).is("deleted_at", null).single();
+  if (sErr || !sale) throw new Error(`매출을 찾을 수 없습니다: ${input.saleId}`);
+  if (sale.book !== inv.book) throw new Error(`책이 다릅니다(매출 ${sale.book} / 계산서 ${inv.book})`);
+  const { data: existingInv } = await sb.from("tax_invoice").select("id, provider, nts_confirm_num").eq("sale_id", input.saleId).is("deleted_at", null).neq("state", "cancelled").maybeSingle();
+  if (existingInv) throw new Error(`이 매출에는 이미 발행 기록이 있습니다(${existingInv.provider} ${existingInv.nts_confirm_num ?? ""}).`);
+
+  const prev = { subtotal_krw: Number(sale.subtotal_krw), vat_krw: Number(sale.vat_krw), total_krw: Number(sale.total_krw) };
+  const diffSupply = Number(inv.supply_amount) - prev.subtotal_krw;
+  const diffVat = Number(inv.tax_amount) - prev.vat_krw;
+  const diffTotal = Number(inv.total_amount) - prev.total_krw;
+  const won = (n: number) => Math.round(n).toLocaleString("ko-KR");
+  const ntsTail = String(input.nts).slice(-6);
+
+  if (diffSupply !== 0 || diffVat !== 0) {
+    // 0086 — 기존 라인 불변, 조정 라인 1줄 + 합계 갱신
+    const { data: lineId, error } = await sb.rpc("adjust_sale_to_invoice", {
+      p_sale_id: input.saleId,
+      p_supply_krw: Number(inv.supply_amount),
+      p_vat_krw: Number(inv.tax_amount),
+      p_total_krw: Number(inv.total_amount),
+      p_label: `계산서 금액 맞춤(승인 …${ntsTail})`,
+    });
+    if (error) throw new Error(`매출 금액 수정 실패: ${error.message}`);
+    actions.push({ type: "sale_aligned", sale_id: input.saleId, line_id: String(lineId), prev });
+    log(`매출 ${sale.doc_no}: ${won(prev.total_krw)} → ${won(Number(inv.total_amount))} (${diffTotal >= 0 ? "+" : ""}${won(diffTotal)}) — 조정 라인 공급가액 ${won(diffSupply)} 추가`);
+  } else {
+    log(`매출 ${sale.doc_no}: 금액이 이미 같음 — 발행 기록만 연결`);
+  }
+
+  // 발행 기록 + 메모 + 수집본 상태 (applyReconcile 의 A 와 같은 형태)
+  const { data: saleBefore } = await sb.from("sale").select("tax_invoice_issued_on, tax_doc_no").eq("id", input.saleId).single();
+  const { data: tiId, error: tiErr } = await sb.rpc("record_sale_tax_invoice", {
+    p_sale_id: input.saleId,
+    p_invoice: {
+      provider: "hometax",
+      mgt_key: `hometax-${input.nts}`,
+      nts_confirm_num: input.nts,
+      state: "nts_approved",
+      purpose: inv.purpose === "영수" ? "receipt" : "charge",
+      write_date: inv.write_date,
+      supplier: { corpNum: inv.supplier?.biz_no, name: inv.supplier?.name, ceoName: inv.supplier?.ceo, email: inv.supplier?.email },
+      buyer: { corpNum: inv.invoicee?.biz_no, name: inv.invoicee?.name, ceoName: inv.invoicee?.ceo, email: inv.invoicee?.email },
+      lines: inv.items ?? [],
+      supply_krw: inv.supply_amount,
+      vat_krw: inv.tax_amount,
+      total_krw: inv.total_amount,
+      item_summary: inv.item_summary,
+      remark: "홈택스 수집본(팝빌 엑셀)에서 승격 — 금액 불일치 맞춤",
+      asp_response: inv.raw,
+    },
+  });
+  if (tiErr) throw new Error(`발행 기록 생성 실패: ${tiErr.message}`);
+  actions.push({
+    type: "tax_invoice_created",
+    tax_invoice_id: String(tiId),
+    sale_id: input.saleId,
+    prev_sale: { tax_invoice_issued_on: (saleBefore?.tax_invoice_issued_on as string | null) ?? null, tax_doc_no: (saleBefore?.tax_doc_no as string | null) ?? null },
+  });
+  const body =
+    `[홈택스 대조] 계산서 금액으로 맞춤: ${won(Number(sale.total_krw))} → ${won(Number(inv.total_amount))} (${diffTotal >= 0 ? "+" : ""}${won(diffTotal)}원)` +
+    ` — 홈택스 직접 발행 승인번호 ${input.nts}, 작성일 ${inv.write_date}` +
+    (diffSupply !== 0 || diffVat !== 0 ? ` · 조정 라인 1줄 추가(공급가액 ${diffSupply >= 0 ? "+" : ""}${won(diffSupply)}, 세액 ${diffVat >= 0 ? "+" : ""}${won(diffVat)})` : "") +
+    (input.reason ? ` · 사유: ${input.reason}` : "") +
+    (sale.settled_on ? ` · 수금완료(${sale.settled_on}) 건이라 입금액 확인 필요` : "");
+  const { data: memo } = await sb.from("sale_memo").insert({ sale_id: input.saleId, body }).select("id").single();
+  if (memo) actions.push({ type: "memo_created", memo_id: String(memo.id), sale_id: input.saleId });
+  const prevState = { match_status: String(inv.match_status), sale_id: (inv.sale_id as string | null) ?? null, tax_invoice_id: (inv.tax_invoice_id as string | null) ?? null, notes: (inv.notes as string | null) ?? null };
+  await sb
+    .from("hometax_invoice")
+    .update({ match_status: "linked", sale_id: input.saleId, tax_invoice_id: String(tiId), matched_at: new Date().toISOString(), notes: `금액 맞춤: 매출 ${sale.doc_no} ${won(Number(sale.total_krw))} → ${won(Number(inv.total_amount))}` })
+    .eq("nts_confirm_num", input.nts);
+  actions.push({ type: "invoice_status", nts: input.nts, prev: prevState });
+  return actions;
 }
