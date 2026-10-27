@@ -5,6 +5,8 @@
  *   npx tsx scripts/hometax-excel.ts --rollback <jobId>                     # 그 작업이 쓴 것 전부 되돌림
  *   npx tsx scripts/hometax-excel.ts --align <승인번호> --sale <매출번호> [--reason "..."]  # 금액 불일치: 매출을 계산서 금액으로(조정 라인+발행 기록+메모, 수금완료면 입금 기록도)
  *   npx tsx scripts/hometax-excel.ts --align-payment <매출번호>                            # 수금완료 매출의 입금 기록만 현재 합계에 맞춤(미수 0)
+ *   npx tsx scripts/hometax-excel.ts --classify "<사업자번호|이름>=inventory|expense,..."    # 공급자 종류 지정(재고 매입처/비용 업체) — 그 뒤 엑셀을 다시 올리면 대기 건이 처리됨
+ * 매입 파일도 같은 명령 — 방향(매출/매입)은 행마다 우리 사업자번호로 판정. 매입: 연결(P_link)·매입 생성(P_create)·비용 생성(R_create)·분류 대기(K_pending).
  *   옵션: --out <폴더>(대조표 저장 위치, 기본 ~/Downloads)
  * 자동: B 팝빌 발행분 일치 · A 매출 일치→발행 기록 생성+메모 · C 거래처 사업자번호 채움.
  * 사람: 금액 불일치 · 누락 · 수정분 · 시스템에만 있는 자료 매출(E) — 대조표 '판단 필요' 시트.
@@ -19,6 +21,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isValidBook, type Book } from "../lib/book";
 import { parsePopbillHometaxExcel } from "../lib/hometax/excel";
 import { alignPaymentToTotal, alignSaleToInvoice, applyReconcile, planReconcile, rollbackActions, type Action, type ReconcileReport } from "../lib/hometax/reconcile";
+import { applyBuy, classifyPartner, planBuy, type BuyReport } from "../lib/hometax/reconcile-buy";
 import { corpNumForBook } from "../lib/hometax/collect";
 import type { HometaxMatchStatus } from "../lib/hometax/types";
 
@@ -36,7 +39,7 @@ function client(): SupabaseClient {
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
-async function writeReport(file: string, report: ReconcileReport, meta: { book: Book; file: string; dryRun: boolean; jobId: string | null; range: string }) {
+async function writeReport(file: string, report: ReconcileReport, buy: BuyReport, meta: { book: Book; file: string; dryRun: boolean; jobId: string | null; range: string }) {
   const wb = new ExcelJS.Workbook();
   const head = (ws: ExcelJS.Worksheet, cols: Array<{ header: string; key: string; width?: number }>) => {
     ws.columns = cols.map((c) => ({ ...c, width: c.width ?? Math.max(10, c.header.length * 2.2) }));
@@ -59,6 +62,15 @@ async function writeReport(file: string, report: ReconcileReport, meta: { book: 
     ["D_modify", report.summary.D_modify ?? 0, "수정세금계산서 — 당초와 묶어 확인"],
     ["S_skip", report.summary.S_skip ?? 0, "이미 처리된 건"],
     ["E_system_only", report.summary.E_system_only ?? 0, "시스템 자료 매출인데 홈택스에 없음 → 미발행?"],
+    [],
+    ["매입 케이스", "건수", "설명"],
+    ["P_link", buy.summary.P_link ?? 0, "기존 매입과 금액 일치 → 승인번호 연결(자동)"],
+    ["P_create", buy.summary.P_create ?? 0, "재고 매입처 → 매입 생성(품목 미정, 미지급 +30일)(자동)"],
+    ["R_create", buy.summary.R_create ?? 0, "비용 업체 → 영수증·비용 생성(자동)"],
+    ["K_pending", buy.summary.K_pending ?? 0, "분류 대기 — 거래처 종류 지정 필요(--classify 또는 화면 버튼)"],
+    ["D_dup", buy.summary.D_dup ?? 0, "같은 금액 매입 있음 → 생성 안 함, 확인"],
+    ["D_modify", buy.summary.D_modify ?? 0, "수정세금계산서 — 확인"],
+    ["S_skip", buy.summary.S_skip ?? 0, "이미 처리된 건"],
   ]);
   s0.getColumn(1).width = 16;
   s0.getColumn(3).width = 70;
@@ -114,6 +126,37 @@ async function writeReport(file: string, report: ReconcileReport, meta: { book: 
     { header: "사장 메모", key: "memo", width: 30 },
   ]);
   for (const s of report.systemOnly) s3.addRow({ ...s, settled: s.settled_on ? "O" : "", memo: "" });
+  const s4 = wb.addWorksheet("매입");
+  head(s4, [
+    { header: "케이스", key: "case", width: 11 },
+    { header: "작성일", key: "write_date", width: 12 },
+    { header: "공급자", key: "supplierName", width: 22 },
+    { header: "사업자번호", key: "supplierBiz", width: 14 },
+    { header: "합계", key: "total", width: 14 },
+    { header: "품목", key: "itemSummary", width: 30 },
+    { header: "거래처 종류", key: "kind", width: 12 },
+    { header: "제안", key: "suggestion", width: 10 },
+    { header: "매입번호", key: "purchaseDocNo", width: 14 },
+    { header: "설명", key: "note", width: 50 },
+    { header: "승인번호", key: "nts", width: 26 },
+    { header: "사장 분류(재고/비용)", key: "memo", width: 18 },
+  ]);
+  for (const d of buy.decisions)
+    s4.addRow({
+      case: d.case,
+      write_date: d.write_date,
+      supplierName: d.supplierName ?? "",
+      supplierBiz: d.supplierBiz,
+      total: d.total,
+      itemSummary: d.itemSummary ?? "",
+      kind: d.partner?.supply_kind ?? "",
+      suggestion: d.suggestion ?? "",
+      purchaseDocNo: d.purchaseDocNo ?? "",
+      note: d.note,
+      nts: d.nts,
+      memo: "",
+    });
+  for (const col of s4.columns) if (col.key === "total") col.numFmt = "#,##0";
   for (const ws of [s1, s2, s3]) {
     for (const col of ws.columns) {
       if (col.key === "total" || col.key === "total_krw") col.numFmt = "#,##0";
@@ -140,6 +183,25 @@ async function main() {
     await rollbackActions(sb, actions, log);
     await sb.from("hometax_collection_job").update({ state: "rolled_back", rolled_back_at: new Date().toISOString() }).eq("id", jobId);
     log("완료.");
+    return;
+  }
+
+  if (has("classify")) {
+    const spec = arg("classify") ?? "";
+    const pairs = spec.split(",").map((x) => x.trim()).filter(Boolean);
+    if (pairs.length === 0) throw new Error('--classify "<사업자번호|이름>=inventory|expense,..."');
+    const actions: Action[] = [];
+    for (const pr of pairs) {
+      const [key, kind] = pr.split("=").map((x) => x.trim());
+      if (kind !== "inventory" && kind !== "expense") throw new Error(`종류는 inventory 또는 expense: ${pr}`);
+      actions.push(await classifyPartner(sb, key, kind, log));
+    }
+    const { data: job } = await sb
+      .from("hometax_collection_job")
+      .insert({ book: "sl", direction: "buy", date_type: "W", from_date: new Date().toISOString().slice(0, 10), to_date: new Date().toISOString().slice(0, 10), state: "done", source: "manual", file_name: `classify ${pairs.length}건`, found: pairs.length, updated: pairs.length, details: { actions }, finished_at: new Date().toISOString() })
+      .select("id")
+      .single();
+    log(`완료 — 작업 ${job?.id}. 엑셀을 다시 올리면 대기 건이 처리됩니다.`);
     return;
   }
 
@@ -207,7 +269,9 @@ async function main() {
   const existingStatus = new Map<string, HometaxMatchStatus>((existing ?? []).map((e) => [String(e.nts_confirm_num), e.match_status as HometaxMatchStatus]));
 
   const report = await planReconcile(sb, book, parsed.rows, existingStatus);
-  log(`대조: ${JSON.stringify(report.summary)}`);
+  const buy = await planBuy(sb, book, parsed.rows, existingStatus);
+  log(`대조(매출): ${JSON.stringify(report.summary)} · 대조(매입): ${JSON.stringify(buy.summary)}`);
+  for (const d of buy.decisions) log(`  [매입] ${d.case.padEnd(10)} ${d.write_date} ${(d.supplierName ?? "").padEnd(14)} ${won(d.total).padStart(13)}  ${d.note}`);
   for (const d of report.decisions) log(`  ${d.case.padEnd(10)} ${d.write_date} ${(d.partyName ?? "").padEnd(14)} ${won(d.total).padStart(13)}  ${d.note}`);
   if (report.systemOnly.length) {
     log(`시스템에만 있음(E) ${report.systemOnly.length}건:`);
@@ -235,13 +299,14 @@ async function main() {
     jobId = String(job.id);
     try {
       const actions = await applyReconcile(sb, book, parsed.rows, report, jobId, log);
+      actions.push(...(await applyBuy(sb, book, parsed.rows, buy, log)));
       await sb
         .from("hometax_collection_job")
         .update({
           state: "done",
           inserted: actions.filter((a) => a.type === "invoice_insert").length,
           updated: parsed.rows.length - actions.filter((a) => a.type === "invoice_insert").length,
-          details: { actions, summary: report.summary },
+          details: { actions, summary: { ...report.summary, buy: buy.summary } },
           finished_at: new Date().toISOString(),
         })
         .eq("id", jobId);
@@ -254,7 +319,7 @@ async function main() {
 
   const stamp = new Date().toLocaleString("sv-SE", { timeZone: "Asia/Seoul" }).replace(/[: ]/g, "-").slice(0, 16);
   const outFile = path.join(outDir, `홈택스_대조표_${book}_${parsed.dateRange?.from ?? ""}_${parsed.dateRange?.to ?? ""}${dryRun ? "_dryrun" : ""}_${stamp}.xlsx`);
-  await writeReport(outFile, report, { book, file: path.basename(file), dryRun, jobId, range: `${parsed.dateRange?.from} ~ ${parsed.dateRange?.to}` });
+  await writeReport(outFile, report, buy, { book, file: path.basename(file), dryRun, jobId, range: `${parsed.dateRange?.from} ~ ${parsed.dateRange?.to}` });
   log(`대조표: ${outFile}`);
 }
 

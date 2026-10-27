@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { isValidBook } from "@/lib/book";
 import { collectBothDirections, type CollectResult } from "@/lib/hometax/collect";
+import { applyBuy, classifyPartner, planBuy, type SupplyKind } from "@/lib/hometax/reconcile-buy";
+import type { HometaxInvoiceInsert, HometaxMatchStatus } from "@/lib/hometax/types";
+import type { ExcelInvoiceRow } from "@/lib/hometax/excel";
 import type { HometaxDateType } from "@/lib/hometax/types";
 
 export type CollectNowResult =
@@ -42,4 +45,45 @@ export async function collectNow(formData: FormData): Promise<CollectNowResult> 
   revalidatePath(`/${book}/hometax`);
   revalidatePath(`/all/hometax`);
   return { ok: true, sell: r.sell, buy: r.buy };
+}
+
+export type ClassifyResult = { ok: true; message: string } | { ok: false; error: string };
+
+/**
+ * 매입 탭 '분류 대기' 행 — 공급자 종류를 정하고(재고 매입처/비용 업체) 그 수집본을 바로 처리한다(매입 생성 또는 영수증 생성).
+ * 같은 공급자의 다른 대기 행은 다음 엑셀 업로드 때 자동 처리된다. 작업(job)으로 기록해 되돌릴 수 있다.
+ */
+export async function classifyAndProcess(nts: string, kind: SupplyKind): Promise<ClassifyResult> {
+  if (kind !== "inventory" && kind !== "expense") return { ok: false, error: "종류가 올바르지 않습니다." };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "로그인이 필요합니다." };
+  const { data: inv, error } = await supabase.from("hometax_invoice").select("*").eq("nts_confirm_num", nts).single();
+  if (error || !inv) return { ok: false, error: "수집본을 찾을 수 없습니다." };
+  if (inv.direction !== "buy") return { ok: false, error: "매입 계산서만 분류할 수 있습니다." };
+  const book = inv.book as "bk" | "sl";
+  const { data: job } = await supabase
+    .from("hometax_collection_job")
+    .insert({ book, direction: "buy", date_type: "W", from_date: inv.write_date, to_date: inv.write_date, state: "running", source: "manual", file_name: `classify ${inv.supplier?.name ?? ""} → ${kind}`, requested_by: user.id })
+    .select("id")
+    .single();
+  try {
+    const actions = [await classifyPartner(supabase, inv.supplier?.biz_no || inv.supplier?.name || "", kind)];
+    const row: ExcelInvoiceRow = { rowNo: 0, insert: inv as unknown as HometaxInvoiceInsert, collectType: null, popbillMatched: null };
+    const existing = new Map<string, HometaxMatchStatus>(); // 이 행은 다시 판정한다
+    const report = await planBuy(supabase, book, [row], existing);
+    actions.push(...(await applyBuy(supabase, book, [row], report)));
+    if (job) await supabase.from("hometax_collection_job").update({ state: "done", found: 1, updated: 1, details: { actions, summary: report.summary }, finished_at: new Date().toISOString() }).eq("id", job.id);
+    revalidatePath(`/${book}/hometax`);
+    revalidatePath(`/all/hometax`);
+    revalidatePath(`/${book}/purchases`);
+    revalidatePath(`/${book}/receipts`);
+    const d = report.decisions[0];
+    return { ok: true, message: d ? d.note : "처리됨" };
+  } catch (e) {
+    if (job) await supabase.from("hometax_collection_job").update({ state: "failed", error: (e as Error).message, finished_at: new Date().toISOString() }).eq("id", job.id);
+    return { ok: false, error: e instanceof Error ? e.message : "처리 실패" };
+  }
 }

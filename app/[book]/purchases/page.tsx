@@ -5,10 +5,13 @@ import { PurchaseTable, type PurchaseListRow } from "./purchase-table";
 
 export default async function PurchasesPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ book: string }>;
+  searchParams: Promise<{ origin?: string }>;
 }) {
   const { book } = await params;
+  const { origin } = await searchParams; // hometax = 홈택스 매입 수집본에서 자동 생성(0092)
   const view = book as BookView;
   const supabase = await createClient();
 
@@ -18,7 +21,7 @@ export default async function PurchasesPage({
       `
       id, book, doc_no, ordered_on, delivered_on, paid_on, payment_due_on, status,
       subtotal_krw, vat_krw, total_krw, is_documented,
-      tax_doc_type, tax_doc_no, tax_invoice_received_on, partner_id, site_id, site_name, notes,
+      tax_doc_type, tax_doc_no, tax_invoice_received_on, partner_id, site_id, site_name, notes, origin, origin_ref,
       memo_count:purchase_memo(count), latest_memo:purchase_memo(body, created_at),
       partner:partner(id, name, code),
       site:site(id, name, code),
@@ -34,6 +37,7 @@ export default async function PurchasesPage({
     .limit(100);
 
   if (view !== "all") q = q.eq("book", view);
+  if (origin === "hometax") q = q.eq("origin", "hometax");
 
   const [purRes, partnersRes, itemsRes, rebarSpecsRes, bankAccountsRes, sitesRes] = await Promise.all([
     q,
@@ -80,6 +84,10 @@ export default async function PurchasesPage({
           <p className="mt-1 text-sm text-muted-foreground">
             {BOOK_VIEW_LABEL[view]} 보기 · 최근 100건 · 발주 → 입고 → 결제 흐름
           </p>
+          <div className="mt-2 flex items-center gap-1.5 text-xs">
+            <a href={`/${view}/purchases`} className={`rounded-full border px-2.5 py-0.5 ${origin !== "hometax" ? "bg-foreground text-background" : "hover:bg-muted"}`}>전체</a>
+            <a href={`/${view}/purchases?origin=hometax`} className={`rounded-full border px-2.5 py-0.5 ${origin === "hometax" ? "bg-foreground text-background" : "hover:bg-muted"}`}>홈택스 생성</a>
+          </div>
         </div>
         <BookBadge book={view} size="md" />
       </header>

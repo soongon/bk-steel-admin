@@ -67,6 +67,11 @@ export type Action =
   | { type: "partner_biz_filled"; partner_id: string; prev: string | null; next: string }
   | { type: "payment_adjusted"; bank_transaction_id: string; sale_id: string; prev_amount: number; next_amount: number }
   | { type: "sale_created"; sale_id: string; doc_no: string }
+  | { type: "purchase_created"; purchase_id: string; doc_no: string }
+  | { type: "purchase_linked"; purchase_id: string; prev: { tax_doc_no: string | null; tax_invoice_received_on: string | null } }
+  | { type: "purchase_memo_created"; memo_id: string; purchase_id: string }
+  | { type: "receipt_created"; receipt_id: string }
+  | { type: "partner_kind_set"; partner_id: string; prev: string | null; next: string }
   | { type: "partner_created"; partner_id: string; name: string }
   | {
       type: "sale_aligned";
@@ -409,7 +414,7 @@ export async function applyReconcile(
 export async function rollbackActions(sb: SupabaseClient, actions: Action[], log: (m: string) => void = () => {}): Promise<void> {
   for (const a of [...actions].reverse()) {
     if (a.type === "invoice_status") {
-      await sb.from("hometax_invoice").update({ ...a.prev, matched_at: null }).eq("nts_confirm_num", a.nts);
+      await sb.from("hometax_invoice").update({ ...a.prev, purchase_id: null, receipt_id: null, matched_at: null }).eq("nts_confirm_num", a.nts);
     } else if (a.type === "memo_created") {
       await sb.from("sale_memo").delete().eq("id", a.memo_id);
     } else if (a.type === "tax_invoice_created") {
@@ -417,6 +422,19 @@ export async function rollbackActions(sb: SupabaseClient, actions: Action[], log
       await sb.from("tax_invoice").delete().eq("id", a.tax_invoice_id).eq("provider", "hometax");
       await sb.from("sale").update({ tax_invoice_issued_on: a.prev_sale.tax_invoice_issued_on, tax_doc_no: a.prev_sale.tax_doc_no }).eq("id", a.sale_id);
       log(`발행 기록 삭제·매출 필드 복원: ${a.sale_id}`);
+    } else if (a.type === "purchase_created") {
+      await sb.from("purchase_line").delete().eq("purchase_id", a.purchase_id);
+      const { error } = await sb.from("purchase").delete().eq("id", a.purchase_id).eq("origin", "hometax");
+      if (error) throw new Error(`생성 매입 삭제 실패(${a.doc_no}): ${error.message}`);
+      log(`생성 매입 삭제: ${a.doc_no}`);
+    } else if (a.type === "purchase_linked") {
+      await sb.from("purchase").update(a.prev).eq("id", a.purchase_id);
+    } else if (a.type === "purchase_memo_created") {
+      await sb.from("purchase_memo").delete().eq("id", a.memo_id);
+    } else if (a.type === "receipt_created") {
+      await sb.from("receipt").delete().eq("id", a.receipt_id).eq("origin", "hometax");
+    } else if (a.type === "partner_kind_set") {
+      await sb.from("partner").update({ supply_kind: a.prev }).eq("id", a.partner_id);
     } else if (a.type === "sale_created") {
       // 우리가 만든 매출 — 발행 기록·메모는 앞선 액션에서 지워졌으므로 라인·매출만 hard delete
       await sb.from("sale_line").delete().eq("sale_id", a.sale_id);

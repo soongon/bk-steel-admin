@@ -15,6 +15,8 @@ import {
 import { BookBadge } from "@/components/admin/book-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { HometaxCollectButton } from "./collect-button";
+import { ClassifyButtons } from "./classify-buttons";
+import { looksLikeInventory } from "@/lib/hometax/reconcile-buy";
 
 // [지금 수집]은 팝빌 작업 완료를 기다리므로(보통 수십 초) 이 라우트의 서버 액션 상한을 넉넉히.
 export const maxDuration = 120;
@@ -66,7 +68,7 @@ export default async function HometaxPage({
     supabase
       .from("hometax_invoice")
       .select(
-        "id, book, direction, nts_confirm_num, kind, tax_type, issue_type, purpose, modify_code, orig_nts_confirm_num, write_date, issue_date, send_date, supplier, invoicee, supply_amount, tax_amount, total_amount, item_summary, items, match_status, sale_id, purchase_id, tax_invoice_id, collected_at",
+        "id, book, direction, nts_confirm_num, kind, tax_type, issue_type, purpose, modify_code, orig_nts_confirm_num, write_date, issue_date, send_date, supplier, invoicee, supply_amount, tax_amount, total_amount, item_summary, items, match_status, sale_id, purchase_id, tax_invoice_id, notes, collected_at",
       )
       .in("book", books)
       .eq("direction", dir)
@@ -228,6 +230,12 @@ export default async function HometaxPage({
                     </TableCell>
                     <TableCell className="text-center">
                       <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${st.cls}`}>{st.label}</span>
+                      {dir === "buy" && r.match_status === "candidate" && (r.notes ?? "").startsWith("분류 대기") ? (
+                        <div className="mt-1">
+                          <ClassifyButtons nts={r.nts_confirm_num} supplierName={r.supplier?.name ?? null} suggestion={looksLikeInventory(r.item_summary) ? "inventory" : "expense"} />
+                        </div>
+                      ) : null}
+                      {r.notes && !(r.notes ?? "").startsWith("분류 대기") ? <div className="mt-0.5 max-w-[12rem] truncate text-[10px] text-muted-foreground" title={r.notes}>{r.notes}</div> : null}
                     </TableCell>
                   </TableRow>
                 );

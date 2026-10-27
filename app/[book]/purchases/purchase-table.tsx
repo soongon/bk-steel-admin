@@ -32,6 +32,7 @@ import {
 } from "./purchase-form-dialog";
 import { deletePurchase, markPurchaseReceived } from "./actions";
 import { fmtKrw } from "@/lib/format";
+import { STEEL_CUSTOM_ITEM_ID } from "@/lib/transaction-draft";
 import { purchaseLifecycleProgress } from "@/lib/purchase-lifecycle";
 import { PayDialog, type BankAccount } from "./pay-dialog";
 
@@ -44,6 +45,12 @@ type PurchaseLine = {
   theoretical_weight_kg: number | null;
   item: { id: string; name: string; code: string } | null;
 };
+
+/** 홈택스 생성 매입의 라인이 아직 금액 1줄(철제 직접입력, 수량 1 ea)뿐인지 — 품목·중량 미정. */
+function isItemsPending(p: PurchaseListRow): boolean {
+  const lines = p.purchase_line ?? [];
+  return lines.length > 0 && lines.every((l) => l.item?.id === STEEL_CUSTOM_ITEM_ID && Number(l.acquired_qty) === 1 && l.acquired_unit === "ea");
+}
 
 export type PurchaseListRow = {
   id: string;
@@ -60,6 +67,9 @@ export type PurchaseListRow = {
   is_documented: boolean;
   tax_doc_type: string;
   tax_doc_no: string | null;
+  /** 출처(0092) — hometax: 홈택스 매입 수집본에서 자동 생성. 라인이 금액 1줄(철제 직접입력)뿐이면 '품목 미정' */
+  origin?: string | null;
+  origin_ref?: string | null;
   tax_invoice_received_on: string | null;
   partner_id: string;
   site_id: string | null;
@@ -247,6 +257,22 @@ export function PurchaseTable({
                       </Link>
                       {!p.is_documented ? (
                         <div className="text-[10px] text-amber-600">무자료</div>
+                      ) : null}
+                      {p.origin === "hometax" ? (
+                        <div className="mt-0.5 flex flex-wrap gap-1">
+                          <span
+                            className="inline-flex items-center gap-1 rounded bg-orange-100 px-1 py-0 text-[9px] font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-300"
+                            title={`홈택스 매입 계산서로 자동 생성${p.origin_ref ? ` · 승인 …${p.origin_ref.slice(-6)}` : ""}`}
+                          >
+                            <span className="size-1.5 rounded-full bg-orange-500" />
+                            홈택스
+                          </span>
+                          {isItemsPending(p) ? (
+                            <span className="inline-flex items-center rounded border border-red-300 px-1 py-0 text-[9px] font-medium text-red-700 dark:border-red-800 dark:text-red-300" title="금액 1줄만 있고 품목·중량이 없어 재고에 안 잡힘 — 수정에서 품목을 채우세요">
+                              품목 미정
+                            </span>
+                          ) : null}
+                        </div>
                       ) : null}
                       {p.tax_doc_no ? (
                         <div className="text-[10px] text-muted-foreground">{p.tax_doc_no}</div>
