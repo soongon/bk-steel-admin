@@ -23,6 +23,7 @@ import { type SaleRow } from "../sale-form-dialog";
 import { type BankAccount } from "../settle-dialog";
 import { fmtKrw, fmtNum, formatBusinessNo, formatPhone } from "@/lib/format";
 import { rebarSpecLabel } from "@/lib/rebar";
+import { saleLineToDraft, type StoredSaleLine } from "@/lib/transaction-draft";
 
 const STATUS_KO: Record<string, string> = {
   reserved: "주문",
@@ -121,7 +122,7 @@ export default async function SaleDetailPage({
       receive_bank_account_id, receive_bank:bank_account!sale_receive_bank_account_id_fkey(code, bank_name),
       sale_line(
         id, qty, unit, unit_price_krw, weight_kg, theoretical_weight_kg, line_subtotal_krw, notes, display_name, spec_text,
-        item:item(id, name, code, rebar_spec_code, rebar_grade_code, length_m, category)
+        item:item(id, name, code, rebar_spec_code, rebar_grade_code, length_m, category, bars_per_tonne)
       )
     `,
     )
@@ -186,7 +187,7 @@ export default async function SaleDetailPage({
   // 활성 세금계산서(미취소) — 라이프사이클 계산서 단계 실상태 표시용
   const { data: taxInvoiceRow } = await supabase
     .from("tax_invoice")
-    .select("state, nts_confirm_num, provider, write_date, remark")
+    .select("state, nts_confirm_num, provider, write_date, remark, supply_krw, total_krw")
     .eq("sale_id", id)
     .is("deleted_at", null)
     .neq("state", "cancelled")
@@ -306,6 +307,19 @@ export default async function SaleDetailPage({
     tax_doc_type: sale.tax_doc_type,
     payment_due_on: sale.payment_due_on,
     notes: sale.notes,
+    // 라인 편집(0089) — 기존 라인 프리필 + 합계 고정 여부(활성 발행 기록).
+    lines: lines.map((l) => saleLineToDraft(editItemsRes.data ?? [], editRebarRes.data ?? [], l as StoredSaleLine)),
+    subtotal_krw: Number(sale.subtotal_krw),
+    total_krw: Number(sale.total_krw),
+    statement_sent_on: (sale as { statement_sent_on: string | null }).statement_sent_on ?? null,
+    origin: sale.origin ?? null,
+    invoice: taxInvoiceRow
+      ? {
+          supply_krw: Number((taxInvoiceRow as { supply_krw?: number | string | null }).supply_krw ?? sale.subtotal_krw),
+          total_krw: Number((taxInvoiceRow as { total_krw?: number | string | null }).total_krw ?? sale.total_krw),
+          nts_confirm_num: taxInvoiceRow.nts_confirm_num ?? null,
+        }
+      : null,
   };
 
   return (

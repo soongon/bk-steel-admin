@@ -22,6 +22,10 @@ export type LineDraft = {
   displayName?: string | null;
   /** 철제 직접입력 규격(품명과 분리, 예: 75x75x6T 10M). 없으면 null(철근은 조합). */
   specText?: string | null;
+  /** 라인 비고(조정 라인 사유 등). 매출 라인 수정(replace_sale_lines)만 저장. */
+  notes?: string | null;
+  /** 계산서 금액 맞춤 조정 라인(0086 과 같은 모양: 철제 직접입력·수량 1·단가=차액, 음수 가능·중량 없음). */
+  adjustment?: boolean;
 };
 
 /** 단위 옵션 — 폼 select 공통. ton_metric·ea_metric 은 unit='ton'·'ea' + tonMetric=true 로 분해. */
@@ -79,6 +83,59 @@ export function calcLineDraft(
 }
 
 
+/** 저장된 sale_line 행(상세 페이지 embed 모양) — saleLineToDraft 입력. */
+export type StoredSaleLine = {
+  item_id?: string | null;
+  item: { id: string; rebar_spec_code?: string | null } | null;
+  unit: string;
+  qty: number | string;
+  unit_price_krw: number | string;
+  weight_kg: number | string | null;
+  line_subtotal_krw: number | string | null;
+  display_name: string | null;
+  spec_text?: string | null;
+  notes?: string | null;
+};
+
+/**
+ * 저장된 sale_line → LineDraft (매출 수정 프리필, 0089).
+ * sale_line 엔 ton_metric·manual_amount 컬럼이 없어(견적 라인과 달리) 저장된 중량·단가로 추론한다:
+ *   · tonMetric — 이론중량(false)·1,000kg 기준(true) 두 가지로 환산해 저장 중량과 맞는 쪽(0.5kg 이내). 둘 다 아니면 false.
+ *   · manualAmount — 단가 0 이고 공급가>0 이면 금액 직접입력.
+ *   · adjustment — 철제 직접입력 품목·중량 없음·표시명 '계산서 금액 맞춤…'(0086 조정 라인).
+ */
+export function saleLineToDraft(items: DraftItem[], rebarSpecs: DraftRebarSpec[], l: StoredSaleLine): LineDraft {
+  const itemId = String(l.item?.id ?? l.item_id ?? "");
+  const isReb = !!l.item?.rebar_spec_code;
+  const u = l.unit === "ton" || l.unit === "kg" ? l.unit : "ea";
+  const qty = Number(l.qty);
+  const unitPrice = Number(l.unit_price_krw);
+  const w = l.weight_kg != null && l.weight_kg !== "" ? Number(l.weight_kg) : null;
+  const sub = l.line_subtotal_krw != null ? Number(l.line_subtotal_krw) : null;
+  const base: LineDraft = {
+    itemKind: isReb ? "rebar" : "steel",
+    itemId,
+    unit: u,
+    qty,
+    unitPrice,
+    tonMetric: false,
+    manualAmount: unitPrice === 0 && sub != null && sub > 0 ? sub : null,
+    displayName: l.display_name ?? null,
+    specText: l.spec_text ?? null,
+    notes: l.notes ?? null,
+    adjustment:
+      itemId === STEEL_CUSTOM_ITEM_ID && w == null && (l.display_name ?? "").startsWith("계산서 금액 맞춤"),
+  };
+  if (isReb && w != null) {
+    const plain = calcLineDraft(items, rebarSpecs, base).calc?.weightKg ?? null;
+    if (plain != null && Math.abs(plain - w) >= 0.5) {
+      const metric = calcLineDraft(items, rebarSpecs, { ...base, tonMetric: true }).calc?.weightKg ?? null;
+      if (metric != null && Math.abs(metric - w) < 0.5) base.tonMetric = true;
+    }
+  }
+  return base;
+}
+
 /** FormData 의 lines JSON 직렬화용 — RPC(create_*_with_lines)가 받는 형태. */
 export function serializeLines(
   items: DraftItem[],
@@ -102,6 +159,10 @@ export function serializeLines(
         display_name: l.displayName?.trim() || null,
         // 철제 직접입력 규격(품명과 분리). null이면 없음/철근은 조합.
         spec_text: l.specText?.trim() || null,
+        // 라인 비고(조정 라인 사유). 견적 RPC 는 무시.
+        notes: l.notes?.trim() || null,
+        // 조정 라인 — 서버 검증에서 음수 단가 허용.
+        allow_negative: l.adjustment === true,
       };
     }),
   );
