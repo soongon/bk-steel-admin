@@ -1,6 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { PartnerTable } from "./partner-table";
-import { type PartnerPrefill } from "./partner-form-dialog";
+import { type PartnerPrefill, type PartnerRow } from "./partner-form-dialog";
+
+// 거래처 폼의 사업자 이미지 AI 인식(서버 액션, 1장에 수 초~십여 초)이 이 화면에서 돈다 — 한 번 더 시도할 여유까지.
+export const maxDuration = 60;
 
 export default async function PartnersPage({
   searchParams,
@@ -13,10 +16,13 @@ export default async function PartnersPage({
   const { data, error } = await supabase
     .from("partner")
     .select(
-      "id, code, name, business_no, representative, phone, email, email2, address, industry, notes, is_active",
+      "id, code, name, business_no, representative, phone, email, email2, address, industry, notes, is_active, docs:partner_document(count)",
     )
     .is("deleted_at", null)
     .order("code", { ascending: true });
+  const partners: PartnerRow[] = ((data ?? []) as Array<PartnerRow & { docs?: Array<{ count: number }> }>).map(
+    ({ docs, ...p }) => ({ ...p, doc_count: docs?.[0]?.count ?? 0 }),
+  );
 
   // 명함에서 prefill 이관
   let prefill: PartnerPrefill | null = null;
@@ -59,7 +65,7 @@ export default async function PartnersPage({
           데이터 로딩 실패: {error.message}
         </div>
       ) : (
-        <PartnerTable partners={data ?? []} prefill={prefill} />
+        <PartnerTable partners={partners} prefill={prefill} />
       )}
     </div>
   );

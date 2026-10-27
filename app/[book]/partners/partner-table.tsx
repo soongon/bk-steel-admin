@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { FileImageIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { formatPhone } from "@/lib/format";
 import { listMatches, listQuery, nameKeys, nameMatches, phoneMatches } from "@/lib/search";
@@ -129,7 +129,23 @@ export function PartnerTable({
               visible.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="font-mono text-xs">{p.code}</TableCell>
-                  <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <span className="inline-flex items-center gap-1.5">
+                      {p.name}
+                      {p.doc_count ? (
+                        <button
+                          type="button"
+                          onClick={() => openEdit(p)}
+                          title={`사업자 이미지 ${p.doc_count}장 — 눌러서 보기`}
+                          aria-label={`사업자 이미지 ${p.doc_count}장 보기`}
+                          className="inline-flex items-center gap-0.5 rounded px-1 text-xs font-normal text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <FileImageIcon className="size-3.5" />
+                          {p.doc_count > 1 ? p.doc_count : null}
+                        </button>
+                      ) : null}
+                    </span>
+                  </TableCell>
                   <TableCell>{p.representative ?? "—"}</TableCell>
                   <TableCell>{p.phone ? formatPhone(p.phone) : "—"}</TableCell>
                   <TableCell className="text-muted-foreground text-xs">
