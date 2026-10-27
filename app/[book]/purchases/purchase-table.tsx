@@ -32,7 +32,7 @@ import {
 } from "./purchase-form-dialog";
 import { deletePurchase, markPurchaseReceived } from "./actions";
 import { fmtKrw } from "@/lib/format";
-import { STEEL_CUSTOM_ITEM_ID } from "@/lib/transaction-draft";
+import { isHometaxPlaceholderLine } from "@/lib/purchase-line-draft";
 import { purchaseLifecycleProgress } from "@/lib/purchase-lifecycle";
 import { PayDialog, type BankAccount } from "./pay-dialog";
 
@@ -43,13 +43,20 @@ type PurchaseLine = {
   unit_price_krw: number;
   actual_weight_kg: number | null;
   theoretical_weight_kg: number | null;
+  notes?: string | null;
   item: { id: string; name: string; code: string } | null;
 };
 
-/** 홈택스 생성 매입의 라인이 아직 금액 1줄(철제 직접입력, 수량 1 ea)뿐인지 — 품목·중량 미정. */
+/**
+ * 홈택스 생성 매입의 라인이 아직 금액 1줄(철제 직접입력 '홈택스 계산서분 — …', 수량 1 ea)뿐인지 — 품목·중량 미정.
+ * 수정(0093)에서 그 줄을 지우고 실제 품목을 넣으면 꺼진다.
+ */
 function isItemsPending(p: PurchaseListRow): boolean {
   const lines = p.purchase_line ?? [];
-  return lines.length > 0 && lines.every((l) => l.item?.id === STEEL_CUSTOM_ITEM_ID && Number(l.acquired_qty) === 1 && l.acquired_unit === "ea");
+  return (
+    lines.length > 0 &&
+    lines.every((l) => isHometaxPlaceholderLine({ itemId: l.item?.id ?? "", unit: l.acquired_unit, qty: Number(l.acquired_qty), notes: l.notes }))
+  );
 }
 
 export type PurchaseListRow = {

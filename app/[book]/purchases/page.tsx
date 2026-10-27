@@ -25,7 +25,7 @@ export default async function PurchasesPage({
       memo_count:purchase_memo(count), latest_memo:purchase_memo(body, created_at),
       partner:partner(id, name, code),
       site:site(id, name, code),
-      purchase_line(id, acquired_qty, acquired_unit, unit_price_krw, actual_weight_kg, theoretical_weight_kg, item:item(id, name, code))
+      purchase_line(id, acquired_qty, acquired_unit, unit_price_krw, actual_weight_kg, theoretical_weight_kg, notes, item:item(id, name, code))
     `,
     )
     .is("deleted_at", null)

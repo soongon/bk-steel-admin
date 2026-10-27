@@ -16,6 +16,9 @@ function friendly(message: string): string {
   if (message.includes("chk_kg_unit_actual_required")) return "kg 단위 매입은 실중량이 필수입니다.";
   if (message.includes("chk_bars_count_required")) return "가닥/번들 단위는 가닥수가 필요합니다.";
   if (message.includes("row-level security")) return "권한이 없습니다.";
+  if (message.includes("Could not find the function") && message.includes("replace_purchase_lines")) {
+    return "품목 수정 기능(마이그레이션 0093)이 DB에 아직 적용되지 않았습니다.";
+  }
   return message;
 }
 
@@ -37,7 +40,81 @@ type PurchaseLineInput = {
   bars_count: number | null;
   theoretical_weight_kg: number | null;
   actual_weight_kg: number | null;
+  notes: string | null; // 라인 비고(홈택스 계산서분·조정 라인 사유)
+  allow_negative: boolean; // 계산서 금액 맞춤 조정 라인 — 음수 단가 허용
 };
+
+/**
+ * 폼의 lines JSON(serializePurchaseLines 출력) → 검증된 라인 입력. 신규 등록·라인 수정(0093) 공용.
+ * 조정 라인(allow_negative)은 음수 단가 가능 — 그 외는 단가>0. kg 단위는 실중량 필수(DB CHECK 와 같은 뜻).
+ */
+function parsePurchaseLinesJson(raw: string): { lines: PurchaseLineInput[] } | { error: string } {
+  let lines: PurchaseLineInput[];
+  try {
+    const parsed: unknown = JSON.parse(raw || "[]");
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return { error: "품목을 1개 이상 추가해주세요." };
+    }
+    const numOr = (v: unknown) => (v != null && v !== "" ? Number(v) : null);
+    lines = parsed.map((l) => {
+      const o = l as Record<string, unknown>;
+      return {
+        item_id: String(o.item_id ?? ""),
+        unit: String(o.unit ?? "") as PurchaseLineInput["unit"],
+        qty: Number(o.qty) || 0,
+        unit_price_krw: Number(o.unit_price_krw) || 0,
+        bars_count: numOr(o.bars_count),
+        theoretical_weight_kg: numOr(o.theoretical_weight_kg),
+        actual_weight_kg: numOr(o.actual_weight_kg),
+        notes: typeof o.notes === "string" && o.notes.trim() ? o.notes.trim() : null,
+        allow_negative: o.allow_negative === true,
+      };
+    });
+  } catch {
+    return { error: "품목 데이터를 읽지 못했습니다." };
+  }
+  for (const l of lines) {
+    if (!l.item_id) return { error: "품목을 선택해주세요." };
+    if (!l.unit) return { error: "단위를 선택해주세요." };
+    if (l.qty <= 0) return { error: "수량을 입력해주세요." };
+    if (l.allow_negative) {
+      if (l.unit_price_krw === 0) return { error: "조정 라인 금액이 0입니다." };
+    } else if (l.unit_price_krw <= 0) {
+      return { error: "단가를 입력해주세요." };
+    }
+    if (l.unit === "kg" && l.actual_weight_kg == null) return { error: "kg 단위 매입은 실중량이 필수입니다." };
+  }
+  return { lines };
+}
+
+/**
+ * 라인별 공급가(철근=원/kg×실중량(없으면 이론중량), 비철근=단가×수량) → RPC(create/replace)가 받는 형태.
+ * 가닥(ea) 단위에 가닥수가 없으면 수량을 가닥수로(철제 ea 라인이 chk_bars_count_required 에 걸리던 문제).
+ */
+function toRpcPurchaseLines(lines: PurchaseLineInput[], status: string) {
+  return lines.map((l) => {
+    const weightForPrice = l.actual_weight_kg ?? l.theoretical_weight_kg ?? null;
+    const lineSubtotal = weightForPrice
+      ? Math.round(l.unit_price_krw * weightForPrice)
+      : Math.round(l.unit_price_krw * l.qty);
+    const barsCount =
+      l.bars_count ?? (l.unit === "ea" || l.unit === "piece" || l.unit === "bundle" ? Math.round(l.qty) : null);
+    return {
+      item_id: l.item_id,
+      acquired_unit: l.unit,
+      acquired_qty: l.qty,
+      unit_price_krw: l.unit_price_krw,
+      bars_count: barsCount,
+      theoretical_weight_kg: l.theoretical_weight_kg,
+      actual_weight_kg: l.actual_weight_kg,
+      invoiced_weight_kg: l.actual_weight_kg ?? l.theoretical_weight_kg,
+      price_basis: l.unit === "kg" ? "actual" : "theoretical",
+      line_subtotal_krw: lineSubtotal,
+      line_status: status, // 헤더와 일치 — scrapped/depleted 가 in_stock 유령재고로 남던 문제 방지
+      notes: l.notes,
+    };
+  });
+}
 type CreateInput = {
   book: Book;
   doc_no?: string;
@@ -72,34 +149,9 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
   if (!ordered_on) return { error: "발주일을 입력해주세요." };
 
   // 품목 라인 — 폼이 JSON 배열로 전송(여러 품목)
-  let lines: PurchaseLineInput[];
-  try {
-    const raw: unknown = JSON.parse(str("lines") || "[]");
-    if (!Array.isArray(raw) || raw.length === 0) {
-      return { error: "품목을 1개 이상 추가해주세요." };
-    }
-    const numOr = (v: unknown) => (v != null && v !== "" ? Number(v) : null);
-    lines = raw.map((l) => {
-      const o = l as Record<string, unknown>;
-      return {
-        item_id: String(o.item_id ?? ""),
-        unit: String(o.unit ?? "") as PurchaseLineInput["unit"],
-        qty: Number(o.qty) || 0,
-        unit_price_krw: Number(o.unit_price_krw) || 0,
-        bars_count: numOr(o.bars_count),
-        theoretical_weight_kg: numOr(o.theoretical_weight_kg),
-        actual_weight_kg: numOr(o.actual_weight_kg),
-      };
-    });
-  } catch {
-    return { error: "품목 데이터를 읽지 못했습니다." };
-  }
-  for (const l of lines) {
-    if (!l.item_id) return { error: "품목을 선택해주세요." };
-    if (!l.unit) return { error: "단위를 선택해주세요." };
-    if (l.qty <= 0) return { error: "수량을 입력해주세요." };
-    if (l.unit_price_krw <= 0) return { error: "단가를 입력해주세요." };
-  }
+  const parsedLines = parsePurchaseLinesJson(str("lines"));
+  if ("error" in parsedLines) return parsedLines;
+  const lines = parsedLines.lines;
 
   const is_documented = str("is_documented") === "true";
   const tax_doc_type = (str("tax_doc_type") || (book === "b" ? "none" : "tax_invoice_electronic")) as CreateInput["tax_doc_type"];
@@ -153,28 +205,12 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
     .eq("preferred_book", parsed.book)
     .maybeSingle();
 
-  // 라인별 공급가(철근=원/kg×실제중량, 비철근=단가×수량) → 헤더 합계 + RPC 라인 배열.
-  const lines = parsed.lines.map((l) => {
-    const weightForPrice = l.actual_weight_kg ?? l.theoretical_weight_kg ?? null;
-    const lineSubtotal = weightForPrice
-      ? Math.round(l.unit_price_krw * weightForPrice)
-      : Math.round(l.unit_price_krw * l.qty);
-    return {
-      warehouse_id: warehouse.id,
-      warehouse_zone_id: zone?.id ?? null,
-      item_id: l.item_id,
-      acquired_unit: l.unit,
-      acquired_qty: l.qty,
-      unit_price_krw: l.unit_price_krw,
-      bars_count: l.bars_count,
-      theoretical_weight_kg: l.theoretical_weight_kg,
-      actual_weight_kg: l.actual_weight_kg,
-      invoiced_weight_kg: l.actual_weight_kg ?? l.theoretical_weight_kg,
-      price_basis: l.unit === "kg" ? "actual" : "theoretical",
-      line_subtotal_krw: lineSubtotal,
-      line_status: parsed.status, // 헤더와 일치 — scrapped/depleted 가 in_stock 유령재고로 남던 문제 방지
-    };
-  });
+  // 라인별 공급가 → 헤더 합계 + RPC 라인 배열(창고·존은 모든 라인 공통).
+  const lines = toRpcPurchaseLines(parsed.lines, parsed.status).map((l) => ({
+    warehouse_id: warehouse.id,
+    warehouse_zone_id: zone?.id ?? null,
+    ...l,
+  }));
   const subtotal = lines.reduce((s, l) => s + l.line_subtotal_krw, 0);
   const documented = parsed.is_documented;
   const { vatType, vatRate, vat, total } = computeVat(documented, parsed.tax_doc_type, subtotal);
@@ -257,6 +293,27 @@ export async function updatePurchaseHeader(
   };
 
   const { error } = await supabase.from("purchase").update(updates).eq("id", id);
+  if (error) return { ok: false, error: friendly(error.message) };
+  revalidateTransactionPaths("purchases");
+  return { ok: true };
+}
+
+/**
+ * 매입 품목 라인 전체 교체(추가·삭제·수정) — replace_purchase_lines RPC(0093).
+ * 홈택스 수집본과 연결된 매입은 라인 합이 계산서 공급가액과 같아야 하고 합계는 고정, 아니면 합계를 라인 합으로 재계산.
+ * 결제완료(합계 변경)·재고 이력 가드는 RPC 가 강제. 헤더(입고일·상태·현장 등)는 updatePurchaseHeader 가 따로 처리.
+ */
+export async function updatePurchaseLines(id: string, linesJson: string): Promise<PurchaseActionResult> {
+  const parsed = parsePurchaseLinesJson(linesJson);
+  if ("error" in parsed) return { ok: false, error: parsed.error };
+  const supabase = await createClient();
+  const { data: cur } = await supabase.from("purchase").select("status").eq("id", id).maybeSingle();
+  if (!cur) return { ok: false, error: "매입을 찾을 수 없습니다." };
+  const { error } = await supabase.rpc("replace_purchase_lines", {
+    p_purchase_id: id,
+    p_lines: toRpcPurchaseLines(parsed.lines, String(cur.status)),
+    p_recalc: true,
+  });
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("purchases");
   return { ok: true };

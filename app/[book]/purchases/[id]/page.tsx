@@ -13,6 +13,9 @@ import { MemoLogPanel } from "@/components/admin/memo-log-panel";
 import { MEMO_COLUMNS, type MemoEntry } from "@/lib/memo-log";
 import { addPurchaseMemo, deletePurchaseMemo } from "./memo-actions";
 import { type BankAccount } from "../pay-dialog";
+import { type PurchaseRow } from "../purchase-form-dialog";
+import { PurchaseEditButton } from "./purchase-edit-button";
+import { purchaseLineToDraft, type StoredPurchaseLine } from "@/lib/purchase-line-draft";
 
 const fmtNum = (n: number, d = 0) =>
   n.toLocaleString("ko-KR", { maximumFractionDigits: d });
@@ -110,12 +113,12 @@ export default async function PurchaseDetailPage({
       `
       id, book, doc_no, ordered_on, delivered_on, paid_on, payment_due_on, status,
       subtotal_krw, vat_krw, total_krw, vat_rate, partner_id, is_documented,
-      tax_doc_type, tax_doc_no, tax_invoice_received_on, notes,
+      tax_doc_type, tax_doc_no, tax_invoice_received_on, notes, origin, origin_ref,
       partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email),
       purchase_line(
         id, acquired_qty, acquired_unit, unit_price_krw, line_subtotal_krw,
         actual_weight_kg, theoretical_weight_kg, notes,
-        item:item(id, name, code, rebar_spec_code, rebar_grade_code, length_m, category)
+        item:item(id, name, code, rebar_spec_code, rebar_grade_code, length_m, category, bars_per_tonne)
       )
     `,
     )
@@ -155,14 +158,63 @@ export default async function PurchaseDetailPage({
   const attachments = (attsData ?? []) as Attachment[];
   const memos = (memosData ?? []) as MemoEntry[];
 
-  // 결제 통장 (매입 책) — 라이프사이클 패널 결제 단계용
-  const { data: bankAccounts } = await supabase
-    .from("bank_account")
-    .select("id, code, bank_name, book, kind")
-    .eq("book", book)
-    .is("deleted_at", null)
-    .eq("is_active", true)
-    .order("is_primary", { ascending: false });
+  // 결제 통장(라이프사이클 결제 단계) + 수정 다이얼로그(PurchaseFormDialog 편집 모드)용 폼 데이터
+  // + 연결된 홈택스 매입 계산서(0092, 있으면 합계 고정) — 동시에.
+  const [{ data: bankAccounts }, editPartnersRes, editItemsRes, editRebarRes, editSitesRes, { data: hometaxRow }] =
+    await Promise.all([
+      supabase
+        .from("bank_account")
+        .select("id, code, bank_name, book, kind")
+        .eq("book", book)
+        .is("deleted_at", null)
+        .eq("is_active", true)
+        .order("is_primary", { ascending: false }),
+      supabase.from("partner").select("id, code, name").is("deleted_at", null).eq("is_active", true).order("name"),
+      supabase
+        .from("item")
+        .select("id, code, name, category, rebar_spec_code, rebar_grade_code, length_m, bars_per_tonne")
+        .is("deleted_at", null)
+        .eq("is_active", true)
+        .order("name"),
+      supabase.from("rebar_spec").select("spec_code, unit_weight_kg_per_m, standard_length_m").order("display_order"),
+      supabase.from("site").select("id, name").is("deleted_at", null).eq("is_active", true).order("name"),
+      supabase
+        .from("hometax_invoice")
+        .select("nts_confirm_num, supply_amount, total_amount")
+        .eq("purchase_id", id)
+        .order("write_date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+  const purchaseRow: PurchaseRow = {
+    id: purchase.id,
+    book,
+    doc_no: purchase.doc_no,
+    partner_id: purchase.partner_id,
+    site_id: (purchase as { site_id?: string | null }).site_id ?? null,
+    site_name: (purchase as { site_name?: string | null }).site_name ?? null,
+    ordered_on: purchase.ordered_on,
+    delivered_on: purchase.delivered_on,
+    paid_on: purchase.paid_on,
+    payment_due_on: purchase.payment_due_on,
+    status: purchase.status,
+    is_documented: purchase.is_documented,
+    tax_doc_type: purchase.tax_doc_type,
+    tax_doc_no: purchase.tax_doc_no,
+    notes: purchase.notes,
+    // 라인 편집(0093) — 기존 라인 프리필 + 합계 고정 여부(홈택스 수집본 연결).
+    lines: lines.map((l) => purchaseLineToDraft(l as StoredPurchaseLine)),
+    subtotal_krw: Number(purchase.subtotal_krw),
+    total_krw: Number(purchase.total_krw),
+    origin: (purchase as { origin?: string | null }).origin ?? null,
+    invoice: hometaxRow
+      ? {
+          supply_krw: Number(hometaxRow.supply_amount ?? purchase.subtotal_krw),
+          total_krw: Number(hometaxRow.total_amount ?? purchase.total_krw),
+          nts_confirm_num: hometaxRow.nts_confirm_num ?? null,
+        }
+      : null,
+  };
 
   return (
     <div className="flex flex-1 flex-col">
@@ -195,6 +247,19 @@ export default async function PurchaseDetailPage({
               무자료
             </span>
           ) : null}
+          {purchaseRow.origin === "hometax" ? (
+            <span className="inline-flex h-5 items-center rounded-full bg-orange-100 px-2 text-xs text-orange-700 dark:bg-orange-950/50 dark:text-orange-300">
+              홈택스
+            </span>
+          ) : null}
+          <PurchaseEditButton
+            purchase={purchaseRow}
+            view={book}
+            partners={editPartnersRes.data ?? []}
+            items={editItemsRes.data ?? []}
+            rebarSpecs={editRebarRes.data ?? []}
+            sites={editSitesRes.data ?? []}
+          />
         </div>
       </div>
 
@@ -314,7 +379,10 @@ export default async function PurchaseDetailPage({
                   const subtotal = Number(l.line_subtotal_krw ?? l.acquired_qty * l.unit_price_krw);
                   return (
                     <tr key={l.id} className="border-t">
-                      <td className="px-3 py-2">{item?.name ?? "—"}</td>
+                      <td className="px-3 py-2">
+                        {item?.name ?? "—"}
+                        {l.notes ? <div className="text-[11px] text-muted-foreground">{l.notes}</div> : null}
+                      </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">{spec || "—"}</td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         {fmtNum(Number(l.acquired_qty), 2)} {l.acquired_unit}

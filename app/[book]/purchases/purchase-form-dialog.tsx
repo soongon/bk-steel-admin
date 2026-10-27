@@ -18,7 +18,13 @@ import { BookBadge } from "@/components/admin/book-badge";
 import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import { fmtKrw, fmtNum } from "@/lib/format";
 import { TAX_DOC_OPTIONS } from "@/lib/tax-doc";
-import { createPurchase, updatePurchaseHeader } from "./actions";
+import {
+  type PurchaseLineDraft,
+  calcPurchaseLine,
+  serializePurchaseLines,
+  withAdjustmentLine,
+} from "@/lib/purchase-line-draft";
+import { createPurchase, updatePurchaseHeader, updatePurchaseLines } from "./actions";
 
 export type Partner = { id: string; code: string; name: string };
 export type Item = {
@@ -55,6 +61,14 @@ export type PurchaseRow = {
   tax_doc_type: string;
   tax_doc_no: string | null;
   notes: string | null;
+  /** 수정 모드 라인 편집(0093) — 상세 페이지가 기존 purchase_line 을 PurchaseLineDraft 로 채워 넘긴다. 없으면 헤더만 수정. */
+  lines?: PurchaseLineDraft[];
+  /** 현재 공급가액 — 홈택스 수집본과 연결돼 있으면 라인 합이 이 값과 같아야 저장된다. */
+  subtotal_krw?: number;
+  total_krw?: number;
+  origin?: string | null;
+  /** 연결된 홈택스 매입 계산서(hometax_invoice.purchase_id) — 있으면 합계 고정 안내 + 차액 맞춤 버튼. */
+  invoice?: { supply_krw: number; total_krw: number; nts_confirm_num: string | null } | null;
 };
 
 const STATUS_OPTIONS = [
@@ -69,15 +83,6 @@ const UNIT_OPTIONS = [
   { value: "kg", label: "kg (실중량)" },
   { value: "ton", label: "톤 (이론중량)" },
 ] as const;
-
-type LineDraft = {
-  itemKind: "rebar" | "steel";
-  itemId: string;
-  unit: "ea" | "kg" | "ton";
-  qty: number;
-  unitPrice: number;
-  actualWeight: number | null;
-};
 
 export function PurchaseFormDialog({
   open,
@@ -139,8 +144,10 @@ export function PurchaseFormDialog({
   const [actualWeightStr, setActualWeightStr] = useState("");
   const actualWeight = actualWeightStr ? Number(actualWeightStr) : null;
 
-  // 누적 품목 라인 (신규 등록 — 여러 품목)
-  const [lines, setLines] = useState<LineDraft[]>([]);
+  // 누적 품목 라인 (신규 등록 — 여러 품목 / 수정 — 기존 라인 프리필 후 추가·삭제)
+  const [lines, setLines] = useState<PurchaseLineDraft[]>([]);
+  // 수정 모드 라인 편집은 상세 페이지가 editing.lines 를 넘길 때만(목록의 헤더 전용 호출과 구분).
+  const canEditLines = !editing || editing.lines !== undefined;
 
   const [isDocumented, setIsDocumented] = useState(book === "b" ? false : true);
   const [taxDocType, setTaxDocType] = useState<string>(
@@ -166,20 +173,10 @@ export function PurchaseFormDialog({
   );
 
   // 라인 → 품목·환산·공급가 (목록·합계 공용). 실중량 있으면 우선, 없으면 이론중량.
-  const calcLine = (l: LineDraft) => {
-    const lineItem = items.find((i) => i.id === l.itemId) ?? null;
-    const lineSpec = lineItem?.rebar_spec_code
-      ? rebarSpecs.find((s) => s.spec_code === lineItem.rebar_spec_code) ?? null
-      : null;
-    const c = lineItem && lineSpec ? calculateRebarWeight(lineItem, lineSpec, l.unit, l.qty, l.unitPrice) : null;
-    const theoreticalKg = c ? c.weightKg : null;
-    const weightForPrice = l.actualWeight ?? theoreticalKg;
-    const subtotal = weightForPrice ? Math.round(l.unitPrice * weightForPrice) : Math.round(l.unitPrice * l.qty);
-    return { item: lineItem, calc: c, theoreticalKg, subtotal };
-  };
+  const calcLine = (l: PurchaseLineDraft) => calcPurchaseLine(items, rebarSpecs, l);
 
   // 현재 입력이 유효하면 임시 라인으로 포함(추가 안 눌러도 마지막 1건 반영)
-  const pendingLine: LineDraft | null =
+  const pendingLine: PurchaseLineDraft | null =
     itemId && qty > 0 && unitPrice > 0
       ? { itemKind, itemId, unit, qty, unitPrice, actualWeight: unit === "kg" ? qty : actualWeight }
       : null;
@@ -191,6 +188,15 @@ export function PurchaseFormDialog({
     isDocumented && taxDocType !== "invoice" && taxDocType !== "none" ? 10 : 0;
   const vat = Math.round((lineSubtotal * vatRate) / 100);
   const total = lineSubtotal + vat;
+
+  // 홈택스 수집본과 연결 — 합계 고정: 목표 공급가액(= 현재 헤더 공급가액 = 국세청 계산서)과의 차액.
+  const fixedSubtotal = editing?.invoice ? Number(editing.subtotal_krw ?? editing.invoice.supply_krw) : null;
+  const invoiceDiff = fixedSubtotal != null ? fixedSubtotal - lineSubtotal : 0;
+  // 라인이 바뀌었는지 — 직렬화 비교(수정 모드에서 안 바뀌면 라인 RPC 를 부르지 않는다).
+  const linesDirty =
+    !!editing &&
+    canEditLines &&
+    serializePurchaseLines(items, rebarSpecs, allLines) !== serializePurchaseLines(items, rebarSpecs, editing.lines ?? []);
 
   const [orderedOn, setOrderedOn] = useState(today);
   const [deliveredOn, setDeliveredOn] = useState(today);
@@ -209,6 +215,14 @@ export function PurchaseFormDialog({
         setIsDocumented(editing.is_documented);
         setTaxDocType(editing.tax_doc_type);
         setNotes(editing.notes ?? "");
+        // 라인 편집 — 기존 라인 프리필, 입력칸 초기화.
+        setLines(editing.lines ?? []);
+        setItemId("");
+        setItemKind("rebar");
+        setUnit("ea");
+        setQtyStr("");
+        setUnitPriceStr("");
+        setActualWeightStr("");
       } else {
         setBook(view !== "all" ? (view as Book) : "sl");
         setPartnerInput("");
@@ -242,6 +256,20 @@ export function PurchaseFormDialog({
   function removeLine(idx: number) {
     setLines((prev) => prev.filter((_, i) => i !== idx));
   }
+  /** 계산서 금액 맞춤 — 홈택스 계산서 공급가액과 라인 합의 차액을 조정 라인 1줄로(여러 번 눌러도 1줄). */
+  function addAdjustmentLine() {
+    if (fixedSubtotal == null) return;
+    const base = [...lines, ...(pendingLine ? [pendingLine] : [])];
+    const next = withAdjustmentLine(items, rebarSpecs, base, fixedSubtotal, editing?.invoice?.nts_confirm_num ?? null, fmtKrw);
+    setLines(next.lines);
+    if (pendingLine) {
+      setItemId("");
+      setQtyStr("");
+      setUnitPriceStr("");
+      setActualWeightStr("");
+    }
+    setError(null);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -257,6 +285,18 @@ export function PurchaseFormDialog({
         return;
       }
     }
+    if (editing && canEditLines && linesDirty) {
+      if (allLines.length === 0) {
+        setError("품목을 1개 이상 남겨주세요.");
+        return;
+      }
+      if (fixedSubtotal != null && invoiceDiff !== 0) {
+        setError(
+          `홈택스 계산서 공급가액(${fmtKrw(fixedSubtotal)})과 라인 합이 ${fmtKrw(Math.abs(invoiceDiff))} 다릅니다 — '계산서 금액 맞춤'으로 차액을 넣거나 라인을 고치세요.`,
+        );
+        return;
+      }
+    }
 
     const fd = new FormData();
     fd.set("book", book);
@@ -269,36 +309,37 @@ export function PurchaseFormDialog({
     fd.set("tax_doc_type", taxDocType);
     fd.set("notes", notes);
 
+    // 모든 라인(추가분 + 현재 입력) — 철근 환산중량·가닥수·실중량·비고 동봉.
+    const linesJson = serializePurchaseLines(items, rebarSpecs, allLines);
     if (!editing) {
       // 매입처: 마스터 매칭되면 id, 아니면 이름만 — 서버(resolvePartnerId)가 없으면 자동 생성.
       if (matchedPartner) fd.set("partner_id", matchedPartner.id);
       fd.set("partner_name", partnerInput.trim());
-      // 모든 라인(추가분 + 현재 입력) — 철근 환산중량·가닥수·실중량 동봉.
-      fd.set(
-        "lines",
-        JSON.stringify(
-          allLines.map((l) => {
-            const { calc: c } = calcLine(l);
-            return {
-              item_id: l.itemId,
-              unit: l.unit,
-              qty: l.qty,
-              unit_price_krw: l.unitPrice,
-              bars_count: c && c.bars > 0 ? c.bars : null,
-              theoretical_weight_kg: c ? c.weightKg : null,
-              actual_weight_kg: l.actualWeight,
-            };
-          }),
-        ),
-      );
+      fd.set("lines", linesJson);
     }
 
     startTransition(async () => {
-      const result = editing
-        ? await updatePurchaseHeader(editing.id, fd)
-        : await createPurchase(fd);
+      if (editing) {
+        // 라인이 바뀌었으면 먼저 교체(RPC 가 계산서 합계·결제완료·재고 이력 가드) → 그다음 헤더(새 공급가액으로 부가세 재계산).
+        if (linesDirty) {
+          const r1 = await updatePurchaseLines(editing.id, linesJson);
+          if (!r1.ok) {
+            setError(r1.error);
+            return;
+          }
+        }
+        const r2 = await updatePurchaseHeader(editing.id, fd);
+        if (!r2.ok) {
+          setError(linesDirty ? `품목은 저장되었지만 나머지 저장에 실패했습니다: ${r2.error}` : r2.error);
+          return;
+        }
+        toast.success("매입이 수정되었습니다");
+        onOpenChange(false);
+        return;
+      }
+      const result = await createPurchase(fd);
       if (result.ok) {
-        toast.success(editing ? "매입이 수정되었습니다" : "매입이 등록되었습니다");
+        toast.success("매입이 등록되었습니다");
         onOpenChange(false);
       } else {
         setError(result.error);
@@ -308,7 +349,7 @@ export function PurchaseFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing ? "매입 수정" : "신규 매입"}</DialogTitle>
         </DialogHeader>
@@ -396,9 +437,14 @@ export function PurchaseFormDialog({
             </Field>
           </div>
 
-          {/* 신규: 품목 + 단위 + 수량 + 단가 */}
-          {!editing ? (
+          {/* 품목 + 단위 + 수량 + 단가 — 신규, 그리고 상세에서 연 수정(기존 라인 프리필·추가·삭제) */}
+          {canEditLines ? (
             <>
+              {editing?.origin === "hometax" ? (
+                <p className="rounded-md border border-orange-200 bg-orange-50 px-3 py-1.5 text-[11px] text-orange-800 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-300">
+                  홈택스 매입 계산서로 자동 생성된 매입 — ‘홈택스 계산서분’ 줄을 지우고 실제 품목을 kg 단위(계근 실중량)로 추가하세요. 남는 차액은 아래 ‘계산서 금액 맞춤’으로 넣습니다.
+                </p>
+              ) : null}
               <div className="grid grid-cols-[7rem_1fr] gap-3">
                 <Field label="구분 *">
                   <div className="flex gap-1">
@@ -525,7 +571,13 @@ export function PurchaseFormDialog({
                     const w = l.actualWeight ?? theoreticalKg;
                     return (
                       <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-xs">
-                        <span className="flex-1 truncate font-medium">{li?.name ?? "—"}</span>
+                        <span className="flex-1 truncate font-medium" title={l.notes ?? undefined}>
+                          {li?.name ?? "—"}
+                          {l.notes?.trim() ? <span className="font-normal text-muted-foreground"> {l.notes.trim()}</span> : null}
+                          {l.adjustment ? (
+                            <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-normal text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">조정</span>
+                          ) : null}
+                        </span>
                         <span className="text-muted-foreground">
                           {reb && w ? `${fmtNum(w)}kg` : `${l.qty}${l.unit}`} × {fmtKrw(l.unitPrice)}
                           {reb ? "/kg" : ""}
@@ -542,6 +594,30 @@ export function PurchaseFormDialog({
                       </div>
                     );
                   })}
+                </div>
+              ) : null}
+
+              {/* 홈택스 수집본 연결 — 합계 고정 안내 + 차액 맞춤 */}
+              {editing?.invoice && fixedSubtotal != null ? (
+                <div className="flex flex-col gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs dark:border-amber-900 dark:bg-amber-950/30">
+                  <p className="font-medium text-amber-800 dark:text-amber-300">
+                    계산서 합계 {fmtKrw(Number(editing.total_krw ?? editing.invoice.total_krw))} 고정(공급가액 {fmtKrw(fixedSubtotal)}) — 라인 합이 같아야 저장
+                    {editing.invoice.nts_confirm_num ? (
+                      <span className="font-normal text-amber-700/80 dark:text-amber-400/80"> · 승인 …{editing.invoice.nts_confirm_num.slice(-6)}</span>
+                    ) : null}
+                  </p>
+                  {invoiceDiff !== 0 ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="tabular-nums text-red-700 dark:text-red-300">
+                        차액 {invoiceDiff > 0 ? "+" : "−"}{fmtKrw(Math.abs(invoiceDiff))} (라인 합 {fmtKrw(lineSubtotal)})
+                      </span>
+                      <Button type="button" variant="outline" size="sm" onClick={addAdjustmentLine}>
+                        계산서 금액 맞춤
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-emerald-700 dark:text-emerald-300">라인 합이 계산서 공급가액과 같습니다.</p>
+                  )}
                 </div>
               ) : null}
 
