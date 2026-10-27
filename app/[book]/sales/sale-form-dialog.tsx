@@ -31,7 +31,7 @@ import {
 } from "@/lib/transaction-draft";
 import { fmtKrw, fmtNum } from "@/lib/format";
 import { TAX_DOC_OPTIONS } from "@/lib/tax-doc";
-import { createSale, updateSaleHeader } from "./actions";
+import { createSale, updateSaleHeader, updateSaleLines } from "./actions";
 
 export type Partner = {
   id: string;
@@ -74,6 +74,15 @@ export type SaleRow = {
   tax_doc_type: string;
   payment_due_on: string | null;
   notes: string | null;
+  /** 수정 모드 라인 편집(0089) — 상세 페이지가 기존 sale_line 을 LineDraft 로 채워 넘긴다. 없으면 헤더만 수정. */
+  lines?: LineDraft[];
+  /** 현재 공급가액 — 발행 기록이 있으면 라인 합이 이 값과 같아야 저장된다. */
+  subtotal_krw?: number;
+  total_krw?: number;
+  statement_sent_on?: string | null;
+  origin?: string | null;
+  /** 활성 발행 기록(미취소 tax_invoice) — 있으면 합계 고정 안내 + 차액 맞춤 버튼. */
+  invoice?: { supply_krw: number; total_krw: number; nts_confirm_num: string | null } | null;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -166,8 +175,10 @@ export function SaleFormDialog({
   const [manualAmountStr, setManualAmountStr] = useState("");
   const manualAmount = manualMode ? Number(manualAmountStr) || 0 : 0;
 
-  // 누적 품목 라인 (신규 등록 — 여러 품목)
+  // 누적 품목 라인 (신규 등록 — 여러 품목 / 수정 — 기존 라인 프리필 후 추가·삭제)
   const [lines, setLines] = useState<LineDraft[]>([]);
+  // 수정 모드 라인 편집은 상세 페이지가 editing.lines 를 넘길 때만(목록의 헤더 전용 호출과 구분).
+  const canEditLines = !editing || editing.lines !== undefined;
 
   // 자료성·세금
   const [isDocumented, setIsDocumented] = useState(book === "b" ? false : true);
@@ -219,6 +230,13 @@ export function SaleFormDialog({
   const vat = Math.round((lineSubtotal * vatRate) / 100);
   const total = lineSubtotal + vat;
 
+  // 발행 기록이 있으면 합계 고정 — 목표 공급가액(= 현재 헤더 공급가액, 0086 으로 계산서와 같음)과의 차액.
+  const fixedSubtotal = editing?.invoice ? Number(editing.subtotal_krw ?? editing.invoice.supply_krw) : null;
+  const invoiceDiff = fixedSubtotal != null ? fixedSubtotal - lineSubtotal : 0;
+  // 라인이 바뀌었는지 — 직렬화 비교(수정 모드에서 안 바뀌면 라인 RPC 를 부르지 않는다).
+  const linesDirty =
+    !!editing && canEditLines && serializeLines(items, rebarSpecs, allLines) !== serializeLines(items, rebarSpecs, editing.lines ?? []);
+
   // 상태·날짜
   const [orderedOn, setOrderedOn] = useState(today);
   const [deliveredOn, setDeliveredOn] = useState("");
@@ -250,6 +268,18 @@ export function SaleFormDialog({
         setIsDocumented(editing.is_documented);
         setTaxDocType(editing.tax_doc_type);
         setNotes(editing.notes ?? "");
+        // 라인 편집 — 기존 라인 프리필, 입력칸 초기화.
+        setLines(editing.lines ?? []);
+        setItemId("");
+        setItemKind("rebar");
+        setSteelName("");
+        setSteelSpec("");
+        setUnit("ea");
+        setTonMetric(false);
+        setQtyStr("");
+        setUnitPriceStr("");
+        setManualMode(false);
+        setManualAmountStr("");
       } else {
         // 신규
         setBook(view !== "all" ? (view as Book) : "sl");
@@ -329,6 +359,47 @@ export function SaleFormDialog({
   function removeLine(idx: number) {
     setLines((prev) => prev.filter((_, i) => i !== idx));
   }
+  function clearLineInputs() {
+    setItemId("");
+    setSteelName("");
+    setSteelSpec("");
+    setQtyStr("");
+    setUnitPriceStr("");
+    setManualMode(false);
+    setManualAmountStr("");
+  }
+  /**
+   * 계산서 금액 맞춤 — 발행된 계산서 공급가액과 라인 합의 차액을 조정 라인 1줄(0086 과 같은 모양: 철제 직접입력·수량 1·
+   * 단가=차액·중량 없음)로 넣어 합을 맞춘다. 기존 조정 라인은 빼고 다시 계산(여러 번 눌러도 1줄).
+   */
+  function addAdjustmentLine() {
+    if (fixedSubtotal == null) return;
+    const base = [...lines, ...(pendingLine ? [pendingLine] : [])].filter((l) => !l.adjustment);
+    const baseSubtotal = base.reduce((s, l) => s + calcLine(l).subtotal, 0);
+    const diff = fixedSubtotal - baseSubtotal;
+    const nts = editing?.invoice?.nts_confirm_num ?? null;
+    const next = diff === 0
+      ? base
+      : [
+          ...base,
+          {
+            itemKind: "steel" as const,
+            itemId: STEEL_CUSTOM_ITEM_ID,
+            unit: "ea" as const,
+            qty: 1,
+            unitPrice: diff,
+            tonMetric: false,
+            manualAmount: null,
+            displayName: "계산서 금액 맞춤",
+            specText: null,
+            notes: `계산서 금액 맞춤${nts ? `(승인 …${nts.slice(-6)})` : ""}: 품목 합 ${fmtKrw(baseSubtotal)} → 계산서 공급가액 ${fmtKrw(fixedSubtotal)}`,
+            adjustment: true,
+          },
+        ];
+    setLines(next);
+    if (pendingLine) clearLineInputs();
+    setError(null);
+  }
 
   function buildFormData(): FormData {
     const fd = new FormData();
@@ -354,12 +425,32 @@ export function SaleFormDialog({
 
   function doSave() {
     const fd = buildFormData();
+    const linesJson = serializeLines(items, rebarSpecs, allLines);
     startTransition(async () => {
-      const result = editing
-        ? await updateSaleHeader(editing.id, fd)
-        : await createSale(fd);
+      if (editing) {
+        // 라인이 바뀌었으면 먼저 교체(RPC 가 계산서 합계·취소·수금완료 가드) → 그다음 헤더(새 공급가액으로 부가세 재계산).
+        if (linesDirty) {
+          const r1 = await updateSaleLines(editing.id, linesJson);
+          if (!r1.ok) {
+            setError(r1.error);
+            return;
+          }
+        }
+        const r2 = await updateSaleHeader(editing.id, fd);
+        if (!r2.ok) {
+          setError(linesDirty ? `품목은 저장되었지만 나머지 저장에 실패했습니다: ${r2.error}` : r2.error);
+          return;
+        }
+        toast.success("매출이 수정되었습니다");
+        if (linesDirty && editing.statement_sent_on) {
+          toast.warning("이미 거래명세표를 보낸 매출입니다 — 품목이 바뀌었으니 명세표를 다시 보내세요.", { duration: 8000 });
+        }
+        onOpenChange(false);
+        return;
+      }
+      const result = await createSale(fd);
       if (result.ok) {
-        toast.success(editing ? "매출이 수정되었습니다" : "매출이 등록되었습니다");
+        toast.success("매출이 등록되었습니다");
         setShowStatement(false);
         onOpenChange(false);
       } else {
@@ -384,13 +475,22 @@ export function SaleFormDialog({
       setShowStatement(true); // 신규 → 거래명세서 미리보기(확인 시 등록)
       return;
     }
-    doSave(); // 편집 → 헤더만 바로 저장
+    // 편집 → 바로 저장(라인 바뀌었으면 라인 교체 + 헤더)
+    if (canEditLines && linesDirty && allLines.length === 0) {
+      setError("품목을 1개 이상 남겨주세요.");
+      return;
+    }
+    if (canEditLines && linesDirty && fixedSubtotal != null && invoiceDiff !== 0) {
+      setError(`발행된 계산서 공급가액(${fmtKrw(fixedSubtotal)})과 라인 합이 ${fmtKrw(Math.abs(invoiceDiff))} 다릅니다 — '계산서 금액 맞춤'으로 차액을 넣거나 라인을 고치세요.`);
+      return;
+    }
+    doSave();
   }
 
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl print:hidden">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto print:hidden">
         <DialogHeader>
           <DialogTitle>{editing ? "매출 수정" : "신규 매출"}</DialogTitle>
         </DialogHeader>
@@ -471,9 +571,14 @@ export function SaleFormDialog({
             </Field>
           </div>
 
-          {/* 신규일 때만: 품목 + 단위 + 수량 + 단가 */}
-          {!editing ? (
+          {/* 품목 + 단위 + 수량 + 단가 — 신규, 그리고 상세에서 연 수정(기존 라인 프리필·추가·삭제) */}
+          {canEditLines ? (
             <>
+              {editing?.origin === "hometax" ? (
+                <p className="rounded-md border border-orange-200 bg-orange-50 px-3 py-1.5 text-[11px] text-orange-800 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-300">
+                  홈택스 계산서로 자동 생성된 매출 — ‘홈택스 계산서분’ 줄을 지우고 실제 품목·중량을 추가하세요. 남는 차액은 아래 ‘계산서 금액 맞춤’으로 넣습니다.
+                </p>
+              ) : null}
               <div className="grid grid-cols-[7rem_1fr] gap-3">
                 <Field label="구분 *">
                   <div className="flex gap-1">
@@ -636,6 +741,9 @@ export function SaleFormDialog({
                         <span className="flex-1 truncate font-medium">
                           {l.displayName?.trim() || li?.name || "—"}
                           {l.specText?.trim() ? <span className="font-normal text-muted-foreground"> {l.specText.trim()}</span> : null}
+                          {l.adjustment ? (
+                            <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-normal text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">조정</span>
+                          ) : null}
                         </span>
                         <span className="text-muted-foreground">
                           {reb ? `${fmtNum(c!.weightKg)}kg` : `${l.qty}${l.unit}`}
@@ -656,6 +764,30 @@ export function SaleFormDialog({
                       </div>
                     );
                   })}
+                </div>
+              ) : null}
+
+              {/* 발행 기록 있음 — 합계 고정 안내 + 차액 맞춤 */}
+              {editing?.invoice && fixedSubtotal != null ? (
+                <div className="flex flex-col gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs dark:border-amber-900 dark:bg-amber-950/30">
+                  <p className="font-medium text-amber-800 dark:text-amber-300">
+                    계산서 합계 {fmtKrw(Number(editing.total_krw ?? editing.invoice.total_krw))} 고정(공급가액 {fmtKrw(fixedSubtotal)}) — 라인 합이 같아야 저장
+                    {editing.invoice.nts_confirm_num ? (
+                      <span className="font-normal text-amber-700/80 dark:text-amber-400/80"> · 승인 …{editing.invoice.nts_confirm_num.slice(-6)}</span>
+                    ) : null}
+                  </p>
+                  {invoiceDiff !== 0 ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="tabular-nums text-red-700 dark:text-red-300">
+                        차액 {invoiceDiff > 0 ? "+" : "−"}{fmtKrw(Math.abs(invoiceDiff))} (라인 합 {fmtKrw(lineSubtotal)})
+                      </span>
+                      <Button type="button" variant="outline" size="sm" onClick={addAdjustmentLine}>
+                        계산서 금액 맞춤
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-emerald-700 dark:text-emerald-300">라인 합이 계산서 공급가액과 같습니다.</p>
+                  )}
                 </div>
               ) : null}
 

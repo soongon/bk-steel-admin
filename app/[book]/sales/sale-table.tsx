@@ -45,6 +45,7 @@ type SaleLine = {
   qty: number;
   unit: string;
   unit_price_krw: number;
+  display_name?: string | null;
   item: { id: string; name: string; code: string } | null;
 };
 
@@ -89,10 +90,17 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   cancelled: { label: "취소",     className: "bg-zinc-200 text-zinc-600 line-through dark:bg-zinc-800 dark:text-zinc-400" },
 };
 
-/** 홈택스 생성 매출의 라인이 아직 금액 1줄(철제 직접입력, 수량 1)뿐인지 — 품목·중량 미정. */
+/**
+ * 홈택스 생성 매출의 라인이 아직 금액 1줄(철제 직접입력 '홈택스 계산서분 — …', 수량 1)뿐인지 — 품목·중량 미정.
+ * 수정(0089)에서 그 줄을 지우고 실제 품목을 넣으면 꺼진다. 철제 직접입력 수량 1 로 바꿔 넣은 경우도 '홈택스 계산서분' 표시명이 없으면 미정 아님.
+ */
 function isItemsPending(s: SaleListRow): boolean {
   const lines = s.sale_line ?? [];
-  return lines.length > 0 && lines.every((l) => l.item?.id === STEEL_CUSTOM_ITEM_ID && Number(l.qty) === 1 && l.unit === "ea");
+  return (
+    lines.length > 0 &&
+    lines.every((l) => l.item?.id === STEEL_CUSTOM_ITEM_ID && Number(l.qty) === 1 && l.unit === "ea") &&
+    lines.some((l) => (l.display_name ?? "").startsWith("홈택스 계산서분"))
+  );
 }
 
 function StatusBadge({ status }: { status: string }) {

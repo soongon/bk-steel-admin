@@ -14,6 +14,9 @@ function friendly(message: string): string {
   if (message.includes("chk_bk_documented_sale")) return "법인 매출은 자료거래(세금계산서)가 필수입니다.";
   if (message.includes("chk_b_undocumented_sale")) return "B계좌 매출은 무자료만 가능합니다.";
   if (message.includes("row-level security")) return "권한이 없습니다.";
+  if (message.includes("Could not find the function") && message.includes("replace_sale_lines")) {
+    return "품목 수정 기능(마이그레이션 0089)이 DB에 아직 적용되지 않았습니다.";
+  }
   return message;
 }
 
@@ -65,6 +68,8 @@ type SaleLineInput = {
   manual_amount: number | null; // 금액 직접입력(운송비 포함 등) 시 라인 총액
   display_name: string | null; // 철제 직접입력 품목명(공용 STEEL_CUSTOM 라벨)
   spec_text: string | null; // 철제 직접입력 규격
+  notes: string | null; // 라인 비고(조정 라인 사유 등)
+  allow_negative: boolean; // 계산서 금액 맞춤 조정 라인 — 음수 단가 허용
 };
 type CreateInput = {
   book: Book;
@@ -83,6 +88,78 @@ type CreateInput = {
   notes?: string | null;
 };
 
+/**
+ * 폼의 lines JSON(serializeLines 출력) → 검증된 라인 입력. 신규 등록·라인 수정 공용.
+ * 조정 라인(계산서 금액 맞춤, allow_negative)은 음수 단가가 가능 — 그 외는 단가>0 또는 금액 직접입력.
+ */
+function parseLinesJson(raw: string): { lines: SaleLineInput[] } | { error: string } {
+  let lines: SaleLineInput[];
+  try {
+    const parsed: unknown = JSON.parse(raw || "[]");
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return { error: "품목을 1개 이상 추가해주세요." };
+    }
+    lines = parsed.map((l) => {
+      const o = l as Record<string, unknown>;
+      const w = o.weight_kg;
+      return {
+        item_id: String(o.item_id ?? ""),
+        unit: String(o.unit ?? "") as SaleLineInput["unit"],
+        qty: Number(o.qty) || 0,
+        unit_price_krw: Number(o.unit_price_krw) || 0,
+        weight_kg: w != null && w !== "" ? Number(w) : null,
+        manual_amount: o.manual_amount != null && o.manual_amount !== "" ? Number(o.manual_amount) : null,
+        display_name: typeof o.display_name === "string" && o.display_name.trim() ? o.display_name.trim() : null,
+        spec_text: typeof o.spec_text === "string" && o.spec_text.trim() ? o.spec_text.trim() : null,
+        notes: typeof o.notes === "string" && o.notes.trim() ? o.notes.trim() : null,
+        allow_negative: o.allow_negative === true,
+      };
+    });
+  } catch {
+    return { error: "품목 데이터를 읽지 못했습니다." };
+  }
+  for (const l of lines) {
+    if (!l.item_id) return { error: "품목을 선택해주세요." };
+    if (!l.unit) return { error: "단위를 선택해주세요." };
+    if (l.qty <= 0) return { error: "수량을 입력해주세요." };
+    // 금액 직접입력(manual_amount>0)이면 단가 없이도 등록 — 그 총액을 라인 금액으로 저장.
+    const manual = l.manual_amount != null && l.manual_amount > 0;
+    if (l.allow_negative) {
+      if (l.unit_price_krw === 0) return { error: "조정 라인 금액이 0입니다." };
+    } else if (!manual && l.unit_price_krw <= 0) {
+      return { error: "단가를 입력하거나 금액 직접입력을 사용하세요." };
+    }
+  }
+  return { lines };
+}
+
+/**
+ * 라인별 공급가(철근=원/kg×이론중량, 비철근=단가×수량) → RPC(create/replace)가 받는 형태.
+ * 금액 직접입력(운송비 포함 등)이면 그 총액을 공급가로, 단가는 비워둔다(0) — 명세표에 '-' 표시.
+ */
+function toRpcLines(lines: SaleLineInput[]) {
+  return lines.map((l) => {
+    const manual = l.manual_amount != null && l.manual_amount > 0;
+    const lineSubtotal = manual
+      ? Math.round(l.manual_amount!)
+      : l.weight_kg
+        ? Math.round(l.unit_price_krw * l.weight_kg)
+        : Math.round(l.unit_price_krw * l.qty);
+    const unitPrice = manual ? 0 : l.unit_price_krw;
+    return {
+      item_id: l.item_id,
+      unit: l.unit,
+      qty: l.qty,
+      unit_price_krw: unitPrice,
+      weight_kg: l.weight_kg,
+      line_subtotal_krw: lineSubtotal,
+      display_name: l.display_name,
+      spec_text: l.spec_text,
+      notes: l.notes,
+    };
+  });
+}
+
 function readCreateInput(fd: FormData): CreateInput | { error: string } {
   const str = (k: string) => {
     const v = fd.get(k);
@@ -98,37 +175,9 @@ function readCreateInput(fd: FormData): CreateInput | { error: string } {
   if (!ordered_on) return { error: "주문일을 입력해주세요." };
 
   // 품목 라인 — 폼이 JSON 배열로 전송(여러 품목)
-  let lines: SaleLineInput[];
-  try {
-    const raw: unknown = JSON.parse(str("lines") || "[]");
-    if (!Array.isArray(raw) || raw.length === 0) {
-      return { error: "품목을 1개 이상 추가해주세요." };
-    }
-    lines = raw.map((l) => {
-      const o = l as Record<string, unknown>;
-      const w = o.weight_kg;
-      return {
-        item_id: String(o.item_id ?? ""),
-        unit: String(o.unit ?? "") as SaleLineInput["unit"],
-        qty: Number(o.qty) || 0,
-        unit_price_krw: Number(o.unit_price_krw) || 0,
-        weight_kg: w != null && w !== "" ? Number(w) : null,
-        manual_amount: o.manual_amount != null && o.manual_amount !== "" ? Number(o.manual_amount) : null,
-        display_name: typeof o.display_name === "string" && o.display_name.trim() ? o.display_name.trim() : null,
-        spec_text: typeof o.spec_text === "string" && o.spec_text.trim() ? o.spec_text.trim() : null,
-      };
-    });
-  } catch {
-    return { error: "품목 데이터를 읽지 못했습니다." };
-  }
-  for (const l of lines) {
-    if (!l.item_id) return { error: "품목을 선택해주세요." };
-    if (!l.unit) return { error: "단위를 선택해주세요." };
-    if (l.qty <= 0) return { error: "수량을 입력해주세요." };
-    // 금액 직접입력(manual_amount>0)이면 단가 없이도 등록 — 그 총액을 라인 금액으로 저장.
-    const manual = l.manual_amount != null && l.manual_amount > 0;
-    if (!manual && l.unit_price_krw <= 0) return { error: "단가를 입력하거나 금액 직접입력을 사용하세요." };
-  }
+  const parsedLines = parseLinesJson(str("lines"));
+  if ("error" in parsedLines) return parsedLines;
+  const lines = parsedLines.lines;
 
   const is_documented = str("is_documented") === "true";
   const tax_doc_type = (str("tax_doc_type") || (book === "b" ? "none" : "tax_invoice_electronic")) as CreateInput["tax_doc_type"];
@@ -166,28 +215,8 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
   const resolvedPartnerId = await resolvePartnerId(supabase, parsed.partner_id ?? null, parsed.partner_name ?? null);
   if (!resolvedPartnerId) return { ok: false, error: "거래처를 확인해주세요." };
 
-  // 라인별 공급가(철근=원/kg×이론중량, 비철근=단가×수량) → 헤더 합계.
-  // 금액 직접입력(운송비 포함 등)이면 그 총액을 공급가로, 단가는 총액÷(중량 or 수량) 역산 저장.
-  const lines = parsed.lines.map((l) => {
-    const manual = l.manual_amount != null && l.manual_amount > 0;
-    const lineSubtotal = manual
-      ? Math.round(l.manual_amount!)
-      : l.weight_kg
-        ? Math.round(l.unit_price_krw * l.weight_kg)
-        : Math.round(l.unit_price_krw * l.qty);
-    // 금액 직접입력이면 단가는 비워둔다(0) — 역산하지 않고 명세표에 '-' 로 표시.
-    const unitPrice = manual ? 0 : l.unit_price_krw;
-    return {
-      item_id: l.item_id,
-      unit: l.unit,
-      qty: l.qty,
-      unit_price_krw: unitPrice,
-      weight_kg: l.weight_kg,
-      line_subtotal_krw: lineSubtotal,
-      display_name: l.display_name,
-      spec_text: l.spec_text,
-    };
-  });
+  // 라인별 공급가 → 헤더 합계.
+  const lines = toRpcLines(parsed.lines);
   const subtotal = lines.reduce((s, l) => s + l.line_subtotal_krw, 0);
   const documented = parsed.is_documented;
   const { vatType, vatRate, vat, total } = computeVat(documented, parsed.tax_doc_type, subtotal);
@@ -304,6 +333,25 @@ export async function updateSaleHeader(
   }
 
   const { error } = await supabase.from("sale").update(updates).eq("id", id);
+  if (error) return { ok: false, error: friendly(error.message) };
+  revalidateTransactionPaths("sales");
+  return { ok: true };
+}
+
+/**
+ * 매출 품목 라인 전체 교체(추가·삭제·수정) — replace_sale_lines RPC(0089).
+ * 발행 기록(활성 tax_invoice)이 있으면 라인 합이 계산서 공급가액과 같아야 하고 합계는 고정, 없으면 합계를 라인 합으로 재계산.
+ * 취소·수금완료(합계 변경) 가드는 RPC 가 강제. 헤더(일자·상태·현장 등)는 updateSaleHeader 가 따로 처리.
+ */
+export async function updateSaleLines(id: string, linesJson: string): Promise<SaleActionResult> {
+  const parsed = parseLinesJson(linesJson);
+  if ("error" in parsed) return { ok: false, error: parsed.error };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("replace_sale_lines", {
+    p_sale_id: id,
+    p_lines: toRpcLines(parsed.lines),
+    p_recalc: true,
+  });
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("sales");
   return { ok: true };

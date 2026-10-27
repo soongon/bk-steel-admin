@@ -42,7 +42,7 @@ export default async function SalesPage({
       memo_count:sale_memo(count), latest_memo:sale_memo(body, created_at),
       site:site(id, name, code),
       partner:partner(id, name, code),
-      sale_line(id, qty, unit, unit_price_krw, item:item(id, name, code))
+      sale_line(id, qty, unit, unit_price_krw, display_name, item:item(id, name, code))
     `,
     )
     .is("deleted_at", null)
