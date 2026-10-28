@@ -46,7 +46,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
     listInquiries(), // 같은 번호의 다른 문의
     supabase
       .from("partner")
-      .select("id, code, name, business_no, representative, address, phone, fax, industry, is_active")
+      .select("id, code, name, business_no, representative, address, phone, fax, business_type, business_item, is_active")
       .is("deleted_at", null)
       .order("name"),
     supabase

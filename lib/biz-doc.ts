@@ -53,6 +53,28 @@ export type BizDocReading = { docType: BizDocType; parties: BizParty[]; note: st
 
 const onlyDigits = (v: unknown) => (typeof v === "string" || typeof v === "number" ? String(v).replace(/\D/g, "") : "");
 
+/** 업태·종목 칸 상한 — 팝빌 세금계산서 업태(invoiceeBizType)·종목(invoiceeBizClass) 최대 100자. */
+export const BIZ_TYPE_ITEM_MAX = 100;
+
+/**
+ * 업태·종목 목록 다듬기 — 쉼표로 나눠 앞뒤 공백·빈 항목을 버리고 같은 항목은 처음 것만 남긴다(사업자등록증은 종목마다
+ * 업태를 되풀이한다). 상한을 넘으면 넘는 항목부터 뺀다(항목 중간에서 자르지 않음 — 첫 항목이 넘을 때만 자른다).
+ */
+export function bizListText(v: string | null | undefined, max = BIZ_TYPE_ITEM_MAX): string | null {
+  const items: string[] = [];
+  for (const raw of (v ?? "").split(",")) {
+    const s = raw.replace(/\s+/g, " ").trim();
+    if (s && !items.includes(s)) items.push(s);
+  }
+  if (items.length === 0) return null;
+  let out = items[0].slice(0, max);
+  for (const s of items.slice(1)) {
+    if (out.length + 2 + s.length > max) break;
+    out += `, ${s}`;
+  }
+  return out;
+}
+
 /** 사업자등록번호 검증번호 확인(국세청 규칙: 가중치 1,3,7,1,3,7,1,3,5). 0000000000 같은 빈 번호는 거짓. */
 export function isValidBizNo(no: string | null | undefined): boolean {
   const d = onlyDigits(no ?? "");
@@ -102,8 +124,8 @@ export function sanitizeReading(raw: unknown): BizDocReading {
       name: text(p.name, 100),
       representative: text(p.representative, 60),
       address: text(p.address, 200),
-      business_type: text(p.business_type, 100),
-      business_item: text(p.business_item, 100),
+      business_type: bizListText(text(p.business_type, 1000)),
+      business_item: bizListText(text(p.business_item, 1000)),
       email: emailOf(p.email),
       phone: phoneOf(p.phone),
     };
@@ -144,7 +166,8 @@ export type PartnerDocFields = {
   business_no: string | null;
   representative: string | null;
   address: string | null;
-  industry: string | null;
+  business_type: string | null; // 업태
+  business_item: string | null; // 종목
   email: string | null;
   phone: string | null;
 };
@@ -154,23 +177,19 @@ export const PARTNER_DOC_FIELD_LABEL: Record<PartnerDocField, string> = {
   business_no: "사업자번호",
   representative: "대표자",
   address: "주소",
-  industry: "업종",
+  business_type: "업태",
+  business_item: "종목",
   email: "이메일",
   phone: "연락처",
 };
-
-/** 업종 칸 = 업태 / 종목 */
-export function industryOf(p: Pick<BizParty, "business_type" | "business_item">): string | null {
-  const parts = [p.business_type, p.business_item].filter((s): s is string => !!s);
-  return parts.length > 0 ? parts.join(" / ").slice(0, 120) : null;
-}
 
 export const partnerFieldsOf = (p: BizParty): PartnerDocFields => ({
   name: p.name,
   business_no: p.business_no,
   representative: p.representative,
   address: p.address,
-  industry: industryOf(p),
+  business_type: p.business_type,
+  business_item: p.business_item,
   email: p.email,
   phone: p.phone,
 });
@@ -179,7 +198,7 @@ export const partnerFieldsOf = (p: BizParty): PartnerDocFields => ({
 export const canAutoRegister = (f: Pick<PartnerDocFields, "name" | "business_no">) => !!f.name && isValidBizNo(f.business_no);
 
 /** 기존 거래처에 채울 칸 — 이름은 바꾸지 않는다(매출·매입의 표준명). */
-export const DOC_FILL_FIELDS = ["business_no", "representative", "address", "industry", "email", "phone"] as const;
+export const DOC_FILL_FIELDS = ["business_no", "representative", "address", "business_type", "business_item", "email", "phone"] as const;
 
 /**
  * 빈 칸만 채운다(이미 적힌 값은 그대로). 사업자번호·연락처는 숫자만 비교해 빈 칸인지 본다.

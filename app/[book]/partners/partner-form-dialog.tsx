@@ -25,6 +25,7 @@ import { chunkBySize } from "@/lib/purchase-quote";
 import {
   BIZ_DOC_TYPE_LABEL,
   BIZ_PARTY_ROLE_LABEL,
+  BIZ_TYPE_ITEM_MAX,
   DOC_FILL_FIELDS,
   PARTNER_DOC_BATCH_BYTES,
   PARTNER_DOC_FIELD_LABEL,
@@ -51,7 +52,8 @@ export type PartnerRow = {
   email: string | null;
   email2: string | null;
   address: string | null;
-  industry: string | null;
+  business_type: string | null; // 업태
+  business_item: string | null; // 종목
   notes: string | null;
   is_active: boolean;
   /** 사업자 이미지 수 — 목록 표시용(0088) */
@@ -67,7 +69,8 @@ export type PartnerPrefill = {
   notes?: string | null;
   representative?: string | null;
   business_no?: string | null;
-  industry?: string | null;
+  business_type?: string | null;
+  business_item?: string | null;
   from_card_id?: string;
   /** 발주 레이더 행 — 저장 후 그 행(낙찰이면 같은 사업자번호 계정)에 거래처 연결(★) */
   from_radar_id?: string;
@@ -84,12 +87,25 @@ type FormValues = {
   phone: string;
   email: string;
   email2: string;
-  industry: string;
+  business_type: string;
+  business_item: string;
   address: string;
   notes: string;
   is_active: boolean;
 };
-const TEXT_KEYS = ["code", "name", "representative", "business_no", "phone", "email", "email2", "industry", "address", "notes"] as const;
+const TEXT_KEYS = [
+  "code",
+  "name",
+  "representative",
+  "business_no",
+  "phone",
+  "email",
+  "email2",
+  "business_type",
+  "business_item",
+  "address",
+  "notes",
+] as const;
 
 function initialValues(row: PartnerRow | null, prefill: PartnerPrefill | null | undefined): FormValues {
   const base = row ?? prefill ?? null;
@@ -101,7 +117,8 @@ function initialValues(row: PartnerRow | null, prefill: PartnerPrefill | null | 
     phone: formatPhone(base?.phone),
     email: base?.email ?? "",
     email2: row?.email2 ?? "",
-    industry: base?.industry ?? "",
+    business_type: base?.business_type ?? "",
+    business_item: base?.business_item ?? "",
     address: base?.address ?? "",
     notes: base?.notes ?? "",
     is_active: row ? row.is_active : true,
@@ -160,7 +177,7 @@ function typedAfterEdit(now: FormValues, sent: FormValues, typed: FormValues): F
 }
 const fieldLabels = (fs: PartnerDocField[]) => fs.map((f) => PARTNER_DOC_FIELD_LABEL[f]).join("·");
 
-/** 새 거래처 — 사업자 칸(상호·번호·대표자·주소·업종)은 이미지 값으로, 연락처·이메일은 비어 있을 때만. 메모 등은 그대로. */
+/** 새 거래처 — 사업자 칸(상호·번호·대표자·주소·업태·종목)은 이미지 값으로, 연락처·이메일은 비어 있을 때만. 메모 등은 그대로. */
 function withDocFields(now: FormValues, f: PartnerDocFields): FormValues {
   return {
     ...now,
@@ -168,7 +185,8 @@ function withDocFields(now: FormValues, f: PartnerDocFields): FormValues {
     business_no: f.business_no ? formatBusinessNo(f.business_no) : now.business_no,
     representative: f.representative ?? now.representative,
     address: f.address ?? now.address,
-    industry: f.industry ?? now.industry,
+    business_type: f.business_type ?? now.business_type,
+    business_item: f.business_item ?? now.business_item,
     email: now.email.trim() || f.email || "",
     phone: now.phone.trim() || formatPhone(f.phone),
   };
@@ -874,7 +892,23 @@ function PartnerFormBody({
           <Field label="이메일 (세금계산서 수신)" name="email" type="email" defaultValue={values.email} placeholder="contact@partner.com" readOnly={locked} />
         </div>
         <Field label="이메일 2 (선택 · 계산서 추가 수신)" name="email2" type="email" defaultValue={values.email2} placeholder="담당자2@partner.com" readOnly={locked} />
-        <Field label="업종" name="industry" defaultValue={values.industry} placeholder="철근 대리점" readOnly={locked} />
+        {/* 업태·종목은 여러 개를 쉼표로 잇는 긴 목록이 흔하다 — 반쪽 칸이면 뒤가 가려져 각각 한 줄 */}
+        <Field
+          label="업태"
+          name="business_type"
+          defaultValue={values.business_type}
+          placeholder="도매 및 소매업"
+          maxLength={BIZ_TYPE_ITEM_MAX}
+          readOnly={locked}
+        />
+        <Field
+          label="종목"
+          name="business_item"
+          defaultValue={values.business_item}
+          placeholder="철강재"
+          maxLength={BIZ_TYPE_ITEM_MAX}
+          readOnly={locked}
+        />
         <Field label="주소" name="address" defaultValue={values.address} readOnly={locked} />
         <Field label="메모" name="notes" defaultValue={values.notes} readOnly={locked} />
 
@@ -918,6 +952,7 @@ function Field({
   type,
   format,
   readOnly,
+  maxLength,
 }: {
   label: string;
   name: string;
@@ -928,6 +963,7 @@ function Field({
   type?: string;
   format?: NumberFormat; // 전화·사업자번호 자동 대시
   readOnly?: boolean;
+  maxLength?: number;
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
@@ -940,6 +976,7 @@ function Field({
         placeholder={placeholder}
         required={required}
         readOnly={readOnly}
+        maxLength={maxLength}
         style={uppercase ? { textTransform: "uppercase" } : undefined}
       />
     </label>

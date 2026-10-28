@@ -9,7 +9,7 @@ import { type EtaxIssueInput, type EtaxLine } from "./types";
 /** loadSale select — 발행 payload 구성에 필요한 매출+거래처+라인. 액션·스크립트 공용. */
 export const SALE_ETAX_SELECT = `id, book, doc_no, ordered_on, is_documented, tax_doc_type, vat_type, vat_rate,
        subtotal_krw, vat_krw, total_krw,
-       partner:partner(id, name, business_no, representative, address, industry, email, email2, phone),
+       partner:partner(id, name, business_no, representative, address, business_type, business_item, email, email2, phone),
        sale_line(id, qty, unit, unit_price_krw, line_subtotal_krw, display_name, spec_text,
          item:item(name, category, rebar_spec_code, rebar_grade_code, length_m))`;
 
@@ -52,6 +52,7 @@ export function summarizeEtaxLines(lines: EtaxLine[]): string | null {
 /**
  * 매출+공급자(회사)+거래처(보강값)로 전자세금계산서 발행 payload 구성.
  * buyer 의 사업자번호·이메일·대표자는 호출자가 보강(opts override 우선)한 값으로 넘긴다.
+ * 업태·종목은 opts 로 넘기면 그 값(null = 빈 칸), 안 넘기면(undefined) 거래처의 업태·종목.
  * mgtKey = `{book}-{doc_no}`(멱등). 부수효과 없음.
  */
 export function buildSaleEtaxInput(
@@ -65,6 +66,8 @@ export function buildSaleEtaxInput(
     buyerEmail: string | null;
     buyerEmail2: string | null;
     buyerCeo: string | null;
+    buyerBizType?: string | null;
+    buyerBizClass?: string | null;
   },
 ): EtaxIssueInput {
   const partner = sale.partner as Record<string, any> | null;
@@ -90,8 +93,8 @@ export function buildSaleEtaxInput(
       name: partner?.name ?? "",
       ceoName: opts.buyerCeo,
       addr: partner?.address ?? null,
-      bizType: partner?.industry ?? null,
-      bizClass: null,
+      bizType: opts.buyerBizType !== undefined ? opts.buyerBizType : (partner?.business_type ?? null),
+      bizClass: opts.buyerBizClass !== undefined ? opts.buyerBizClass : (partner?.business_item ?? null),
       contactName: partner?.name ?? null,
       email: opts.buyerEmail,
       email2: opts.buyerEmail2,

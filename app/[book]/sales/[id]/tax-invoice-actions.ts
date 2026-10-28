@@ -8,6 +8,7 @@ import { fetchCompanyProfile } from "@/lib/company-profile";
 import { revalidateTransactionPaths } from "@/lib/transaction";
 import { digitsOnly } from "@/lib/format";
 import { electronicIssueBlockReason } from "@/lib/tax-invoice";
+import { BIZ_TYPE_ITEM_MAX } from "@/lib/biz-doc";
 import { getEtaxProvider } from "@/lib/etax";
 import {
   SALE_ETAX_SELECT,
@@ -17,7 +18,7 @@ import {
 } from "@/lib/etax/sale-payload";
 
 export type TaxInvoiceActionResult =
-  | { ok: true; state?: string; ntsConfirmNum?: string | null }
+  | { ok: true; state?: string; ntsConfirmNum?: string | null; warning?: string }
   | { ok: false; error: string };
 
 /** 발행 payload 구성에 필요한 매출+거래처+라인. */
@@ -59,6 +60,9 @@ export async function issueSaleTaxInvoice(
     buyerEmail?: string;
     buyerEmail2?: string; // 2번째 수신 이메일 — 발행 후 추가 전송
     buyerCeoName?: string;
+    /** 공급받는자 업태·종목 — 발행 창에 적은 값(빈 문자열 = 빈 칸으로 발행). 안 넘기면 거래처의 업태·종목. */
+    buyerBizType?: string;
+    buyerBizClass?: string;
   } = {},
 ): Promise<TaxInvoiceActionResult> {
   const supabase = await createClient();
@@ -73,7 +77,7 @@ export async function issueSaleTaxInvoice(
   if (opts.buyerPartnerId && opts.buyerPartnerId !== salePartner?.id) {
     const { data: bp } = await supabase
       .from("partner")
-      .select("id, name, business_no, representative, address, industry, email, email2, phone")
+      .select("id, name, business_no, representative, address, business_type, business_item, email, email2, phone")
       .eq("id", opts.buyerPartnerId)
       .is("deleted_at", null)
       .maybeSingle();
@@ -84,6 +88,16 @@ export async function issueSaleTaxInvoice(
   const buyerEmail = opts.buyerEmail?.trim() || buyerPartner?.email || null;
   const buyerEmail2 = opts.buyerEmail2?.trim() || buyerPartner?.email2 || null;
   const buyerCeo = opts.buyerCeoName?.trim() || buyerPartner?.representative || null;
+  const buyerBizType =
+    opts.buyerBizType !== undefined ? opts.buyerBizType.trim() || null : ((buyerPartner?.business_type as string | null) ?? null);
+  const buyerBizClass =
+    opts.buyerBizClass !== undefined ? opts.buyerBizClass.trim() || null : ((buyerPartner?.business_item as string | null) ?? null);
+  if ((buyerBizType?.length ?? 0) > BIZ_TYPE_ITEM_MAX) {
+    return { ok: false, error: `업태는 ${BIZ_TYPE_ITEM_MAX}자까지 적을 수 있습니다(세금계산서 칸 한도).` };
+  }
+  if ((buyerBizClass?.length ?? 0) > BIZ_TYPE_ITEM_MAX) {
+    return { ok: false, error: `종목은 ${BIZ_TYPE_ITEM_MAX}자까지 적을 수 있습니다(세금계산서 칸 한도).` };
+  }
 
   const existing = await activeInvoice(supabase, saleId);
   const block = electronicIssueBlockReason({
@@ -95,17 +109,24 @@ export async function issueSaleTaxInvoice(
   });
   if (block) return { ok: false, error: block };
 
-  // 발행 대상 거래처 사업자정보 보강(입력값 있을 때만 갱신 — 마스터 보강, 금액 무관)
-  if (buyerPartner?.id && (opts.buyerBusinessNo || opts.buyerEmail || opts.buyerEmail2 || opts.buyerCeoName)) {
-    await supabase
-      .from("partner")
-      .update({
-        business_no: buyerBizNo || buyerPartner.business_no,
-        email: buyerEmail ?? buyerPartner.email,
-        email2: buyerEmail2 ?? buyerPartner.email2,
-        representative: buyerCeo ?? buyerPartner.representative,
-      })
-      .eq("id", buyerPartner.id);
+  // 발행 대상 거래처 사업자정보 보강(입력값 있을 때만 갱신 — 마스터 보강, 금액 무관). 업태·종목은 적은 값만 저장하고
+  // 비워 발행해도 거래처의 값은 지우지 않는다. 거래처 수정 권한(owner·manager)이 없으면 저장이 0행으로 끝난다 — 알린다.
+  let masterWarning: string | undefined;
+  if (buyerPartner?.id) {
+    const patch: Record<string, string | null> = {
+      business_no: buyerBizNo || buyerPartner.business_no,
+      email: buyerEmail ?? buyerPartner.email,
+      email2: buyerEmail2 ?? buyerPartner.email2,
+      representative: buyerCeo ?? buyerPartner.representative,
+      business_type: opts.buyerBizType?.trim() ? buyerBizType : buyerPartner.business_type,
+      business_item: opts.buyerBizClass?.trim() ? buyerBizClass : buyerPartner.business_item,
+    };
+    if (Object.entries(patch).some(([k, v]) => (v ?? null) !== (buyerPartner[k] ?? null))) {
+      const { data: saved } = await supabase.from("partner").update(patch).eq("id", buyerPartner.id).select("id");
+      if (!saved?.length) {
+        masterWarning = "거래처 정보 수정 권한이 없어 적은 사업자 정보(업태·종목 등)는 이번 계산서에만 넣었습니다.";
+      }
+    }
   }
 
   const company = await fetchCompanyProfile(supabase, book);
@@ -124,6 +145,8 @@ export async function issueSaleTaxInvoice(
     buyerEmail,
     buyerEmail2,
     buyerCeo,
+    buyerBizType,
+    buyerBizClass,
   });
 
   const provider = getEtaxProvider();
@@ -173,7 +196,7 @@ export async function issueSaleTaxInvoice(
       `승인번호: ${result.ntsConfirmNum ?? "(국세청 전송 대기)"}\n` +
       adminUrl(`/${book}/sales/${saleId}`),
   );
-  return { ok: true, state: result.state, ntsConfirmNum: result.ntsConfirmNum };
+  return { ok: true, state: result.state, ntsConfirmNum: result.ntsConfirmNum, warning: masterWarning };
 }
 
 /** 발행 취소 — ASP cancelIssue(수기는 생략) 후 cancel_sale_tax_invoice RPC. */

@@ -104,7 +104,7 @@ export function PartnerTable({
               <TableHead className="w-24">대표자</TableHead>
               <TableHead className="w-36">연락처</TableHead>
               <TableHead>이메일</TableHead>
-              <TableHead className="w-28">업종</TableHead>
+              <TableHead className="w-40">업태 · 종목</TableHead>
               <TableHead className="w-16 text-center">활성</TableHead>
               <TableHead className="w-20 text-right">액션</TableHead>
             </TableRow>
@@ -151,7 +151,18 @@ export function PartnerTable({
                   <TableCell className="text-muted-foreground text-xs">
                     {p.email ?? "—"}
                   </TableCell>
-                  <TableCell>{p.industry ?? "—"}</TableCell>
+                  <TableCell className="max-w-48">
+                    {p.business_type || p.business_item ? (
+                      <div title={[p.business_type, p.business_item].filter(Boolean).join(" / ")}>
+                        <span className="block truncate">{p.business_type ?? "—"}</span>
+                        {p.business_item ? (
+                          <span className="block truncate text-xs text-muted-foreground">{p.business_item}</span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
                   <TableCell className="text-center">
                     {p.is_active ? (
                       <span className="inline-flex h-5 items-center rounded-full bg-emerald-100 px-2 text-xs text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">

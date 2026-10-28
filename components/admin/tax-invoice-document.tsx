@@ -73,8 +73,8 @@ export function TaxInvoiceDocument({
             name={data.partner.name}
             ceo={data.partner.representative}
             addr={data.partner.address}
-            bizType={data.partner.industry}
-            bizClass={null}
+            bizType={data.partner.business_type}
+            bizClass={data.partner.business_item}
             email={data.partner.email ?? null}
           />
         </div>

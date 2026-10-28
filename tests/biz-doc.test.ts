@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  BIZ_TYPE_ITEM_MAX,
+  bizListText,
   bizNoConflicts,
   canAutoRegister,
   docKindOf,
   fillEmpty,
-  industryOf,
   isValidBizNo,
   partnerFieldsOf,
   pickCounterparty,
@@ -100,22 +101,56 @@ test("거래처 쪽 고르기 — 우리가 공급자면 공급받는자, 반대
   assert.deepEqual(pickCounterparty({ ...sell, parties: [] }, own), { kind: "none" });
 });
 
-test("거래처 칸으로 옮기기 — 업종 = 업태 / 종목, 자동 등록은 상호 + 맞는 번호일 때만", () => {
+test("거래처 칸으로 옮기기 — 업태·종목은 따로, 자동 등록은 상호 + 맞는 번호일 때만", () => {
   const f = partnerFieldsOf(party({ business_no: A, name: "가나상사", business_type: "도매및소매업", business_item: "철강재, 건축자재" }));
-  assert.equal(f.industry, "도매및소매업 / 철강재, 건축자재");
-  assert.equal(industryOf({ business_type: null, business_item: "철근" }), "철근");
-  assert.equal(industryOf({ business_type: null, business_item: null }), null);
+  assert.equal(f.business_type, "도매및소매업");
+  assert.equal(f.business_item, "철강재, 건축자재");
+  assert.equal(partnerFieldsOf(party({ name: "가", business_item: "철근" })).business_type, null);
   assert.equal(canAutoRegister(f), true);
   assert.equal(canAutoRegister({ name: "가나상사", business_no: "1234567890" }), false);
   assert.equal(canAutoRegister({ name: null, business_no: A }), false);
   assert.equal(canAutoRegister({ name: "가나상사", business_no: null }), false);
 });
 
-test("빈 칸만 채우기 — 적힌 값·이름은 그대로, 대시만 있는 번호는 빈 칸", () => {
-  const fields = { name: "(주)가나상사", business_no: A, representative: "김대표", address: "경주시 1", industry: "도매 / 철강", email: "a@b.kr", phone: "0541234567" };
-  const { patch, filled } = fillEmpty({ name: "가나상사", business_no: "---", representative: "이미적힘", address: "", industry: null, email: undefined, phone: "010-1111-2222" }, fields);
-  assert.deepEqual(filled, ["business_no", "address", "industry", "email"]);
-  assert.deepEqual(patch, { business_no: A, address: "경주시 1", industry: "도매 / 철강", email: "a@b.kr" });
+test("빈 칸만 채우기 — 적힌 값·이름은 그대로, 대시만 있는 번호는 빈 칸, 업태·종목은 칸마다", () => {
+  const fields = {
+    name: "(주)가나상사",
+    business_no: A,
+    representative: "김대표",
+    address: "경주시 1",
+    business_type: "도매",
+    business_item: "철강",
+    email: "a@b.kr",
+    phone: "0541234567",
+  };
+  const { patch, filled } = fillEmpty(
+    { name: "가나상사", business_no: "---", representative: "이미적힘", address: "", business_type: "건설업", business_item: " ", email: undefined, phone: "010-1111-2222" },
+    fields,
+  );
+  assert.deepEqual(filled, ["business_no", "address", "business_item", "email"]);
+  assert.deepEqual(patch, { business_no: A, address: "경주시 1", business_item: "철강", email: "a@b.kr" });
+});
+
+test("업태·종목 목록 다듬기 — 겹친 항목은 한 번만, 공백 정리, 100자 넘는 항목부터 뺌", () => {
+  // 사업자등록증은 종목마다 업태를 되풀이한다
+  assert.equal(bizListText("건설업, 건설업,건설업 , 부동산업 및 임대업"), "건설업, 부동산업 및 임대업");
+  assert.equal(bizListText("  도매  및   소매업 "), "도매 및 소매업");
+  assert.equal(bizListText(" , ,"), null);
+  assert.equal(bizListText(null), null);
+  const long = Array.from({ length: 30 }, (_, i) => `종목${i}`).join(", ");
+  const cut = bizListText(long) ?? "";
+  assert.ok(cut.length <= BIZ_TYPE_ITEM_MAX);
+  assert.ok(cut.endsWith(`종목${cut.split(", ").length - 1}`)); // 항목 중간에서 자르지 않음
+  assert.equal(bizListText("가".repeat(150))?.length, BIZ_TYPE_ITEM_MAX); // 한 항목이 넘으면 그것만 자름
+});
+
+test("인식 결과 다듬기 — 업태·종목 목록도 겹친 항목을 한 번만", () => {
+  const r = sanitizeReading({
+    doc_type: "biz_registration",
+    parties: [{ role: "holder", business_no: A, name: "가나건설", business_type: "건설업, 건설업, 부동산업", business_item: "건축공사업, 토목공사업, 건축공사업" }],
+  });
+  assert.equal(r.parties[0].business_type, "건설업, 부동산업");
+  assert.equal(r.parties[0].business_item, "건축공사업, 토목공사업");
 });
 
 test("사업자번호 충돌·서류 분류", () => {

@@ -195,7 +195,9 @@ CREATE TABLE partner (
   representative TEXT,
   phone TEXT, fax TEXT,
   address TEXT,
-  industry TEXT,
+  business_type TEXT,  -- 업태 (0096) — 세금계산서 공급받는자 업태, 팝빌 최대 100자
+  business_item TEXT,  -- 종목 (0096) — 세금계산서 공급받는자 종목, 팝빌 최대 100자
+  industry TEXT,       -- (0096 부터 안 씀) 옛 업종 한 칸 → business_type·business_item 으로 옮김, 다음 정리 때 삭제
   notes TEXT,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

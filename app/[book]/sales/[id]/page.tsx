@@ -126,7 +126,7 @@ export default async function SaleDetailPage({
       subtotal_krw, vat_krw, total_krw, vat_rate, site_name, site_id, partner_id, is_documented,
       tax_doc_type, tax_doc_no, payment_due_on, settled_on, notes, delivery_cert_id, origin, origin_ref,
       statement_sent_on, tax_invoice_issued_on, source_quote_id,
-      partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email, email2),
+      partner:partner(id, code, name, business_no, representative, address, phone, fax, business_type, business_item, email, email2),
       site:site(id, code, name),
       receive_bank_account_id, receive_bank:bank_account!sale_receive_bank_account_id_fkey(code, bank_name),
       sale_line(
@@ -196,7 +196,7 @@ export default async function SaleDetailPage({
   // 활성 세금계산서(미취소) — 라이프사이클 계산서 단계 실상태 표시용
   const { data: taxInvoiceRow } = await supabase
     .from("tax_invoice")
-    .select("state, nts_confirm_num, provider, write_date, remark, supply_krw, total_krw")
+    .select("state, nts_confirm_num, provider, write_date, remark, purpose, buyer, supply_krw, total_krw")
     .eq("sale_id", id)
     .is("deleted_at", null)
     .neq("state", "cancelled")
@@ -243,7 +243,8 @@ export default async function SaleDetailPage({
       address: partner?.address ?? null,
       phone: partner?.phone ?? null,
       fax: partner?.fax ?? null,
-      industry: partner?.industry ?? null,
+      business_type: partner?.business_type ?? null,
+      business_item: partner?.business_item ?? null,
       email: partner?.email ?? null,
       email2: partner?.email2 ?? null,
     },
@@ -309,7 +310,7 @@ export default async function SaleDetailPage({
   const [editPartnersRes, editItemsRes, editRebarRes, editSitesRes, editCompanies] = await Promise.all([
     supabase
       .from("partner")
-      .select("id, code, name, business_no, representative, address, phone, fax, industry, email, email2")
+      .select("id, code, name, business_no, representative, address, phone, fax, business_type, business_item, email, email2")
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),

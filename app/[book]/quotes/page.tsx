@@ -45,7 +45,7 @@ export default async function QuotesPage({ params }: { params: Promise<{ book: s
     q,
     supabase
       .from("partner")
-      .select("id, code, name, business_no, representative, address, phone, fax, industry")
+      .select("id, code, name, business_no, representative, address, phone, fax, business_type, business_item")
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),

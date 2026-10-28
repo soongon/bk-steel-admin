@@ -42,7 +42,8 @@ export type Partner = {
   address?: string | null;
   phone?: string | null;
   fax?: string | null;
-  industry?: string | null;
+  business_type?: string | null;
+  business_item?: string | null;
 };
 export type Item = {
   id: string;
@@ -320,7 +321,8 @@ export function SaleFormDialog({
         address: matchedPartner?.address ?? null,
         phone: matchedPartner?.phone ?? null,
         fax: matchedPartner?.fax ?? null,
-        industry: matchedPartner?.industry ?? null,
+        business_type: matchedPartner?.business_type ?? null,
+        business_item: matchedPartner?.business_item ?? null,
       },
       site_name: siteName || null,
       is_documented: isDocumented,

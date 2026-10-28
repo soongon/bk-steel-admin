@@ -26,7 +26,8 @@ type RawPartner = {
   address: string | null;
   phone: string | null;
   fax: string | null;
-  industry: string | null;
+  business_type: string | null;
+  business_item: string | null;
   email: string | null;
   email2: string | null;
 };
@@ -66,7 +67,7 @@ const SALE_SELECT = `
   id, book, doc_no, ordered_on, delivered_on, status,
   subtotal_krw, vat_krw, total_krw, vat_rate, is_documented,
   tax_doc_no, notes,
-  partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email, email2),
+  partner:partner(id, code, name, business_no, representative, address, phone, fax, business_type, business_item, email, email2),
   sale_line(
     id, qty, unit, unit_price_krw, weight_kg, theoretical_weight_kg, line_subtotal_krw,
     display_name, spec_text,
@@ -230,7 +231,8 @@ export default async function SiteStatementPage({
       address: uniqPartners.length === 1 || groupMode ? (mainPartner?.address ?? null) : null,
       phone: uniqPartners.length === 1 || groupMode ? (mainPartner?.phone ?? null) : null,
       fax: uniqPartners.length === 1 || groupMode ? (mainPartner?.fax ?? null) : null,
-      industry: uniqPartners.length === 1 || groupMode ? (mainPartner?.industry ?? null) : null,
+      business_type: uniqPartners.length === 1 || groupMode ? (mainPartner?.business_type ?? null) : null,
+      business_item: uniqPartners.length === 1 || groupMode ? (mainPartner?.business_item ?? null) : null,
     },
     site_name: `${site.name} (${site.code})`,
     is_documented: !anyUndocumented,

@@ -21,6 +21,7 @@ import { TaxInvoiceDocument } from "@/components/admin/tax-invoice-document";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { TAX_INVOICE_STATE_KO, type TaxDocMode, type TaxInvoiceState } from "@/lib/tax-invoice";
 import { digitsOnly, formatBusinessNo, formatPhone } from "@/lib/format";
+import { BIZ_TYPE_ITEM_MAX } from "@/lib/biz-doc";
 import {
   issueSaleTaxInvoice,
   cancelSaleTaxInvoice,
@@ -37,7 +38,13 @@ export type SaleTaxInvoice = {
   provider: string;
   write_date: string | null;
   remark: string | null;
+  purpose?: "charge" | "receipt" | null;
+  /** 발행 때 실은 공급받는자(팝빌·mock 발행은 전 칸, 수기 기록은 번호·상호뿐) */
+  buyer?: IssuedBuyer | null;
 };
+
+/** tax_invoice.buyer — 발행 payload 의 공급받는자(EtaxParty) 중 계산서 양식에 그리는 칸 */
+type IssuedBuyer = Partial<Record<"corpNum" | "name" | "ceoName" | "addr" | "bizType" | "bizClass" | "email", string | null>>;
 
 /** 발행 대상 거래처 선택용(하청 등으로 납품처와 발행처가 다를 때). */
 export type BuyerPartner = {
@@ -46,7 +53,8 @@ export type BuyerPartner = {
   business_no: string | null;
   representative: string | null;
   address: string | null;
-  industry: string | null;
+  business_type: string | null;
+  business_item: string | null;
   email: string | null;
   email2: string | null;
   phone: string | null;
@@ -97,6 +105,8 @@ export function TaxInvoiceButton({
   const [buyerPartnerId, setBuyerPartnerId] = useState(defaultBuyerPartnerId ?? "");
   const [bizNo, setBizNo] = useState(formatBusinessNo(statementData.partner.business_no));
   const [ceo, setCeo] = useState(statementData.partner.representative ?? "");
+  const [bizType, setBizType] = useState(statementData.partner.business_type ?? "");
+  const [bizClass, setBizClass] = useState(statementData.partner.business_item ?? "");
   const [email, setEmail] = useState(statementData.partner.email ?? "");
   const [email2, setEmail2] = useState(statementData.partner.email2 ?? "");
   const [manualNo, setManualNo] = useState("");
@@ -137,32 +147,50 @@ export function TaxInvoiceButton({
   const buyerPartner = partners.find((p) => p.id === buyerPartnerId) ?? null;
   const buyerDiffers = !!defaultBuyerPartnerId && buyerPartnerId !== defaultBuyerPartnerId;
 
-  // 발행 대상 거래처 변경 시 사업자정보 자동 채움(수동 수정 가능).
+  // 발행 대상 거래처 변경 시 사업자정보 자동 채움(수동 수정 가능). 목록에 없는 매출 거래처(비활성)로 되돌리면 그 값으로.
   function onBuyerChange(id: string) {
     setBuyerPartnerId(id);
-    const p = partners.find((x) => x.id === id);
+    const p = partners.find((x) => x.id === id) ?? (id === defaultBuyerPartnerId ? statementData.partner : null);
     if (p) {
       setBizNo(formatBusinessNo(p.business_no));
       setCeo(p.representative ?? "");
+      setBizType(p.business_type ?? "");
+      setBizClass(p.business_item ?? "");
       setEmail(p.email ?? "");
       setEmail2(p.email2 ?? "");
     }
   }
 
   // 미리보기·발행에 반영할 공급받는자(선택 거래처 + 수동 보강값).
+  const buyerNow = {
+    name: buyerPartner?.name ?? statementData.partner.name,
+    business_no: digitsOnly(bizNo) || buyerPartner?.business_no || statementData.partner.business_no,
+    representative: ceo || buyerPartner?.representative || statementData.partner.representative,
+    address: buyerPartner?.address ?? statementData.partner.address,
+    // 업태·종목은 발행 창에 적은 그대로(비우면 빈 칸으로 발행)
+    business_type: bizType.trim() || null,
+    business_item: bizClass.trim() || null,
+    email: email || buyerPartner?.email || statementData.partner.email,
+  };
+  // 발행된 계산서는 발행 기록대로 그린다 — 거래처 정보를 나중에 고쳐도 미리보기·문자 이미지가 실제 발행분과 같게.
+  // 기록에 없는 칸(수기 기록은 번호·상호뿐)은 지금 값.
+  const issued = taxInvoice?.buyer ?? null;
+  const fromIssued = (key: keyof IssuedBuyer, now: string | null) => (issued && key in issued ? (issued[key] ?? null) : now);
   const previewData: StatementData = {
     ...statementData,
     partner: {
       ...statementData.partner,
-      name: buyerPartner?.name ?? statementData.partner.name,
-      business_no: digitsOnly(bizNo) || buyerPartner?.business_no || statementData.partner.business_no,
-      representative: ceo || buyerPartner?.representative || statementData.partner.representative,
-      address: buyerPartner?.address ?? statementData.partner.address,
-      industry: buyerPartner?.industry ?? statementData.partner.industry,
-      email: email || buyerPartner?.email || statementData.partner.email,
+      name: fromIssued("name", buyerNow.name) ?? "",
+      business_no: fromIssued("corpNum", buyerNow.business_no),
+      representative: fromIssued("ceoName", buyerNow.representative),
+      address: fromIssued("addr", buyerNow.address),
+      business_type: fromIssued("bizType", buyerNow.business_type),
+      business_item: fromIssued("bizClass", buyerNow.business_item),
+      email: fromIssued("email", buyerNow.email ?? null),
       phone: buyerPartner?.phone ?? statementData.partner.phone,
     },
   };
+  const issuedPurpose = taxInvoice?.purpose === "receipt" || taxInvoice?.purpose === "charge" ? taxInvoice.purpose : purpose;
 
   if (mode === "none") return null;
   const has = !!taxInvoice;
@@ -180,11 +208,14 @@ export function TaxInvoiceButton({
         buyerPartnerId: buyerPartnerId || undefined,
         buyerBusinessNo: bizNo,
         buyerCeoName: ceo || undefined,
+        buyerBizType: bizType,
+        buyerBizClass: bizClass,
         buyerEmail: email || undefined,
         buyerEmail2: email2 || undefined,
       });
       if (r.ok) {
         toast.success(`세금계산서 발행됨${r.ntsConfirmNum ? ` · 승인 ${r.ntsConfirmNum}` : ""}`);
+        if (r.warning) toast.warning(r.warning);
         setOpen(false);
         router.refresh();
       } else toast.error(r.error);
@@ -350,7 +381,7 @@ export function TaxInvoiceButton({
                   <TaxInvoiceDocument
                     data={previewData}
                     company={company}
-                    purpose={purpose}
+                    purpose={issuedPurpose}
                     writeDate={taxInvoice!.write_date ?? writeDate}
                     ntsConfirmNum={taxInvoice!.nts_confirm_num}
                     remark={remark}
@@ -409,6 +440,25 @@ export function TaxInvoiceButton({
               <Field label="거래처 대표자">
                 <Input value={ceo} onChange={(e) => setCeo(e.target.value)} />
               </Field>
+              <Field label="거래처 업태">
+                <Input
+                  value={bizType}
+                  onChange={(e) => setBizType(e.target.value)}
+                  maxLength={BIZ_TYPE_ITEM_MAX}
+                  placeholder="건설업"
+                />
+              </Field>
+              <Field label="거래처 종목">
+                <Input
+                  value={bizClass}
+                  onChange={(e) => setBizClass(e.target.value)}
+                  maxLength={BIZ_TYPE_ITEM_MAX}
+                  placeholder="철근콘크리트공사"
+                />
+              </Field>
+              <p className="-mt-1 text-xs text-muted-foreground sm:col-span-2">
+                적은 업태·종목은 거래처 정보에도 저장돼 다음 발행 때 그대로 채워집니다.
+              </p>
               <Field label="거래처 이메일(전송)">
                 <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="buyer@example.com" />
               </Field>
@@ -437,7 +487,7 @@ export function TaxInvoiceButton({
                 <TaxInvoiceDocument
                   data={previewData}
                   company={company}
-                  purpose={purpose}
+                  purpose={issuedPurpose}
                   writeDate={writeDate}
                   ntsConfirmNum={taxInvoice?.nts_confirm_num}
                   remark={remark}

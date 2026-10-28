@@ -268,7 +268,7 @@ function partnerPrefillOf(r: VisitViewRow): PartnerPrefill {
     from_radar_id: r.id,
     name: r.companyHint ?? "",
     phone: r.contactPhone,
-    industry: "건설업",
+    business_type: "건설업",
     notes: `발주 레이더 현장: ${r.address}${r.contactName ? ` · 담당 ${r.contactName}` : ""}`,
   };
 }

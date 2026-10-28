@@ -16,7 +16,7 @@ export default async function PartnersPage({
   const { data, error } = await supabase
     .from("partner")
     .select(
-      "id, code, name, business_no, representative, phone, email, email2, address, industry, notes, is_active, docs:partner_document(count)",
+      "id, code, name, business_no, representative, phone, email, email2, address, business_type, business_item, notes, is_active, docs:partner_document(count)",
     )
     .is("deleted_at", null)
     .order("code", { ascending: true });

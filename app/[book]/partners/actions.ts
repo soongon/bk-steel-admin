@@ -6,6 +6,7 @@ import { digitsOnly } from "@/lib/format";
 import { normalizePartnerName } from "@/lib/partner";
 import { linkPartnersByBizno, linkRadarRowToPartner, unlinkRadarPartner } from "@/lib/radar/radar-data";
 import {
+  BIZ_TYPE_ITEM_MAX,
   bizNoConflicts,
   fillEmpty,
   isValidBizNo,
@@ -92,7 +93,8 @@ type PartnerInput = {
   email: string | null;
   email2: string | null;
   address: string | null;
-  industry: string | null;
+  business_type: string | null; // 업태
+  business_item: string | null; // 종목
   notes: string | null;
   is_active: boolean;
 };
@@ -119,10 +121,18 @@ function readPartnerInput(formData: FormData): PartnerInput {
     email: str("email"),
     email2: str("email2"),
     address: str("address"),
-    industry: str("industry"),
+    business_type: str("business_type"),
+    business_item: str("business_item"),
     notes: str("notes"),
     is_active: formData.get("is_active") === "on" || formData.get("is_active") === "true",
   };
+}
+
+/** 업태·종목은 세금계산서 칸(팝빌 최대 100자)으로 나간다 — 넘으면 발행이 막히므로 저장 때 막는다. */
+function bizTypeItemError(input: Pick<PartnerInput, "business_type" | "business_item">): string | null {
+  if ((input.business_type?.length ?? 0) > BIZ_TYPE_ITEM_MAX) return `업태는 ${BIZ_TYPE_ITEM_MAX}자까지 적을 수 있습니다(세금계산서 칸 한도).`;
+  if ((input.business_item?.length ?? 0) > BIZ_TYPE_ITEM_MAX) return `종목은 ${BIZ_TYPE_ITEM_MAX}자까지 적을 수 있습니다(세금계산서 칸 한도).`;
+  return null;
 }
 
 function friendlyError(message: string): string {
@@ -143,6 +153,8 @@ function bumpRevalidation() {
 export async function createPartner(formData: FormData): Promise<PartnerActionResult> {
   const input = readPartnerInput(formData);
   if (!input.name) return { ok: false, error: "거래처명은 필수입니다." };
+  const lengthError = bizTypeItemError(input);
+  if (lengthError) return { ok: false, error: lengthError };
 
   // 명함에서 이관된 경우 — 신규 partner 생성 후 business_card.partner_id 자동 매핑
   const fromCard = formData.get("from_card");
@@ -222,6 +234,8 @@ export async function updatePartner(
   const input = readPartnerInput(formData);
   if (!input.code) return { ok: false, error: "거래처 코드는 필수입니다." };
   if (!input.name) return { ok: false, error: "거래처명은 필수입니다." };
+  const lengthError = bizTypeItemError(input);
+  if (lengthError) return { ok: false, error: lengthError };
 
   const supabase = await createClient();
   const { data: before } = await supabase.from("partner").select("business_no").eq("id", id).maybeSingle();
@@ -273,7 +287,8 @@ export async function deletePartner(id: string): Promise<PartnerActionResult> {
   return warning ? { ok: true, warning } : { ok: true };
 }
 
-const PARTNER_COLUMNS = "id, code, name, business_no, representative, phone, email, email2, address, industry, notes, is_active";
+const PARTNER_COLUMNS =
+  "id, code, name, business_no, representative, phone, email, email2, address, business_type, business_item, notes, is_active";
 
 /**
  * 같은 이름(회사 표기·공백 무시)의 활성 거래처 — 이미지로 등록할 때 새로 만들지 그 거래처에 채울지 사람에게 물을 후보.
@@ -340,6 +355,8 @@ export async function registerPartnerFromDoc(formData: FormData): Promise<Partne
   if (input.business_no && !isValidBizNo(input.business_no)) {
     return { ok: false, error: "사업자번호 검증번호가 맞지 않습니다 — 확인해서 직접 추가해 주세요." };
   }
+  const lengthError = bizTypeItemError(input);
+  if (lengthError) return { ok: false, error: lengthError };
   if (mode === "fill" && !targetId) return { ok: false, error: "채울 거래처를 고르지 않았습니다." };
 
   const files = formData.getAll("file").filter((f): f is File => f instanceof File && f.size > 0);

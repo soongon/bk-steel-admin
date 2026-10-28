@@ -59,7 +59,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
     supabase.from("company_profile").select("*").eq("book", q.book).maybeSingle(),
     supabase
       .from("partner")
-      .select("id, code, name, business_no, representative, address, phone, fax, industry")
+      .select("id, code, name, business_no, representative, address, phone, fax, business_type, business_item")
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),
@@ -171,7 +171,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ bo
       address: q.partner?.address ?? null,
       phone: q.partner?.phone ?? null,
       fax: q.partner?.fax ?? null,
-      industry: q.partner?.industry ?? null,
+      business_type: q.partner?.business_type ?? null,
+      business_item: q.partner?.business_item ?? null,
       email: q.partner?.email ?? null,
       email2: q.partner?.email2 ?? null,
     },

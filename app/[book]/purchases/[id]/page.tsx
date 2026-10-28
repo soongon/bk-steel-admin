@@ -123,7 +123,7 @@ export default async function PurchaseDetailPage({
       id, book, doc_no, ordered_on, delivered_on, paid_on, payment_due_on, status,
       subtotal_krw, vat_krw, total_krw, vat_rate, partner_id, is_documented,
       tax_doc_type, tax_doc_no, tax_invoice_received_on, notes, origin, origin_ref,
-      partner:partner(id, code, name, business_no, representative, address, phone, fax, industry, email),
+      partner:partner(id, code, name, business_no, representative, address, phone, fax, business_type, business_item, email),
       purchase_line(
         id, acquired_qty, acquired_unit, unit_price_krw, line_subtotal_krw,
         actual_weight_kg, theoretical_weight_kg, notes,
