@@ -98,7 +98,22 @@ export default async function SalesPage({
     fetchAllCompanyProfiles(supabase),
   ]);
 
-  const sales = (salesRes.data as unknown as SaleListRow[]) ?? [];
+  const loaded = (salesRes.data as unknown as SaleListRow[]) ?? [];
+  // 수금완료 전인데 입금이 붙은 매출(지운 매출에서 옮겨 온 수금) — 미수 등급을 입금 기준으로.
+  const openIds = loaded.filter((s) => s.status !== "settled" && s.status !== "cancelled").map((s) => s.id);
+  const received = new Map<string, number>();
+  for (let i = 0; i < openIds.length; i += 100) {
+    const { data } = await supabase
+      .from("bank_transaction")
+      .select("sale_id, amount_krw")
+      .in("sale_id", openIds.slice(i, i + 100))
+      .is("deleted_at", null)
+      .gt("amount_krw", 0);
+    for (const r of (data ?? []) as Array<{ sale_id: string; amount_krw: number }>) {
+      received.set(r.sale_id, (received.get(r.sale_id) ?? 0) + Number(r.amount_krw));
+    }
+  }
+  const sales = loaded.map((s) => (received.has(s.id) ? { ...s, received_krw: received.get(s.id) } : s));
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">

@@ -6,8 +6,9 @@ import { notifyKakaoWork, adminUrl, fmtWon } from "@/lib/kakaowork";
 import { resolveSiteId } from "@/lib/site";
 import { resolvePartnerId } from "@/lib/partner";
 import { computeVat, revalidateTransactionPaths } from "@/lib/transaction";
+import { kstToday } from "@/lib/format";
 
-export type SaleActionResult = { ok: true } | { ok: false; error: string };
+export type SaleActionResult = { ok: true; message?: string } | { ok: false; error: string };
 
 function friendly(message: string): string {
   if (message.includes("sale_doc_no_key")) return "이미 사용 중인 문서번호입니다.";
@@ -273,23 +274,32 @@ export async function updateSaleHeader(
     .from("sale")
     .select("status, subtotal_krw, book, settled_on")
     .eq("id", id)
-    .single();
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!cur) return { ok: false, error: "매출을 찾을 수 없습니다(삭제됐을 수 있습니다)." };
 
   const newStatus = str("status");
-  if (cur) {
-    const tErr = transitionError(cur.status, newStatus);
-    if (tErr) return { ok: false, error: tErr };
-  }
+  const tErr = transitionError(cur.status, newStatus);
+  if (tErr) return { ok: false, error: tErr };
   if (newStatus === "settled") {
     return { ok: false, error: "수금완료는 매출 목록의 '수금' 버튼(통장 선택)으로 처리하세요." };
   }
 
   // 책 변경 — 수금완료·세금계산서 발행된 매출은 통장·공급자 정합 때문에 불가.
   const newBook = str("book");
-  const bookChanged = !!newBook && !!cur && newBook !== cur.book;
+  const bookChanged = !!newBook && newBook !== cur.book;
   if (bookChanged) {
-    if (cur!.settled_on || cur!.status === "settled") {
+    if (cur.settled_on || cur.status === "settled") {
       return { ok: false, error: "수금 완료된 매출은 책을 변경할 수 없습니다(통장 정합 유지)." };
+    }
+    // 지운 매출에서 옮겨 온 입금이 있으면 통장(책)과 어긋난다.
+    const { count: depositCount } = await supabase
+      .from("bank_transaction")
+      .select("id", { count: "exact", head: true })
+      .eq("sale_id", id)
+      .is("deleted_at", null);
+    if ((depositCount ?? 0) > 0) {
+      return { ok: false, error: "입금 기록이 있는 매출은 책을 변경할 수 없습니다(통장 정합 유지)." };
     }
     const { data: ti } = await supabase
       .from("tax_invoice")
@@ -310,7 +320,7 @@ export async function updateSaleHeader(
   const { vatType, vatRate, vat, total } = computeVat(
     isDocumented,
     taxDocType,
-    Number(cur?.subtotal_krw ?? 0),
+    Number(cur.subtotal_krw ?? 0),
   );
 
   const updates: Record<string, unknown> = {
@@ -332,10 +342,15 @@ export async function updateSaleHeader(
     updates.settled_on = null;
   }
 
-  const { error } = await supabase.from("sale").update(updates).eq("id", id);
+  const { error } = await supabase.from("sale").update(updates).eq("id", id).is("deleted_at", null);
   if (error) return { ok: false, error: friendly(error.message) };
+  // 라인도 매출의 책을 따른다(B계좌 격리 — 라인 RLS·집계가 라인 책 기준). 책을 바꿀 때 + 예전에 어긋난 라인도 저장할 때마다 맞춘다.
+  const saleBook = bookChanged ? newBook : cur.book;
+  const { error: lineErr } = await supabase.from("sale_line").update({ book: saleBook }).eq("sale_id", id).neq("book", saleBook);
+  if (lineErr) return { ok: false, error: `매출은 저장됐지만 품목 라인 책을 맞추지 못했습니다 — 다시 저장하세요: ${friendly(lineErr.message)}` };
+  const autoSettled = newStatus === "delivered" && cur.status !== "delivered" ? await settleIfPaid(supabase, id) : false;
   revalidateTransactionPaths("sales");
-  return { ok: true };
+  return { ok: true, message: autoSettled ? "매출이 수정되었습니다 · 이미 받은 입금으로 수금완료 처리됨" : undefined };
 }
 
 /**
@@ -360,28 +375,30 @@ export async function updateSaleLines(id: string, linesJson: string): Promise<Sa
 /** 납품완료 처리 — 주문/확정 → 납품완료(헤더+라인). delivered_on 미기록 시 오늘로. */
 export async function markSaleDelivered(id: string): Promise<SaleActionResult> {
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = kstToday();
   const { data: cur } = await supabase
     .from("sale")
     .select("status, delivered_on")
     .eq("id", id)
-    .single();
-  if (cur) {
-    const tErr = transitionError(cur.status, "delivered");
-    if (tErr) return { ok: false, error: tErr };
-  }
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!cur) return { ok: false, error: "매출을 찾을 수 없습니다(삭제됐을 수 있습니다)." };
+  const tErr = transitionError(cur.status, "delivered");
+  if (tErr) return { ok: false, error: tErr };
   const { error } = await supabase
     .from("sale")
-    .update({ status: "delivered", delivered_on: cur?.delivered_on ?? today })
-    .eq("id", id);
+    .update({ status: "delivered", delivered_on: cur.delivered_on ?? today })
+    .eq("id", id)
+    .is("deleted_at", null);
   if (error) return { ok: false, error: friendly(error.message) };
   await supabase
     .from("sale_line")
     .update({ status: "delivered" })
     .eq("sale_id", id)
     .neq("status", "cancelled");
+  const autoSettled = await settleIfPaid(supabase, id);
   revalidateTransactionPaths("sales");
-  return { ok: true };
+  return { ok: true, message: autoSettled ? "납품완료 · 이미 받은 입금으로 수금완료 처리됨" : undefined };
 }
 
 /**
@@ -395,10 +412,12 @@ export async function settleSale(
 ): Promise<SaleActionResult> {
   if (!bankAccountId) return { ok: false, error: "수금 통장을 선택해주세요." };
   const supabase = await createClient();
+  // 이미 받은 입금(지운 매출에서 옮겨 온 수금) — RPC 는 남은 금액만 입금으로 기록한다(0094). 알림 금액용.
+  const { received } = await saleReceived(supabase, id);
   const { error } = await supabase.rpc("settle_sale_with_payment", {
     p_sale_id: id,
     p_bank_account_id: bankAccountId,
-    p_settled_on: settledOn || new Date().toISOString().slice(0, 10),
+    p_settled_on: settledOn || kstToday(),
   });
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("sales");
@@ -417,7 +436,10 @@ export async function settleSale(
     await notifyKakaoWork(
       `💰 수금 완료 · ${BOOK_LABEL[s.book as Book]}\n` +
         `거래처: ${(s.partner as { name?: string } | null)?.name ?? "—"}\n` +
-        `금액: ${fmtWon(s.total_krw as number)}\n` +
+        (received >= Number(s.total_krw) && received > 0
+          ? `금액: ${fmtWon(s.total_krw as number)} (이미 받은 입금으로 처리)`
+          : `금액: ${fmtWon(Number(s.total_krw) - received)}` + (received > 0 ? ` (기수금 ${fmtWon(received)} 제외)` : "")) +
+        `\n` +
         `통장: ${(ba as { bank_name?: string } | null)?.bank_name ?? "—"}\n` +
         `문서: ${s.doc_no}\n` +
         adminUrl(`/${s.book}/sales/${id}`),
@@ -428,15 +450,17 @@ export async function settleSale(
 
 export async function cancelSale(id: string): Promise<SaleActionResult> {
   const supabase = await createClient();
-  const { data: cur } = await supabase.from("sale").select("status").eq("id", id).single();
-  if (cur?.status === "cancelled") return { ok: true };
-  if (cur?.status === "settled") {
+  const { data: cur } = await supabase.from("sale").select("status").eq("id", id).is("deleted_at", null).maybeSingle();
+  if (!cur) return { ok: false, error: "매출을 찾을 수 없습니다(삭제됐을 수 있습니다)." };
+  if (cur.status === "cancelled") return { ok: true };
+  if (cur.status === "settled") {
     return { ok: false, error: "수금완료된 매출은 취소할 수 없습니다(환불 처리 필요)." };
   }
   const { error } = await supabase
     .from("sale")
     .update({ status: "cancelled", settled_on: null })
-    .eq("id", id);
+    .eq("id", id)
+    .is("deleted_at", null);
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("sales");
   // 매출 취소 알림(best-effort)
@@ -457,13 +481,60 @@ export async function cancelSale(id: string): Promise<SaleActionResult> {
   return { ok: true };
 }
 
-export async function deleteSale(id: string): Promise<SaleActionResult> {
+export type SaleReceived = { received: number; lastTxnOn: string | null; lastAccountId: string | null };
+
+/** 이 매출에 이미 들어온 입금(통장 입금, 양수) — 합과 마지막 입금의 날짜·통장. 수금 다이얼로그·알림·납품완료 자동 수금용. */
+async function saleReceived(supabase: Awaited<ReturnType<typeof createClient>>, id: string): Promise<SaleReceived> {
+  const { data } = await supabase
+    .from("bank_transaction")
+    .select("amount_krw, txn_on, bank_account_id")
+    .eq("sale_id", id)
+    .is("deleted_at", null)
+    .gt("amount_krw", 0)
+    .order("txn_on", { ascending: false })
+    .order("created_at", { ascending: false });
+  const rows = (data ?? []) as Array<{ amount_krw: number; txn_on: string; bank_account_id: string }>;
+  return {
+    received: rows.reduce((a, r) => a + Number(r.amount_krw), 0),
+    lastTxnOn: rows[0]?.txn_on ?? null,
+    lastAccountId: rows[0]?.bank_account_id ?? null,
+  };
+}
+
+/**
+ * 납품완료가 됐을 때 이미 받은 입금(지운 매출에서 옮겨 온 수금)이 합계를 채우면 바로 수금완료 — 새 입금 없이 마지막 입금의
+ * 날짜·통장으로(RPC). 됐으면 운영방에 알리고 true. 납품완료 버튼·수정 화면 공용.
+ */
+async function settleIfPaid(supabase: Awaited<ReturnType<typeof createClient>>, id: string): Promise<boolean> {
+  const { data: s } = await supabase
+    .from("sale")
+    .select("doc_no, book, status, total_krw, partner:partner(name)")
+    .eq("id", id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!s || (s.status !== "delivered" && s.status !== "overdue")) return false;
+  const paid = await saleReceived(supabase, id);
+  if (!(paid.received > 0 && paid.received >= Number(s.total_krw) && paid.lastAccountId)) return false;
+  const { error } = await supabase.rpc("settle_sale_with_payment", {
+    p_sale_id: id,
+    p_bank_account_id: paid.lastAccountId,
+    p_settled_on: paid.lastTxnOn ?? kstToday(),
+  });
+  if (error) return false;
+  await notifyKakaoWork(
+    `💰 수금 완료 · ${BOOK_LABEL[s.book as Book]}\n` +
+      `거래처: ${(s.partner as { name?: string } | null)?.name ?? "—"}\n` +
+      `금액: ${fmtWon(s.total_krw as number)} (이미 받은 입금으로 처리)\n` +
+      `문서: ${s.doc_no}\n` +
+      adminUrl(`/${s.book}/sales/${id}`),
+  );
+  return true;
+}
+
+/** 수금 다이얼로그 — 이미 받은 입금(지운 매출에서 옮겨 온 수금)이 있으면 남은 금액만 입금으로 기록됨을 알려 준다. */
+export async function getSaleReceived(id: string): Promise<SaleReceived> {
   const supabase = await createClient();
-  // RPC가 manager 권한을 강제(soft-delete가 staff UPDATE 정책으로 우회되던 문제 차단).
-  const { error } = await supabase.rpc("soft_delete_sale", { p_id: id });
-  if (error) return { ok: false, error: friendly(error.message) };
-  revalidateTransactionPaths("sales");
-  return { ok: true };
+  return saleReceived(supabase, id);
 }
 
 /** 거래명세표 송부 토글 — done이면 오늘 날짜, 아니면 null(라이프사이클 단계 표시용 단순 플래그). */
@@ -471,8 +542,9 @@ export async function toggleSaleStatementSent(id: string, done: boolean): Promis
   const supabase = await createClient();
   const { error } = await supabase
     .from("sale")
-    .update({ statement_sent_on: done ? new Date().toISOString().slice(0, 10) : null })
-    .eq("id", id);
+    .update({ statement_sent_on: done ? kstToday() : null })
+    .eq("id", id)
+    .is("deleted_at", null);
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("sales");
   return { ok: true };
@@ -483,8 +555,9 @@ export async function toggleSaleTaxInvoiceIssued(id: string, done: boolean): Pro
   const supabase = await createClient();
   const { error } = await supabase
     .from("sale")
-    .update({ tax_invoice_issued_on: done ? new Date().toISOString().slice(0, 10) : null })
-    .eq("id", id);
+    .update({ tax_invoice_issued_on: done ? kstToday() : null })
+    .eq("id", id)
+    .is("deleted_at", null);
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("sales");
   return { ok: true };

@@ -19,6 +19,7 @@ import { type BuyerPartner } from "./tax-invoice-button";
 import { type SaleTaxInvoice } from "./tax-invoice-button";
 import { SaleLineNameButton, type NameLine } from "./sale-line-name-button";
 import { SaleEditButton } from "./sale-edit-button";
+import { SaleDeleteButton } from "./sale-delete-button";
 import { type SaleRow } from "../sale-form-dialog";
 import { type BankAccount } from "../settle-dialog";
 import { fmtKrw, fmtNum, formatBusinessNo, formatPhone } from "@/lib/format";
@@ -75,11 +76,19 @@ function deliveryDayBadge(deliveredOn: string, status: string) {
  * status='settled'(수금완료) / 'overdue'(연체) 인 경우엔 status 뱃지가 이미 같은 의미를
  * 보여주므로 중복 방지 위해 null 반환.
  */
-function paymentBadge(status: string, settledOn: string | null, dueOn: string | null) {
+function paymentBadge(status: string, settledOn: string | null, dueOn: string | null, received = 0, total = 0) {
   if (status === "settled" || status === "overdue") return null;
   if (settledOn) {
     return {
       label: "수금완료",
+      className:
+        "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
+    };
+  }
+  // 지운 매출에서 옮겨 온 입금이 이미 합계를 채움 — 납품완료 처리하면 바로 수금완료된다.
+  if (received > 0 && received >= total) {
+    return {
+      label: "입금 완료",
       className:
         "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
     };
@@ -193,6 +202,27 @@ export default async function SaleDetailPage({
     .neq("state", "cancelled")
     .maybeSingle();
   const taxInvoice = (taxInvoiceRow ?? null) as SaleTaxInvoice | null;
+
+  // 입금 내역(통장 입금, 양수) — 지운 매출에서 옮겨 온 수금이 있거나 입금 합이 합계와 다를 때만 보여 준다.
+  const { data: depositData } = await supabase
+    .from("bank_transaction")
+    .select("id, txn_on, amount_krw, notes, bank_account:bank_account!bank_transaction_bank_account_id_fkey(code, bank_name)")
+    .eq("sale_id", id)
+    .is("deleted_at", null)
+    .gt("amount_krw", 0)
+    .order("txn_on", { ascending: true })
+    .order("created_at", { ascending: true });
+  const deposits = (depositData ?? []) as unknown as Array<{
+    id: string;
+    txn_on: string;
+    amount_krw: number;
+    notes: string | null;
+    bank_account: { code: string; bank_name: string } | null;
+  }>;
+  const receivedKrw = deposits.reduce((a, d) => a + Number(d.amount_krw), 0);
+  const showDeposits =
+    deposits.length > 1 ||
+    (deposits.length > 0 && (receivedKrw !== Number(sale.total_krw) || sale.status !== "settled"));
 
   // 납품확인서 양식 데이터 — site_id 가 있을 때만 누적 빌드 (동일 (book, partner, site) 의 모든 매출)
   const certFormData =
@@ -340,7 +370,7 @@ export default async function SaleDetailPage({
             {STATUS_KO[sale.status] ?? sale.status}
           </span>
           {(() => {
-            const pay = paymentBadge(sale.status, sale.settled_on, sale.payment_due_on);
+            const pay = paymentBadge(sale.status, sale.settled_on, sale.payment_due_on, receivedKrw, Number(sale.total_krw));
             return pay ? (
               <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${pay.className}`}>
                 {pay.label}
@@ -370,15 +400,18 @@ export default async function SaleDetailPage({
             </Link>
           ) : null}
         </div>
-        <SaleEditButton
-          sale={saleRow}
-          view={book}
-          partners={editPartnersRes.data ?? []}
-          items={editItemsRes.data ?? []}
-          rebarSpecs={editRebarRes.data ?? []}
-          sites={editSitesRes.data ?? []}
-          companies={editCompanies}
-        />
+        <div className="flex items-center gap-2">
+          <SaleEditButton
+            sale={saleRow}
+            view={book}
+            partners={editPartnersRes.data ?? []}
+            items={editItemsRes.data ?? []}
+            rebarSpecs={editRebarRes.data ?? []}
+            sites={editSitesRes.data ?? []}
+            companies={editCompanies}
+          />
+          <SaleDeleteButton saleId={sale.id} docNo={sale.doc_no} listHref={`/${bookParam}/sales`} />
+        </div>
       </div>
 
       {/* 거래 라이프사이클 (주문→납품→명세표→계산서→수금→확인서) */}
@@ -486,6 +519,35 @@ export default async function SaleDetailPage({
           </dl>
         </InfoCard>
       </section>
+
+      {/* 입금 내역 — 합치기·다시 만들기로 옮겨 온 수금이 있을 때 */}
+      {showDeposits ? (
+        <section className="overflow-hidden rounded-lg border bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 text-sm">
+            <span className="font-medium">입금 내역 ({deposits.length}건)</span>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              입금 {fmtKrw(receivedKrw)} / 합계 {fmtKrw(Number(sale.total_krw))}
+              {receivedKrw < Number(sale.total_krw) ? (
+                <span className="text-amber-700 dark:text-amber-400"> · 남은 미수 {fmtKrw(Number(sale.total_krw) - receivedKrw)}</span>
+              ) : receivedKrw > Number(sale.total_krw) ? (
+                <span className="text-destructive"> · 초과 입금 {fmtKrw(receivedKrw - Number(sale.total_krw))}</span>
+              ) : null}
+            </span>
+          </div>
+          <ul className="divide-y text-sm">
+            {deposits.map((d) => (
+              <li key={d.id} className="flex items-center gap-3 px-4 py-2">
+                <span className="font-mono text-xs">{d.txn_on}</span>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={d.notes ?? undefined}>
+                  {d.bank_account ? `${d.bank_account.code} · ${d.bank_account.bank_name}` : "—"}
+                  {d.notes ? ` · ${d.notes}` : ""}
+                </span>
+                <span className="tabular-nums">{fmtKrw(Number(d.amount_krw))}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {/* 품목 테이블 (멀티라인) */}
       <section className="overflow-hidden rounded-lg border bg-card">

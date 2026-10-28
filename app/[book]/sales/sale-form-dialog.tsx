@@ -441,7 +441,7 @@ export function SaleFormDialog({
           setError(linesDirty ? `품목은 저장되었지만 나머지 저장에 실패했습니다: ${r2.error}` : r2.error);
           return;
         }
-        toast.success("매출이 수정되었습니다");
+        toast.success(r2.message ?? "매출이 수정되었습니다");
         if (linesDirty && editing.statement_sent_on) {
           toast.warning("이미 거래명세표를 보낸 매출입니다 — 품목이 바뀌었으니 명세표를 다시 보내세요.", { duration: 8000 });
         }

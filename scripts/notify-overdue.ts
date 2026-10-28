@@ -29,7 +29,7 @@ async function main() {
   // 미수 연체(매출): 수금예정일 지남 + 미수금(settled_on null) + 취소 아님
   const { data: sData } = await supabase
     .from("sale")
-    .select("doc_no, book, total_krw, payment_due_on, partner:partner(name)")
+    .select("id, doc_no, book, total_krw, payment_due_on, partner:partner(name)")
     .is("deleted_at", null)
     .not("payment_due_on", "is", null)
     .lt("payment_due_on", today)
@@ -47,7 +47,23 @@ async function main() {
     .neq("status", "cancelled")
     .order("payment_due_on");
 
-  const sales = (sData ?? []) as Record<string, any>[];
+  // 이미 들어온 입금(지운 매출에서 옮겨 온 수금 등)은 빼고 남은 미수만 — 다 받은 매출은 알리지 않는다.
+  const overdueSales = (sData ?? []) as Record<string, any>[];
+  const received = new Map<string, number>();
+  for (let i = 0; i < overdueSales.length; i += 100) {
+    const { data } = await supabase
+      .from("bank_transaction")
+      .select("sale_id, amount_krw")
+      .in("sale_id", overdueSales.slice(i, i + 100).map((r) => r.id))
+      .is("deleted_at", null)
+      .gt("amount_krw", 0);
+    for (const r of (data ?? []) as Array<{ sale_id: string; amount_krw: number }>) {
+      received.set(r.sale_id, (received.get(r.sale_id) ?? 0) + Number(r.amount_krw));
+    }
+  }
+  const sales = overdueSales
+    .map((r) => ({ ...r, total_krw: Number(r.total_krw) - (received.get(r.id) ?? 0) }))
+    .filter((r) => r.total_krw > 0);
   const purchases = (pData ?? []) as Record<string, any>[];
   if (sales.length === 0 && purchases.length === 0) {
     console.log("연체 없음 — 알림 생략");

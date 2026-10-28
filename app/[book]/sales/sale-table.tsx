@@ -35,7 +35,8 @@ import {
   type SaleRow,
   type SiteOption,
 } from "./sale-form-dialog";
-import { cancelSale, deleteSale, markSaleDelivered } from "./actions";
+import { cancelSale, markSaleDelivered } from "./actions";
+import { SaleDeleteDialog } from "./sale-delete-dialog";
 import { fmtKrw } from "@/lib/format";
 import { saleLifecycleProgress, deliveryDday } from "@/lib/sale-lifecycle";
 import { SettleDialog, type BankAccount } from "./settle-dialog";
@@ -73,6 +74,8 @@ export type SaleListRow = {
   /** 출처(0087) — hometax: 홈택스 수집본에서 자동 생성. 라인이 금액 1줄(철제 직접입력)뿐이면 '품목 미정' */
   origin?: string | null;
   origin_ref?: string | null;
+  /** 이미 들어온 입금(지운 매출에서 옮겨 온 수금 등) — 미수 아닌 매출의 미수 등급을 숨긴다. */
+  received_krw?: number;
   /** 상세에서 남긴 메모 기록(0080) — 건수와 가장 최근 1건. */
   memo_count?: Array<{ count: number }>;
   latest_memo?: Array<{ body: string; created_at: string }>;
@@ -135,6 +138,7 @@ const GRADE_META: Record<string, { label: string; className: string }> = {
 /** 미수 등급 — vw_receivable 과 동일 기준(정상/단기1~7/중기8~30/장기31+). 수금완료·취소는 미수 아님. */
 function receivable(s: SaleListRow): { grade: string | null; days: number } {
   if (s.status === "settled" || s.status === "cancelled") return { grade: null, days: 0 };
+  if ((s.received_krw ?? 0) > 0 && (s.received_krw ?? 0) >= s.total_krw) return { grade: null, days: 0 };
   if (!s.payment_due_on) return { grade: "normal", days: 0 };
   const due = new Date(s.payment_due_on + "T00:00:00");
   const today = new Date();
@@ -182,6 +186,7 @@ export function SaleTable({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SaleRow | null>(null);
   const [settleTarget, setSettleTarget] = useState<SaleListRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SaleListRow | null>(null);
   const [, startTransition] = useTransition();
   const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }); // KST 'YYYY-MM-DD'
 
@@ -193,7 +198,7 @@ export function SaleTable({
     if (!window.confirm(`[${s.doc_no}] 납품완료로 처리하시겠습니까?`)) return;
     startTransition(async () => {
       const r = await markSaleDelivered(s.id);
-      if (r.ok) toast.success("납품완료 처리됨");
+      if (r.ok) toast.success(r.message ?? "납품완료 처리됨");
       else toast.error(r.error);
     });
   }
@@ -210,12 +215,7 @@ export function SaleTable({
     });
   }
   function handleDelete(s: SaleListRow) {
-    if (!window.confirm(`[${s.doc_no}] 완전 삭제? (soft delete)`)) return;
-    startTransition(async () => {
-      const r = await deleteSale(s.id);
-      if (r.ok) toast.success("삭제됨");
-      else toast.error(r.error);
-    });
+    setDeleteTarget(s);
   }
 
   // 미수등급 필터는 클라에서(날짜 파생). 나머지 필터는 서버 쿼리에서 이미 적용됨.
@@ -453,6 +453,14 @@ export function SaleTable({
           sale={settleTarget}
           bankAccounts={bankAccounts}
           onClose={() => setSettleTarget(null)}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <SaleDeleteDialog
+          saleId={deleteTarget.id}
+          docNo={deleteTarget.doc_no}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={() => setDeleteTarget(null)}
         />
       ) : null}
     </>

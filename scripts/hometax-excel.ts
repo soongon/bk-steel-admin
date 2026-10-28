@@ -60,6 +60,7 @@ async function writeReport(file: string, report: ReconcileReport, buy: BuyReport
     ["N_missing", report.summary.N_missing ?? 0, "시스템에 매출 없음 → 거래처·매출 자동 생성(품목 미정) + 발행 기록 + 메모"],
     ["D_dup", report.summary.D_dup ?? 0, "같은 금액 매출이 이미 있음(재발행·이중 발급 의심) → 생성 안 함, 사장 확인"],
     ["D_modify", report.summary.D_modify ?? 0, "수정세금계산서 — 당초와 묶어 확인"],
+    ["D_deleted", report.summary.D_deleted ?? 0, "지운 매출의 계산서 — 정리 끝났으면 무시, 아니면 수정세금계산서(−)·대체 매출 확인(자동 처리 안 함)"],
     ["S_skip", report.summary.S_skip ?? 0, "이미 처리된 건"],
     ["E_system_only", report.summary.E_system_only ?? 0, "시스템 자료 매출인데 홈택스에 없음 → 미발행?"],
     [],
@@ -109,7 +110,7 @@ async function writeReport(file: string, report: ReconcileReport, buy: BuyReport
   });
   const s1 = wb.addWorksheet("판단 필요");
   head(s1, cols);
-  for (const d of report.decisions.filter((x) => ["X_amount", "D_modify", "D_dup"].includes(x.case))) s1.addRow(toRow(d));
+  for (const d of report.decisions.filter((x) => ["X_amount", "D_modify", "D_dup", "D_deleted"].includes(x.case))) s1.addRow(toRow(d));
   const s2 = wb.addWorksheet("자동 처리");
   head(s2, cols);
   for (const d of report.decisions.filter((x) => ["B_popbill", "A_link", "N_missing", "S_skip"].includes(x.case))) s2.addRow(toRow(d));
@@ -217,7 +218,9 @@ async function main() {
       .single();
     const pay = await alignPaymentToTotal(sb, String(sale.id), Number(sale.total_krw), log);
     const actions: Action[] = pay?.actions ?? [];
-    if (pay && pay.diff !== 0) {
+    if (pay?.skipped) {
+      log("입금 기록이 여러 건이라 자동으로 맞추지 않음 — 확인 필요");
+    } else if (pay && pay.diff !== 0) {
       const { data: memo } = await sb
         .from("sale_memo")
         .insert({ sale_id: sale.id, body: `[홈택스 대조] 입금 기록도 계산서 금액으로 맞춤: ${pay.prevReceived.toLocaleString("ko-KR")} → ${Number(sale.total_krw).toLocaleString("ko-KR")} (${pay.diff >= 0 ? "+" : ""}${pay.diff.toLocaleString("ko-KR")}원) — 미수 0, 통장 잔액 확인` })

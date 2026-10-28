@@ -99,7 +99,7 @@ export function SaleLifecyclePanel({
   function deliver() {
     startDeliver(async () => {
       const r = await markSaleDelivered(sale.id);
-      if (r.ok) toast.success("납품완료 처리됨");
+      if (r.ok) toast.success(r.message ?? "납품완료 처리됨");
       else toast.error(r.error);
     });
   }

@@ -5,6 +5,7 @@ import { BookBadge } from "@/components/admin/book-badge";
 import { type Book } from "@/lib/book";
 import { fmtKrw } from "@/lib/format";
 import { TAX_INVOICE_STATE_KO, type TaxInvoiceState } from "@/lib/tax-invoice";
+import { CloseOrphanInvoiceButton, RefreshOrphanInvoiceButton } from "./close-orphan-button";
 
 const STATE_BADGE: Record<string, string> = {
   issuing: "bg-amber-100 text-amber-700",
@@ -12,6 +13,23 @@ const STATE_BADGE: Record<string, string> = {
   nts_sent: "bg-blue-100 text-blue-700",
   nts_approved: "bg-emerald-100 text-emerald-700",
   failed: "bg-red-100 text-red-700",
+};
+
+/** 계산서의 매출 — 삭제됐는지(지운 매출에 남은 계산서) 보려고 같이 읽는다. */
+type InvoiceSaleRef = { doc_no: string; deleted_at: string | null } | null;
+type OrphanInvoice = {
+  id: string;
+  book: string;
+  sale_id: string;
+  state: string;
+  provider: string;
+  nts_confirm_num: string | null;
+  mgt_key: string;
+  write_date: string;
+  total_krw: number;
+  buyer: { name?: string } | null;
+  internal_note: string | null;
+  sale: InvoiceSaleRef;
 };
 
 /** YYYY-MM → 다음 달 첫날 YYYY-MM-DD (write_date < next 로 월 범위). */
@@ -50,7 +68,9 @@ export default async function TaxInvoicesPage({
   // 발행된 세금계산서(이 달 작성)
   let invQ = supabase
     .from("tax_invoice")
-    .select("id, book, sale_id, state, nts_confirm_num, write_date, supply_krw, vat_krw, total_krw, item_summary, buyer, provider")
+    .select(
+      "id, book, sale_id, state, nts_confirm_num, write_date, supply_krw, vat_krw, total_krw, item_summary, buyer, provider, resolution, sale:sale!tax_invoice_sale_id_fkey(doc_no, deleted_at)",
+    )
     .is("deleted_at", null)
     .neq("state", "cancelled")
     .gte("write_date", monthStart)
@@ -88,6 +108,22 @@ export default async function TaxInvoicesPage({
     .neq("state", "cancelled");
   const covered = new Set((coveredRows ?? []).map((r) => (r as any).sale_id));
   const missing = docSales.filter((s) => !covered.has(s.id));
+
+  // 지운 매출에 남은 계산서 중 아직 정리 안 한 것(달 무관) — 국세청엔 있는 문서라 합계에 넣는다(0094).
+  // 정리: 수정세금계산서(−) 발행 → 합계 유지 · 발행취소 → 합계에서 빠짐.
+  let orphanQ = supabase
+    .from("tax_invoice")
+    .select(
+      "id, book, sale_id, state, provider, nts_confirm_num, mgt_key, write_date, total_krw, buyer, internal_note, sale:sale!tax_invoice_sale_id_fkey!inner(doc_no, deleted_at)",
+    )
+    .is("deleted_at", null)
+    .neq("state", "cancelled")
+    .is("resolved_at", null)
+    .not("sale.deleted_at", "is", null)
+    .order("write_date", { ascending: false });
+  if (!isAll) orphanQ = orphanQ.eq("book", bookParam);
+  const { data: orphanData } = await orphanQ;
+  const orphans = (orphanData ?? []) as unknown as OrphanInvoice[];
 
   const linkBase = `/${bookParam}/tax-invoices`;
 
@@ -165,6 +201,50 @@ export default async function TaxInvoicesPage({
         </section>
       ) : null}
 
+      {/* 지운 매출의 계산서 — 정리 필요 */}
+      {orphans.length > 0 ? (
+        <section className="overflow-hidden rounded-lg border border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/20">
+          <div className="flex flex-col gap-0.5 border-b border-red-200 px-4 py-2 dark:border-red-900">
+            <div className="flex items-center gap-2 text-sm font-medium text-red-800 dark:text-red-200">
+              <AlertTriangleIcon className="size-4" />
+              지운 매출의 계산서 — 정리 필요 {orphans.length}건
+            </div>
+            <p className="text-xs text-red-700/80 dark:text-red-300/80">
+              매출은 지웠지만 국세청에는 남아 있는 계산서입니다(합계에 포함). 팝빌·홈택스에서 수정세금계산서(−)를 발행했거나
+              발행취소했으면 [정리 완료]로 표시하세요 — 발행취소는 합계에서 빠지고, 수정세금계산서는 원본이 국세청에 남으므로 합계에 그대로 둡니다.
+            </p>
+          </div>
+          <ul className="divide-y divide-red-100 text-sm dark:divide-red-900/50">
+            {orphans.map((o) => (
+              <li key={o.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
+                <div className="flex min-w-0 flex-col">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs">{o.write_date}</span>
+                    <span>{o.buyer?.name ?? "—"}</span>
+                    <span className="text-xs text-muted-foreground">
+                      지운 매출 <span className="font-mono">{o.sale?.doc_no ?? "—"}</span>
+                    </span>
+                  </span>
+                  <span className="truncate font-mono text-[11px] text-muted-foreground" title={o.internal_note ?? undefined}>
+                    {o.nts_confirm_num ?? `${o.mgt_key} · 승인번호 아직 없음`}
+                    {o.internal_note ? ` · ${o.internal_note}` : ""}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="tabular-nums">{fmtKrw(Number(o.total_krw))}</span>
+                  {o.provider === "popbill" && !o.nts_confirm_num ? <RefreshOrphanInvoiceButton saleId={o.sale_id} /> : null}
+                  <CloseOrphanInvoiceButton
+                    invoiceId={o.id}
+                    hasNts={!!o.nts_confirm_num}
+                    label={`${o.buyer?.name ?? "—"} ${fmtKrw(Number(o.total_krw))} (${o.write_date})`}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {/* 발행 목록 */}
       <section className="overflow-hidden rounded-lg border bg-card">
         <div className="border-b px-4 py-2 text-sm font-medium">발행 목록 ({rows.length}건)</div>
@@ -195,15 +275,29 @@ export default async function TaxInvoicesPage({
                   <tr key={r.id} className="border-b last:border-0 hover:bg-muted/30">
                     <td className="px-4 py-2 font-mono text-xs">{r.write_date}</td>
                     <td className="px-2 py-2">
-                      <Link href={`/${r.book}/sales/${r.sale_id}`} className="hover:underline">
-                        {(r.buyer as any)?.name ?? "—"}
-                      </Link>
+                      {(r.sale as InvoiceSaleRef)?.deleted_at ? (
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          {(r.buyer as { name?: string } | null)?.name ?? "—"}
+                          <span
+                            className="inline-flex h-5 items-center rounded-full bg-red-100 px-2 text-[11px] text-red-700 dark:bg-red-950/50 dark:text-red-300"
+                            title={`매출 ${(r.sale as InvoiceSaleRef)?.doc_no ?? ""} 삭제됨${r.resolution === "modified" ? " — 수정세금계산서(−) 발행으로 정리" : " — 위 '정리 필요'에서 처리"}`}
+                          >
+                            {r.resolution === "modified" ? "매출 삭제 · 수정발행" : "매출 삭제됨"}
+                          </span>
+                        </span>
+                      ) : (
+                        <Link href={`/${r.book}/sales/${r.sale_id}`} className="hover:underline">
+                          {(r.buyer as any)?.name ?? "—"}
+                        </Link>
+                      )}
                     </td>
                     <td className="px-2 py-2 text-muted-foreground">{r.item_summary ?? "—"}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{fmtKrw(Number(r.supply_krw))}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{fmtKrw(Number(r.vat_krw))}</td>
                     <td className="px-2 py-2 text-right font-medium tabular-nums">{fmtKrw(Number(r.total_krw))}</td>
-                    <td className="px-2 py-2 text-center text-xs">{r.provider === "manual" ? "수기" : "전자"}</td>
+                    <td className="px-2 py-2 text-center text-xs">
+                      {r.provider === "manual" ? "수기" : r.provider === "mock" ? "시험" : "전자"}
+                    </td>
                     <td className="px-2 py-2 text-center">
                       <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${STATE_BADGE[r.state] ?? "bg-muted"}`}>
                         {TAX_INVOICE_STATE_KO[r.state as TaxInvoiceState] ?? r.state}
@@ -219,7 +313,8 @@ export default async function TaxInvoicesPage({
       </section>
 
       <p className="text-xs text-muted-foreground">
-        ※ 부가세 신고 자료(자료 거래 · B계좌 제외). 세금계산서 발행은 각 매출 상세의 거래 진행 패널에서.
+        ※ 부가세 신고 자료(자료 거래 · B계좌 제외). 세금계산서 발행은 각 매출 상세의 거래 진행 패널에서. 수정세금계산서(−)는 이
+        합계에 들어가지 않습니다 — 국세청 기준 순합계는 홈택스 대사 화면에서 확인하세요.
       </p>
     </div>
   );

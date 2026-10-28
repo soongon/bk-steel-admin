@@ -46,7 +46,7 @@ export type Decision = {
   total: number;
   isModify: boolean;
   origNts: string | null;
-  case: "B_popbill" | "A_link" | "D_modify" | "X_amount" | "N_missing" | "D_dup" | "S_skip";
+  case: "B_popbill" | "A_link" | "D_modify" | "X_amount" | "N_missing" | "D_dup" | "D_deleted" | "S_skip";
   status: HometaxMatchStatus;
   saleId?: string;
   saleDocNo?: string;
@@ -98,7 +98,13 @@ async function loadSystem(sb: SupabaseClient, book: Book, from: string, to: stri
       .neq("status", "cancelled")
       .gte("ordered_on", pad(from, -180)) // 중복 가드(같은 금액 매출 180일) — 8월 납품분을 10월에 발행하는 사례
       .lte("ordered_on", pad(to, 31)),
-    sb.from("tax_invoice").select("id, sale_id, nts_confirm_num, state, provider, total_krw").eq("book", book).is("deleted_at", null).neq("state", "cancelled"),
+    // 발행 기록(모든 상태) + 그 매출의 삭제 여부 — 지운 매출의 계산서는 정리(취소) 뒤에도 알아봐야
+    // 같은 계산서로 매출을 되살리거나 엉뚱한 매출에 붙이지 않는다(0094).
+    sb
+      .from("tax_invoice")
+      .select("id, sale_id, nts_confirm_num, state, provider, total_krw, write_date, buyer, resolved_at, sale:sale!tax_invoice_sale_id_fkey(doc_no, deleted_at)")
+      .eq("book", book)
+      .is("deleted_at", null),
     sb.from("partner").select("id, name, business_no").is("deleted_at", null),
   ]);
   if (salesRes.error) throw new Error(`매출 조회 실패: ${salesRes.error.message}`);
@@ -124,12 +130,52 @@ async function loadSystem(sb: SupabaseClient, book: Book, from: string, to: stri
       partner_biz: o.partner?.business_no ?? null,
     };
   });
-  const invoices = (invRes.data ?? []) as Array<{ id: string; sale_id: string; nts_confirm_num: string | null; state: string; provider: string; total_krw: number }>;
+  const allInvoices = (invRes.data ?? []) as unknown as Array<{
+    id: string;
+    sale_id: string;
+    nts_confirm_num: string | null;
+    state: string;
+    provider: string;
+    total_krw: number;
+    write_date: string;
+    buyer: { corpNum?: string } | null;
+    resolved_at: string | null;
+    sale: { doc_no: string; deleted_at: string | null } | null;
+  }>;
+  const invoices = allInvoices
+    .filter((i) => !i.sale?.deleted_at && i.state !== "cancelled")
+    .map((i) => ({ id: i.id, sale_id: i.sale_id, nts_confirm_num: i.nts_confirm_num, state: i.state, provider: i.provider, total_krw: i.total_krw }));
+  // 지운 매출의 계산서 — 정리됨(발행취소·수정발행 표시) 여부와 함께. 승인번호가 없으면 거래처·금액·작성일로 찾는다.
+  const deletedSaleInvoices: DeletedSaleInvoice[] = allInvoices
+    .filter((i) => !!i.sale?.deleted_at)
+    .map((i) => ({
+      id: i.id,
+      sale_id: i.sale_id,
+      doc_no: i.sale?.doc_no ?? "",
+      nts_confirm_num: i.nts_confirm_num,
+      resolved: i.state === "cancelled" || !!i.resolved_at,
+      cancelled: i.state === "cancelled",
+      buyer_biz: bizKey(i.buyer?.corpNum),
+      total_krw: Number(i.total_krw ?? 0),
+      write_date: String(i.write_date),
+    }));
   const partners = (partnersRes.data ?? []) as Array<{ id: string; name: string; business_no: string | null }>;
-  return { sales, invoices, partners };
+  return { sales, invoices, deletedSaleInvoices, partners };
 }
 
 const isDocSale = (s: SaleLite) => s.is_documented && ["tax_invoice_electronic", "tax_invoice_paper", "invoice"].includes(s.tax_doc_type);
+
+type DeletedSaleInvoice = {
+  id: string;
+  sale_id: string;
+  doc_no: string;
+  nts_confirm_num: string | null;
+  resolved: boolean;
+  cancelled: boolean;
+  buyer_biz: string;
+  total_krw: number;
+  write_date: string;
+};
 
 /**
  * 결정만 계산한다(쓰기 없음) — dry-run 과 실제 반영이 같은 함수를 쓴다.
@@ -144,10 +190,35 @@ export async function planReconcile(
   const sellRows = rows.filter((r) => r.insert.direction === "sell");
   const dates = sellRows.map((r) => r.insert.write_date).sort();
   if (dates.length === 0) return { decisions: [], systemOnly: [], summary: {} };
-  const { sales, invoices, partners } = await loadSystem(sb, book, dates[0], dates[dates.length - 1]);
+  const { sales, invoices, deletedSaleInvoices, partners } = await loadSystem(sb, book, dates[0], dates[dates.length - 1]);
 
   const invByNts = new Map<string, (typeof invoices)[number]>();
   for (const i of invoices) if (i.nts_confirm_num) invByNts.set(normalizeNts(i.nts_confirm_num), i);
+  const deletedInvByNts = new Map(
+    deletedSaleInvoices.filter((i) => i.nts_confirm_num).map((i) => [normalizeNts(i.nts_confirm_num), i]),
+  );
+  // 승인번호 없이 남은 지운 매출 계산서(발행 직후 지운 팝빌 건·시스템 밖 발행분, 발행취소 제외) — 승인번호가 정확히 맞는
+  // 행(지운 매출·살아 있는 매출)을 뺀 나머지에서 거래처·금액·작성일(±31일)이 맞는 행이 딱 하나일 때만 짝짓는다.
+  // 여럿이면 사람이 고르게 후보로만 둔다(대체 매출의 진짜 계산서를 지운 매출 것으로 잘못 묶지 않게).
+  const daysApart = (a: string, b: string) => Math.abs((new Date(a).getTime() - new Date(b).getTime()) / 86_400_000);
+  const fallbackByNts = new Map<string, { orphans: DeletedSaleInvoice[] }>();
+  const orphanRowCount = new Map<string, number>();
+  for (const o of deletedSaleInvoices.filter((i) => !i.nts_confirm_num && !i.cancelled && i.buyer_biz)) {
+    for (const r of sellRows) {
+      const ins = r.insert;
+      const rowNts = ins.nts_confirm_num;
+      const prevStatus = existingStatus.get(rowNts);
+      if (prevStatus && ["matched", "linked", "ignored"].includes(prevStatus)) continue;
+      if (deletedInvByNts.has(rowNts) || invByNts.has(rowNts)) continue;
+      if ((ins.modify_code ?? 0) !== 0 || ins.total_amount <= 0) continue;
+      if (bizKey(ins.invoicee.biz_no) !== o.buyer_biz) continue;
+      if (Math.abs(o.total_krw - ins.total_amount) >= 1 || daysApart(o.write_date, ins.write_date) > 31) continue;
+      const hit = fallbackByNts.get(rowNts) ?? { orphans: [] };
+      hit.orphans.push(o);
+      fallbackByNts.set(rowNts, hit);
+      orphanRowCount.set(o.id, (orphanRowCount.get(o.id) ?? 0) + 1);
+    }
+  }
   const saleHasInvoice = new Set(invoices.map((i) => i.sale_id));
   const saleById = new Map(sales.map((s) => [s.id, s]));
   const partnersByBiz = new Map<string, (typeof partners)[number][]>();
@@ -181,12 +252,52 @@ export async function planReconcile(
       decisions.push({ ...base, case: "S_skip", status: prev, note: `이미 처리됨(${prev})` });
       continue;
     }
+    // 지운 매출의 계산서(승인번호 일치) — 자동 연결·매출 생성 없이: 정리 끝났으면 '무시', 아니면 사람이 본다.
+    const deletedInv = deletedInvByNts.get(nts);
+    if (deletedInv) {
+      decisions.push({
+        ...base,
+        case: "D_deleted",
+        status: deletedInv.resolved ? "ignored" : "candidate",
+        saleId: deletedInv.sale_id,
+        saleDocNo: deletedInv.doc_no,
+        taxInvoiceId: deletedInv.id,
+        note: deletedInv.resolved
+          ? `지운 매출 ${deletedInv.doc_no}의 계산서 — 정리 완료(수정발행·발행취소)`
+          : `지운 매출 ${deletedInv.doc_no}의 계산서 — 수정세금계산서(−)·대체 매출 확인(자동 처리 안 함)`,
+      });
+      continue;
+    }
     // B: 승인번호 일치
     const inv = invByNts.get(nts);
     if (inv) {
       coveredSaleIds.add(inv.sale_id);
       const s = saleById.get(inv.sale_id);
       decisions.push({ ...base, case: "B_popbill", status: "matched", saleId: inv.sale_id, saleDocNo: s?.doc_no, taxInvoiceId: inv.id, note: `발행 기록 일치(${inv.provider})` });
+      continue;
+    }
+    // 승인번호 없는 지운 매출 계산서와 거래처·금액·작성일이 맞음 — 서로 하나씩일 때만 묶고, 아니면 후보로.
+    const fb = fallbackByNts.get(nts);
+    if (fb) {
+      const o = fb.orphans[0];
+      if (fb.orphans.length === 1 && orphanRowCount.get(o.id) === 1) {
+        decisions.push({
+          ...base,
+          case: "D_deleted",
+          status: o.resolved ? "ignored" : "candidate",
+          saleId: o.sale_id,
+          saleDocNo: o.doc_no,
+          taxInvoiceId: o.id,
+          note: `지운 매출 ${o.doc_no}의 계산서(승인번호 없이 거래처·금액·작성일로 찾음) — ${o.resolved ? "정리 완료" : "수정세금계산서(−)·대체 매출 확인"}`,
+        });
+      } else {
+        decisions.push({
+          ...base,
+          case: "D_deleted",
+          status: "candidate",
+          note: `지운 매출 ${[...new Set(fb.orphans.map((x) => x.doc_no))].join(", ")}의 계산서일 수 있음 — 같은 거래처·금액 후보가 여럿, 확인 필요(자동 처리 안 함)`,
+        });
+      }
       continue;
     }
     // 수정분: 당초 건과 묶어 사람이 본다(순합계 판단은 2차)
@@ -419,7 +530,18 @@ export async function rollbackActions(sb: SupabaseClient, actions: Action[], log
       await sb.from("sale_memo").delete().eq("id", a.memo_id);
     } else if (a.type === "tax_invoice_created") {
       // 우리가 만든 hometax 기록이므로 hard delete 가 맞다(취소 상태로 남기면 1:1 유니크·화면에 흔적이 남는다)
-      await sb.from("tax_invoice").delete().eq("id", a.tax_invoice_id).eq("provider", "hometax");
+      // 그 뒤 매출 삭제로 다른 매출에 옮겨졌거나, 매출을 지우며 국세청 기록으로 남긴 기록이면 건드리지 않는다.
+      const { data: ti } = await sb.from("tax_invoice").select("sale_id, sale:sale!tax_invoice_sale_id_fkey(deleted_at)").eq("id", a.tax_invoice_id).maybeSingle();
+      if (!ti) {
+        log(`발행 기록 ${a.tax_invoice_id} 는 이미 없음`);
+        continue;
+      }
+      if (ti.sale_id !== a.sale_id || (ti.sale as { deleted_at?: string | null } | null)?.deleted_at) {
+        log(`발행 기록 ${a.tax_invoice_id} 는 다른 매출로 옮겨졌거나 지운 매출의 국세청 기록이라 남김`);
+        continue;
+      }
+      const { error: delErr } = await sb.from("tax_invoice").delete().eq("id", a.tax_invoice_id).eq("provider", "hometax");
+      if (delErr) throw new Error(`발행 기록 삭제 실패(${a.tax_invoice_id}): ${delErr.message}`);
       await sb.from("sale").update({ tax_invoice_issued_on: a.prev_sale.tax_invoice_issued_on, tax_doc_no: a.prev_sale.tax_doc_no }).eq("id", a.sale_id);
       log(`발행 기록 삭제·매출 필드 복원: ${a.sale_id}`);
     } else if (a.type === "purchase_created") {
@@ -436,8 +558,8 @@ export async function rollbackActions(sb: SupabaseClient, actions: Action[], log
     } else if (a.type === "partner_kind_set") {
       await sb.from("partner").update({ supply_kind: a.prev }).eq("id", a.partner_id);
     } else if (a.type === "sale_created") {
-      // 우리가 만든 매출 — 발행 기록·메모는 앞선 액션에서 지워졌으므로 라인·매출만 hard delete
-      await sb.from("sale_line").delete().eq("sale_id", a.sale_id);
+      // 우리가 만든 매출 — 발행 기록·메모는 앞선 액션에서 지워졌으므로 매출만 hard delete(라인은 CASCADE).
+      // 그 사이 수금(입금)이 붙었으면 FK 로 실패한다 — 라인만 지워진 매출이 남지 않게 라인을 먼저 지우지 않는다.
       const { error } = await sb.from("sale").delete().eq("id", a.sale_id).eq("origin", "hometax");
       if (error) throw new Error(`생성 매출 삭제 실패(${a.doc_no}): ${error.message}`);
       log(`생성 매출 삭제: ${a.doc_no}`);
@@ -484,7 +606,7 @@ export async function alignPaymentToTotal(
   saleId: string,
   totalKrw: number,
   log: (m: string) => void = () => {},
-): Promise<{ actions: Action[]; diff: number; prevReceived: number } | null> {
+): Promise<{ actions: Action[]; diff: number; prevReceived: number; skipped?: boolean } | null> {
   const { data: bts } = await sb.from("bank_transaction").select("id, txn_on, amount_krw").eq("sale_id", saleId).is("deleted_at", null).gt("amount_krw", 0).order("txn_on", { ascending: false }).order("created_at", { ascending: false });
   const rows = (bts ?? []) as Array<{ id: string; txn_on: string; amount_krw: number }>;
   if (rows.length === 0) return null;
@@ -493,6 +615,11 @@ export async function alignPaymentToTotal(
   if (diff === 0) return { actions: [], diff: 0, prevReceived: received };
   const last = rows[0];
   const next = Number(last.amount_krw) + diff;
+  // 입금이 여러 건(지운 매출에서 옮겨 온 수금)이면 최근 1건만 고쳐서는 0 이하가 될 수 있다 — 그땐 고치지 않고 사람이 본다.
+  if (next <= 0) {
+    log(`입금 기록 자동 맞춤 생략 — 최근 입금 ${Number(last.amount_krw).toLocaleString("ko-KR")}원에 차액 ${diff.toLocaleString("ko-KR")}원을 더하면 0 이하`);
+    return { actions: [], diff, prevReceived: received, skipped: true };
+  }
   const { error } = await sb.from("bank_transaction").update({ amount_krw: next }).eq("id", last.id);
   if (error) throw new Error(`입금 기록 수정 실패: ${error.message}`);
   log(`입금 기록 ${last.txn_on}: ${Number(last.amount_krw).toLocaleString("ko-KR")} → ${next.toLocaleString("ko-KR")} (${diff >= 0 ? "+" : ""}${diff.toLocaleString("ko-KR")})`);
@@ -513,6 +640,24 @@ export async function alignSaleToInvoice(
   if (sale.book !== inv.book) throw new Error(`책이 다릅니다(매출 ${sale.book} / 계산서 ${inv.book})`);
   const { data: existingInv } = await sb.from("tax_invoice").select("id, provider, nts_confirm_num").eq("sale_id", input.saleId).is("deleted_at", null).neq("state", "cancelled").maybeSingle();
   if (existingInv) throw new Error(`이 매출에는 이미 발행 기록이 있습니다(${existingInv.provider} ${existingInv.nts_confirm_num ?? ""}).`);
+  // 쓰기 전에 — 이 계산서가 이미 다른 매출(지운 매출 포함)에 연결·기록돼 있으면 멈춘다(반쪽 반영·같은 승인번호 이중 기록 방지).
+  if (inv.sale_id && inv.sale_id !== input.saleId) {
+    throw new Error(`이 수집본은 이미 다른 매출에 연결돼 있습니다(${inv.match_status}) — 지운 매출의 계산서면 세금계산서 화면 '정리 필요'에서 먼저 처리하세요.`);
+  }
+  if (inv.tax_invoice_id) {
+    const { data: linked } = await sb.from("tax_invoice").select("sale_id, state").eq("id", inv.tax_invoice_id).maybeSingle();
+    if (linked && linked.sale_id !== input.saleId && linked.state !== "cancelled") {
+      throw new Error("이 수집본은 이미 다른 매출의 발행 기록과 묶여 있습니다 — 그 기록을 먼저 정리하세요.");
+    }
+  }
+  const { data: bookInvoices } = await sb.from("tax_invoice").select("sale_id, state, mgt_key, nts_confirm_num").eq("book", sale.book).is("deleted_at", null);
+  const ntsKey = normalizeNts(input.nts);
+  const elsewhere = (bookInvoices ?? []).find(
+    (t) =>
+      t.sale_id !== input.saleId &&
+      ((t.state !== "cancelled" && !!t.nts_confirm_num && normalizeNts(t.nts_confirm_num) === ntsKey) || t.mgt_key === `hometax-${input.nts}`),
+  );
+  if (elsewhere) throw new Error(`같은 승인번호의 발행 기록이 다른 매출에 있습니다(${elsewhere.mgt_key}) — 먼저 그 기록을 정리하세요.`);
 
   const prev = { subtotal_krw: Number(sale.subtotal_krw), vat_krw: Number(sale.vat_krw), total_krw: Number(sale.total_krw) };
   const diffSupply = Number(inv.supply_amount) - prev.subtotal_krw;
@@ -541,7 +686,9 @@ export async function alignSaleToInvoice(
   let paymentNote = "";
   if (sale.settled_on) {
     const pay = await alignPaymentToTotal(sb, input.saleId, Number(inv.total_amount), log);
-    if (pay && pay.diff !== 0) {
+    if (pay?.skipped) {
+      paymentNote = ` · 입금 기록(${won(pay.prevReceived)})은 여러 건이라 자동으로 못 맞춤 — 확인 필요`;
+    } else if (pay && pay.diff !== 0) {
       actions.push(...pay.actions);
       paymentNote = ` · 입금 기록도 계산서 금액으로 맞춤(${won(pay.prevReceived)} → ${won(Number(inv.total_amount))}, 통장 잔액 확인)`;
     }
