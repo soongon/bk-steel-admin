@@ -5,7 +5,9 @@
 //   · 2026-10-28 탐색 기록: /App/NTSCrawling/Taxinvoice/Purchases?DateType=WriteDate&StartDate&EndDate 로 기간 프리셋,
 //     [실시간 내역수집] = POST __API_V1__/NTSCrawling/Taxinvoice/Purchase → JobID 폴링 → Summary/목록, 완료 후 URL 에 ?JobID= 가 붙고 [검색결과 다운로드] 버튼이 생긴다.
 
-const LOOKBACK_DAYS = 30; // 작성일자 기준 오늘-30일 ~ 오늘 (업서트가 승인번호 기준이라 겹쳐도 안전)
+// 전송일자(국세청 전송일) 기준 최근 14일 — 작성일이 지난달이어도 늦게 발행·전송된 계산서를 놓치지 않는다. 업서트가 승인번호 기준이라 겹쳐도 안전.
+const LOOKBACK_DAYS = 14;
+const DATE_TYPE = "SendDate"; // WriteDate(작성일자) | IssueDate(발행일자) | SendDate(전송일자) — URL 파라미터로 프리셋됨(2026-10-28 확인)
 const OUT_DIR = "/Users/soongonkim/ego/popbill-inbox";
 const SPACE_NAME = "팝빌 매입 수집 자동";
 const PAGE_URL = "https://www.popbill.com/App/NTSCrawling/Taxinvoice/Purchases";
@@ -18,7 +20,7 @@ const startDate = kst(new Date(now.getTime() - LOOKBACK_DAYS * 86400 * 1000));
 const stamp = new Date(now.getTime() + 9 * 3600 * 1000).toISOString().replace(/[-:T]/g, "").slice(0, 14);
 await fs.mkdir(OUT_DIR, { recursive: true });
 
-const result = { ok: false, reason: null, file: null, rows: null, startDate, endDate, spaceId: null };
+const result = { ok: false, reason: null, file: null, rows: null, dateType: DATE_TYPE, startDate, endDate, spaceId: null };
 const finish = async (page, extra) => {
   Object.assign(result, extra);
   if (!result.ok && page) {
@@ -32,7 +34,7 @@ try {
   task = await taskSpace(SPACE_NAME);
   result.spaceId = task.spaceId;
   page = task.page("p1");
-  await page.goto(`${PAGE_URL}?DateType=WriteDate&StartDate=${startDate}&EndDate=${endDate}`);
+  await page.goto(`${PAGE_URL}?DateType=${DATE_TYPE}&StartDate=${startDate}&EndDate=${endDate}`);
   await page.waitForLoadState();
   await page.waitForTimeout(2500);
 
