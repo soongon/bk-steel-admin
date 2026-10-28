@@ -70,6 +70,7 @@ export type Action =
   | { type: "purchase_created"; purchase_id: string; doc_no: string }
   | { type: "purchase_linked"; purchase_id: string; prev: { tax_doc_no: string | null; tax_invoice_received_on: string | null } }
   | { type: "purchase_memo_created"; memo_id: string; purchase_id: string }
+  | { type: "invoice_notes"; nts: string; prev_notes: string | null } // 수집본 비고만 바꾼 것(당초 장 '취소·재발행됨' 표시) — 연결은 건드리지 않는다
   | { type: "receipt_created"; receipt_id: string }
   | { type: "partner_kind_set"; partner_id: string; prev: string | null; next: string }
   | { type: "partner_created"; partner_id: string; name: string }
@@ -525,6 +526,14 @@ export async function applyReconcile(
 export async function rollbackActions(sb: SupabaseClient, actions: Action[], log: (m: string) => void = () => {}): Promise<void> {
   for (const a of [...actions].reverse()) {
     if (a.type === "invoice_status") {
+      // 그 뒤 매출·매입 삭제가 이 수집본을 옮기거나 '무시(삭제)'로 바꿨으면 되돌리지 않는다 — 대상의 계산서 연결이 풀리거나
+      // 지운 거래가 다음 대사에서 되살아나지 않게(0095).
+      const { data: cur } = await sb.from("hometax_invoice").select("notes, ignore_reason, resolved_at").eq("nts_confirm_num", a.nts).maybeSingle();
+      const touched = /삭제\(|이관\(/.test(`${cur?.notes ?? ""} ${cur?.ignore_reason ?? ""}`) || !!cur?.resolved_at;
+      if (touched) {
+        log(`수집본 ${a.nts} 는 그 뒤 거래 삭제로 바뀌어 남김`);
+        continue;
+      }
       await sb.from("hometax_invoice").update({ ...a.prev, purchase_id: null, receipt_id: null, matched_at: null }).eq("nts_confirm_num", a.nts);
     } else if (a.type === "memo_created") {
       await sb.from("sale_memo").delete().eq("id", a.memo_id);
@@ -545,14 +554,32 @@ export async function rollbackActions(sb: SupabaseClient, actions: Action[], log
       await sb.from("sale").update({ tax_invoice_issued_on: a.prev_sale.tax_invoice_issued_on, tax_doc_no: a.prev_sale.tax_doc_no }).eq("id", a.sale_id);
       log(`발행 기록 삭제·매출 필드 복원: ${a.sale_id}`);
     } else if (a.type === "purchase_created") {
-      await sb.from("purchase_line").delete().eq("purchase_id", a.purchase_id);
+      // 그 뒤 지웠거나(매입 삭제가 정리함) 결제·다른 연결이 붙은 매입은 남긴다. 헤더만 지우고 라인은 CASCADE —
+      // 라인부터 지웠다가 헤더 삭제가 실패해 라인 없는 매입이 남지 않게.
+      const { data: pur } = await sb.from("purchase").select("deleted_at").eq("id", a.purchase_id).maybeSingle();
+      const { count: pays } = await sb.from("bank_transaction").select("id", { count: "exact", head: true }).eq("purchase_id", a.purchase_id);
+      if (!pur) {
+        log(`생성 매입 ${a.doc_no} 는 이미 없음`);
+        continue;
+      }
+      if (pur.deleted_at || (pays ?? 0) > 0) {
+        log(`생성 매입 ${a.doc_no} 는 그 뒤 삭제됐거나 결제가 붙어 남김`);
+        continue;
+      }
       const { error } = await sb.from("purchase").delete().eq("id", a.purchase_id).eq("origin", "hometax");
       if (error) throw new Error(`생성 매입 삭제 실패(${a.doc_no}): ${error.message}`);
       log(`생성 매입 삭제: ${a.doc_no}`);
     } else if (a.type === "purchase_linked") {
+      const { data: pur } = await sb.from("purchase").select("deleted_at").eq("id", a.purchase_id).maybeSingle();
+      if (!pur || pur.deleted_at) {
+        log(`연결했던 매입 ${a.purchase_id} 는 그 뒤 삭제돼 남김`);
+        continue;
+      }
       await sb.from("purchase").update(a.prev).eq("id", a.purchase_id);
     } else if (a.type === "purchase_memo_created") {
       await sb.from("purchase_memo").delete().eq("id", a.memo_id);
+    } else if (a.type === "invoice_notes") {
+      await sb.from("hometax_invoice").update({ notes: a.prev_notes }).eq("nts_confirm_num", a.nts);
     } else if (a.type === "receipt_created") {
       await sb.from("receipt").delete().eq("id", a.receipt_id).eq("origin", "hometax");
     } else if (a.type === "partner_kind_set") {

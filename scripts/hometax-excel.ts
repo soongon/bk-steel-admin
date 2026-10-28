@@ -6,7 +6,8 @@
  *   npx tsx scripts/hometax-excel.ts --align <승인번호> --sale <매출번호> [--reason "..."]  # 금액 불일치: 매출을 계산서 금액으로(조정 라인+발행 기록+메모, 수금완료면 입금 기록도)
  *   npx tsx scripts/hometax-excel.ts --align-payment <매출번호>                            # 수금완료 매출의 입금 기록만 현재 합계에 맞춤(미수 0)
  *   npx tsx scripts/hometax-excel.ts --classify "<사업자번호|이름>=inventory|expense,..."    # 공급자 종류 지정(재고 매입처/비용 업체) — 그 뒤 엑셀을 다시 올리면 대기 건이 처리됨
- * 매입 파일도 같은 명령 — 방향(매출/매입)은 행마다 우리 사업자번호로 판정. 매입: 연결(P_link)·매입 생성(P_create)·비용 생성(R_create)·분류 대기(K_pending).
+ * 매입 파일도 같은 명령 — 방향(매출/매입)은 행마다 우리 사업자번호로 판정. 매입: 연결(P_link)·매입 생성(P_create)·비용 생성(R_create)·분류 대기(K_pending)·
+ *   취소·재발행 묶음(P_group: 당초·수정(−)·재발행 순합계 = 당초면 같은 매입에 묶고 증빙 번호 교체, 아니면 D_modify 후보 + 차액).
  *   옵션: --out <폴더>(대조표 저장 위치, 기본 ~/Downloads)
  * 자동: B 팝빌 발행분 일치 · A 매출 일치→발행 기록 생성+메모 · C 거래처 사업자번호 채움.
  * 사람: 금액 불일치 · 누락 · 수정분 · 시스템에만 있는 자료 매출(E) — 대조표 '판단 필요' 시트.
@@ -21,7 +22,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isValidBook, type Book } from "../lib/book";
 import { parsePopbillHometaxExcel } from "../lib/hometax/excel";
 import { alignPaymentToTotal, alignSaleToInvoice, applyReconcile, planReconcile, rollbackActions, type Action, type ReconcileReport } from "../lib/hometax/reconcile";
-import { applyBuy, classifyPartner, planBuy, type BuyReport } from "../lib/hometax/reconcile-buy";
+import { applyBuy, classifyPartner, describeGroup, planBuy, type BuyReport } from "../lib/hometax/reconcile-buy";
 import { corpNumForBook } from "../lib/hometax/collect";
 import type { HometaxMatchStatus } from "../lib/hometax/types";
 
@@ -66,11 +67,14 @@ async function writeReport(file: string, report: ReconcileReport, buy: BuyReport
     [],
     ["매입 케이스", "건수", "설명"],
     ["P_link", buy.summary.P_link ?? 0, "기존 매입과 금액 일치 → 승인번호 연결(자동)"],
+    ["P_nts", buy.summary.P_nts ?? 0, "승인번호가 이미 매입에 있음(옮겨 받은 계산서 등) → 연결(자동)"],
+    ["P_group", buy.summary.P_group ?? 0, "취소·재발행 묶음(당초·수정(−)·재발행 순합계 = 당초) → 같은 매입에 연결, 증빙 번호·수취일을 재발행 장으로 교체(자동)"],
+    ["D_deleted", buy.summary.D_deleted ?? 0, "지운 매입의 계산서 → 생성·연결 안 함, 공급자 수정(−)·대체 매입 확인"],
     ["P_create", buy.summary.P_create ?? 0, "재고 매입처 → 매입 생성(품목 미정, 미지급 +30일)(자동)"],
     ["R_create", buy.summary.R_create ?? 0, "비용 업체 → 영수증·비용 생성(자동)"],
     ["K_pending", buy.summary.K_pending ?? 0, "분류 대기 — 거래처 종류 지정 필요(--classify 또는 화면 버튼)"],
     ["D_dup", buy.summary.D_dup ?? 0, "같은 금액 매입 있음 → 생성 안 함, 확인"],
-    ["D_modify", buy.summary.D_modify ?? 0, "수정세금계산서 — 확인"],
+    ["D_modify", buy.summary.D_modify ?? 0, "수정세금계산서 — 확인(그룹 순합계 ≠ 당초 = 금액 변동·환입 / 재발행 아직 없음 = 수정(−) 대기 / 당초 못 찾음)"],
     ["S_skip", buy.summary.S_skip ?? 0, "이미 처리된 건"],
   ]);
   s0.getColumn(1).width = 16;
@@ -138,6 +142,7 @@ async function writeReport(file: string, report: ReconcileReport, buy: BuyReport
     { header: "거래처 종류", key: "kind", width: 12 },
     { header: "제안", key: "suggestion", width: 10 },
     { header: "매입번호", key: "purchaseDocNo", width: 14 },
+    { header: "그룹(당초·순합계)", key: "group", width: 36 },
     { header: "설명", key: "note", width: 50 },
     { header: "승인번호", key: "nts", width: 26 },
     { header: "사장 분류(재고/비용)", key: "memo", width: 18 },
@@ -153,6 +158,7 @@ async function writeReport(file: string, report: ReconcileReport, buy: BuyReport
       kind: d.partner?.supply_kind ?? "",
       suggestion: d.suggestion ?? "",
       purchaseDocNo: d.purchaseDocNo ?? "",
+      group: describeGroup(d),
       note: d.note,
       nts: d.nts,
       memo: "",
