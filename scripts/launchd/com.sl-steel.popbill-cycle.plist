@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- 팝빌 매입 계산서 자동 반영 — 매일 09:00·17:00 (scripts/popbill-cycle.sh). 설치:
+       cp scripts/launchd/com.sl-steel.popbill-cycle.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.sl-steel.popbill-cycle.plist
+       해제: launchctl unload ~/Library/LaunchAgents/com.sl-steel.popbill-cycle.plist -->
+  <key>Label</key><string>com.sl-steel.popbill-cycle</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>/bin/zsh</string>
+    <string>/Users/soongonkim/WebstormProjects/bk-steel-admin/scripts/popbill-cycle.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>/Users/soongonkim/ego/popbill-inbox/log/launchd.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/soongonkim/ego/popbill-inbox/log/launchd.err.log</string>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>
