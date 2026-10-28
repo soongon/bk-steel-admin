@@ -15,6 +15,7 @@ import { addPurchaseMemo, deletePurchaseMemo } from "./memo-actions";
 import { type BankAccount } from "../pay-dialog";
 import { type PurchaseRow } from "../purchase-form-dialog";
 import { PurchaseEditButton } from "./purchase-edit-button";
+import { PurchaseDeleteButton } from "./purchase-delete-button";
 import { purchaseLineToDraft, type StoredPurchaseLine } from "@/lib/purchase-line-draft";
 
 const fmtNum = (n: number, d = 0) =>
@@ -64,11 +65,19 @@ function arrivalDayBadge(deliveredOn: string, status: string) {
  * 추후 'paid' 등 결제 의미 담은 status 추가 시 PAYMENT_REDUNDANT_STATUS 에 추가.
  */
 const PAYMENT_REDUNDANT_STATUS = new Set<string>([]);
-function paymentBadge(status: string, paidOn: string | null, dueOn: string | null) {
+function paymentBadge(status: string, paidOn: string | null, dueOn: string | null, paid = 0, total = 0) {
   if (PAYMENT_REDUNDANT_STATUS.has(status)) return null;
   if (paidOn) {
     return {
       label: "결제완료",
+      className:
+        "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
+    };
+  }
+  // 지운 매입에서 옮겨 온 출금이 이미 합계를 채움 — [결제완료]에서 추가 출금 없이 마무리된다.
+  if (paid > 0 && paid >= total) {
+    return {
+      label: "출금 완료",
       className:
         "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
     };
@@ -182,10 +191,33 @@ export default async function PurchaseDetailPage({
         .from("hometax_invoice")
         .select("nts_confirm_num, supply_amount, total_amount")
         .eq("purchase_id", id)
+        .gt("total_amount", 0) // 수정(−) 취소분 제외 — 당초·수정·재발행이 한 매입에 묶이면 유효한 (+) 최신 장
         .order("write_date", { ascending: false })
+        .order("issue_date", { ascending: false })
         .limit(1)
         .maybeSingle(),
     ]);
+  // 출금 내역(통장 출금, 음수) — 지운 매입에서 옮겨 온 결제가 있거나 출금 합이 합계와 다를 때만 보여 준다.
+  const { data: paymentData } = await supabase
+    .from("bank_transaction")
+    .select("id, txn_on, amount_krw, notes, bank_account:bank_account!bank_transaction_bank_account_id_fkey(code, bank_name)")
+    .eq("purchase_id", id)
+    .is("deleted_at", null)
+    .lt("amount_krw", 0)
+    .order("txn_on", { ascending: true })
+    .order("created_at", { ascending: true });
+  const payments = (paymentData ?? []) as unknown as Array<{
+    id: string;
+    txn_on: string;
+    amount_krw: number;
+    notes: string | null;
+    bank_account: { code: string; bank_name: string } | null;
+  }>;
+  const paidKrw = payments.reduce((a, d) => a - Number(d.amount_krw), 0);
+  const showPayments =
+    payments.length > 1 ||
+    (payments.length > 0 && (paidKrw !== Number(purchase.total_krw) || !purchase.paid_on));
+
   const purchaseRow: PurchaseRow = {
     id: purchase.id,
     book,
@@ -234,7 +266,7 @@ export default async function PurchaseDetailPage({
             {STATUS_KO[purchase.status] ?? purchase.status}
           </span>
           {(() => {
-            const pay = paymentBadge(purchase.status, purchase.paid_on, purchase.payment_due_on);
+            const pay = paymentBadge(purchase.status, purchase.paid_on, purchase.payment_due_on, paidKrw, Number(purchase.total_krw));
             if (!pay) return null;
             return (
               <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${pay.className}`}>
@@ -260,6 +292,7 @@ export default async function PurchaseDetailPage({
             rebarSpecs={editRebarRes.data ?? []}
             sites={editSitesRes.data ?? []}
           />
+          <PurchaseDeleteButton purchaseId={purchase.id} docNo={purchase.doc_no} listHref={`/${bookParam}/purchases`} />
         </div>
       </div>
 
@@ -343,6 +376,37 @@ export default async function PurchaseDetailPage({
           </div>
         </MetaCard>
       </section>
+
+      {/* 출금 내역 — 합치기·다시 만들기로 옮겨 온 결제가 있을 때 */}
+      {showPayments ? (
+        <section className="px-6 pb-4">
+          <div className="overflow-hidden rounded-lg border bg-card">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-sm">
+              <span className="font-medium">출금 내역 ({payments.length}건)</span>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                출금 {fmtKrw(paidKrw)} / 합계 {fmtKrw(Number(purchase.total_krw))}
+                {paidKrw < Number(purchase.total_krw) ? (
+                  <span className="text-amber-700 dark:text-amber-400"> · 남은 미지급 {fmtKrw(Number(purchase.total_krw) - paidKrw)}</span>
+                ) : paidKrw > Number(purchase.total_krw) ? (
+                  <span className="text-destructive"> · 초과 출금 {fmtKrw(paidKrw - Number(purchase.total_krw))}</span>
+                ) : null}
+              </span>
+            </div>
+            <ul className="divide-y text-sm">
+              {payments.map((d) => (
+                <li key={d.id} className="flex items-center gap-3 px-3 py-2">
+                  <span className="font-mono text-xs">{d.txn_on}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={d.notes ?? undefined}>
+                    {d.bank_account ? `${d.bank_account.code} · ${d.bank_account.bank_name}` : "—"}
+                    {d.notes ? ` · ${d.notes}` : ""}
+                  </span>
+                  <span className="tabular-nums">{fmtKrw(-Number(d.amount_krw))}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      ) : null}
 
       {/* 매입 라인 표 */}
       <section className="px-6 pb-4">
