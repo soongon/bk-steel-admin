@@ -6,6 +6,7 @@ import { notifyKakaoWork, adminUrl, fmtWon } from "@/lib/kakaowork";
 import { resolveSiteId } from "@/lib/site";
 import { resolvePartnerId } from "@/lib/partner";
 import { computeVat, revalidateTransactionPaths } from "@/lib/transaction";
+import { kstToday } from "@/lib/format";
 
 export type PurchaseActionResult = { ok: true } | { ok: false; error: string };
 
@@ -263,15 +264,44 @@ export async function updatePurchaseHeader(
     return typeof v === "string" ? v.trim() : "";
   };
 
-  // 공급가 기준 부가세 재계산(자료종류 전환 시 stale 방지). paid_on 은 결제 RPC 전용이라 여기서 안 건드림.
-  const { data: cur } = await supabase.from("purchase").select("subtotal_krw").eq("id", id).single();
+  // 공급가 기준 부가세 재계산은 부가세 유형(과세·면세·불과세)이 바뀔 때만 — 같은 유형(전자↔종이세금계산서·현금영수증 등)이면
+  // 지금 세액·합계를 둔다(홈택스 계산서 세액 끝전·결제 금액과 어긋나지 않게). paid_on 은 결제 RPC 전용이라 여기서 안 건드림.
+  const { data: cur } = await supabase
+    .from("purchase")
+    .select("subtotal_krw, vat_krw, total_krw, vat_type, vat_rate, is_documented, tax_doc_type, paid_on")
+    .eq("id", id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!cur) return { ok: false, error: "매입을 찾을 수 없습니다(삭제됐을 수 있습니다)." };
   const isDocumented = str("is_documented") === "true";
   const taxDocType = str("tax_doc_type");
-  const { vatType, vatRate, vat, total } = computeVat(
-    isDocumented,
-    taxDocType,
-    Number(cur?.subtotal_krw ?? 0),
-  );
+  const next = computeVat(isDocumented, taxDocType, Number(cur.subtotal_krw ?? 0));
+  const vatChanged = next.vatType !== String(cur.vat_type);
+  if (vatChanged && next.total !== Number(cur.total_krw)) {
+    // 결제완료·홈택스 계산서 연결 매입은 합계를 바꾸지 않는다 — 품목 수정(0093 replace_purchase_lines)과 같은 기준.
+    const { count: htCount } = await supabase
+      .from("hometax_invoice")
+      .select("id", { count: "exact", head: true })
+      .eq("purchase_id", id)
+      .is("deleted_at", null);
+    if (cur.paid_on) {
+      return {
+        ok: false,
+        error: "결제완료된 매입은 자료종류를 바꿔 합계를 바꿀 수 없습니다 — 새 매입을 만들고 이 매입을 삭제(결제·계산서 옮기기)하세요.",
+      };
+    }
+    if ((htCount ?? 0) > 0) {
+      return { ok: false, error: "홈택스 계산서와 연결된 매입은 자료종류를 바꿔 합계를 바꿀 수 없습니다(국세청 계산서 금액 기준)." };
+    }
+  }
+  const { vatType, vatRate, vat, total } = vatChanged
+    ? next
+    : {
+        vatType: String(cur.vat_type),
+        vatRate: Number(cur.vat_rate),
+        vat: Number(cur.vat_krw),
+        total: Number(cur.total_krw),
+      };
 
   const siteName = str("site_name") || null;
   const resolvedSiteId = await resolveSiteId(supabase, str("site_id") || null, siteName);
@@ -292,7 +322,7 @@ export async function updatePurchaseHeader(
     notes: str("notes") || null,
   };
 
-  const { error } = await supabase.from("purchase").update(updates).eq("id", id);
+  const { error } = await supabase.from("purchase").update(updates).eq("id", id).is("deleted_at", null);
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("purchases");
   return { ok: true };
@@ -321,13 +351,14 @@ export async function updatePurchaseLines(id: string, linesJson: string): Promis
 
 export async function markPurchaseReceived(id: string): Promise<PurchaseActionResult> {
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = kstToday();
 
   // header
   const { error: hErr } = await supabase
     .from("purchase")
     .update({ status: "in_stock", delivered_on: today })
-    .eq("id", id);
+    .eq("id", id)
+    .is("deleted_at", null);
   if (hErr) return { ok: false, error: friendly(hErr.message) };
 
   // lines (도착 상태로)
@@ -347,32 +378,45 @@ export async function markPurchasePaid(
   id: string,
   bankAccountId: string,
   paidOn?: string,
+  opts?: { covered?: boolean },
 ): Promise<PurchaseActionResult> {
-  if (!bankAccountId) return { ok: false, error: "결제 통장을 선택해주세요." };
+  // covered = 다이얼로그가 '이미 나간 출금이 합계를 채움'으로 본 경우 — 통장을 비워 보낸다. RPC 는 그때만 통장 없이 결제완료하고,
+  // 그 사이 합계가 늘어 남은 금액이 생겼으면 출금을 만들지 않고 거부한다(아무도 고르지 않은 통장·날짜로 출금하지 않게).
+  const covered = opts?.covered === true;
+  if (!covered && !bankAccountId) return { ok: false, error: "결제 통장을 선택해주세요." };
   const supabase = await createClient();
+  // 이미 나간 출금(지운 매입에서 옮겨 온 결제) — RPC 는 남은 금액만 출금으로 기록한다(0095). 알림 금액용.
+  const { paid } = await purchasePaid(supabase, id);
   const { error } = await supabase.rpc("pay_purchase_with_payment", {
     p_purchase_id: id,
-    p_bank_account_id: bankAccountId,
-    p_paid_on: paidOn || new Date().toISOString().slice(0, 10),
+    p_bank_account_id: covered ? null : bankAccountId,
+    p_paid_on: paidOn || kstToday(),
   });
-  if (error) return { ok: false, error: friendly(error.message) };
+  if (error) {
+    if (covered && error.message.includes("통장을 찾을 수 없습니다")) {
+      return { ok: false, error: "그 사이 매입 합계가 바뀌어 남은 금액이 생겼습니다 — 새로고침한 뒤 출금 통장을 골라 다시 해 주세요." };
+    }
+    return { ok: false, error: friendly(error.message) };
+  }
   revalidateTransactionPaths("purchases");
-  // 결제 완료 알림(best-effort)
+  // 결제 완료 알림(best-effort) — 실제로 처리된 결과(결제 통장·합계)로.
   const { data: p } = await supabase
     .from("purchase")
-    .select("doc_no, book, total_krw, partner:partner(name)")
+    .select("doc_no, book, total_krw, pay_bank_account_id, partner:partner(name)")
     .eq("id", id)
     .maybeSingle();
-  const { data: ba } = await supabase
-    .from("bank_account")
-    .select("bank_name")
-    .eq("id", bankAccountId)
-    .maybeSingle();
   if (p) {
+    const { data: ba } = p.pay_bank_account_id
+      ? await supabase.from("bank_account").select("bank_name").eq("id", p.pay_bank_account_id).maybeSingle()
+      : { data: null };
+    const total = Number(p.total_krw);
     await notifyKakaoWork(
       `💸 결제 완료 · ${BOOK_LABEL[p.book as Book]}\n` +
         `매입처: ${(p.partner as { name?: string } | null)?.name ?? "—"}\n` +
-        `금액: ${fmtWon(p.total_krw as number)}\n` +
+        (paid > 0 && paid >= total
+          ? `금액: ${fmtWon(total)} (이미 나간 출금으로 처리)`
+          : `금액: ${fmtWon(total - paid)}` + (paid > 0 ? ` (기지급 ${fmtWon(paid)} 제외)` : "")) +
+        `\n` +
         `통장: ${(ba as { bank_name?: string } | null)?.bank_name ?? "—"}\n` +
         `문서: ${p.doc_no}\n` +
         adminUrl(`/${p.book}/purchases/${id}`),
@@ -381,28 +425,35 @@ export async function markPurchasePaid(
   return { ok: true };
 }
 
-export async function deletePurchase(id: string): Promise<PurchaseActionResult> {
+export type PurchasePaid = { paid: number; lastTxnOn: string | null; lastAccountId: string | null; total: number | null };
+
+/** 이 매입에서 이미 나간 출금(통장 출금, 음수) — 합과 마지막 출금의 날짜·통장. 결제 다이얼로그·알림용. */
+async function purchasePaid(supabase: Awaited<ReturnType<typeof createClient>>, id: string): Promise<PurchasePaid> {
+  // 지금 합계(화면이 오래됐을 수 있음)와 같은 책 출금 — 결제 RPC(pay_purchase_with_payment)와 같은 기준.
+  const { data: pur } = await supabase.from("purchase").select("book, total_krw").eq("id", id).is("deleted_at", null).maybeSingle();
+  if (!pur) return { paid: 0, lastTxnOn: null, lastAccountId: null, total: null };
+  const { data } = await supabase
+    .from("bank_transaction")
+    .select("amount_krw, txn_on, bank_account_id")
+    .eq("purchase_id", id)
+    .eq("book", pur.book)
+    .is("deleted_at", null)
+    .lt("amount_krw", 0)
+    .order("txn_on", { ascending: false })
+    .order("created_at", { ascending: false });
+  const rows = (data ?? []) as Array<{ amount_krw: number; txn_on: string; bank_account_id: string }>;
+  return {
+    paid: rows.reduce((a, r) => a - Number(r.amount_krw), 0),
+    lastTxnOn: rows[0]?.txn_on ?? null,
+    lastAccountId: rows[0]?.bank_account_id ?? null,
+    total: Number(pur.total_krw),
+  };
+}
+
+/** 결제 다이얼로그 — 이미 나간 출금(지운 매입에서 옮겨 온 결제)이 있으면 남은 금액만 출금으로 기록됨을 알려 준다. */
+export async function getPurchasePaid(id: string): Promise<PurchasePaid> {
   const supabase = await createClient();
-  // 삭제 전 정보 확보(soft-delete 후엔 조회 제외됨) — 알림용.
-  const { data: p } = await supabase
-    .from("purchase")
-    .select("doc_no, book, total_krw, partner:partner(name)")
-    .eq("id", id)
-    .maybeSingle();
-  // RPC가 manager 권한을 강제(soft-delete가 staff UPDATE 정책으로 우회되던 문제 차단).
-  const { error } = await supabase.rpc("soft_delete_purchase", { p_id: id });
-  if (error) return { ok: false, error: friendly(error.message) };
-  revalidateTransactionPaths("purchases");
-  // 매입 취소(삭제) 알림(best-effort)
-  if (p) {
-    await notifyKakaoWork(
-      `🔴 매입 취소 · ${BOOK_LABEL[p.book as Book]}\n` +
-        `매입처: ${(p.partner as { name?: string } | null)?.name ?? "—"}\n` +
-        `금액: ${fmtWon(p.total_krw as number)}\n` +
-        `문서: ${p.doc_no}`,
-    );
-  }
-  return { ok: true };
+  return purchasePaid(supabase, id);
 }
 
 /** 세금계산서 수취 토글 — done이면 오늘 날짜, 아니면 null(라이프사이클 단계 표시용 단순 플래그). */
@@ -410,8 +461,9 @@ export async function togglePurchaseTaxInvoiceReceived(id: string, done: boolean
   const supabase = await createClient();
   const { error } = await supabase
     .from("purchase")
-    .update({ tax_invoice_received_on: done ? new Date().toISOString().slice(0, 10) : null })
-    .eq("id", id);
+    .update({ tax_invoice_received_on: done ? kstToday() : null })
+    .eq("id", id)
+    .is("deleted_at", null);
   if (error) return { ok: false, error: friendly(error.message) };
   revalidateTransactionPaths("purchases");
   return { ok: true };

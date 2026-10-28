@@ -74,7 +74,22 @@ export default async function PurchasesPage({
       .order("name"),
   ]);
 
-  const purchases = (purRes.data as unknown as PurchaseListRow[]) ?? [];
+  const loaded = (purRes.data as unknown as PurchaseListRow[]) ?? [];
+  // 결제완료 전인데 출금이 붙은 매입(지운 매입에서 옮겨 온 결제) — 일부 지급·다 낸 상태를 출금 기준으로.
+  const openIds = loaded.filter((p) => !p.paid_on).map((p) => p.id);
+  const paidMap = new Map<string, number>();
+  for (let i = 0; i < openIds.length; i += 100) {
+    const { data } = await supabase
+      .from("bank_transaction")
+      .select("purchase_id, amount_krw")
+      .in("purchase_id", openIds.slice(i, i + 100))
+      .is("deleted_at", null)
+      .lt("amount_krw", 0);
+    for (const r of (data ?? []) as Array<{ purchase_id: string; amount_krw: number }>) {
+      paidMap.set(r.purchase_id, (paidMap.get(r.purchase_id) ?? 0) - Number(r.amount_krw));
+    }
+  }
+  const purchases = loaded.map((p) => (paidMap.has(p.id) ? { ...p, paid_krw: paidMap.get(p.id) } : p));
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">

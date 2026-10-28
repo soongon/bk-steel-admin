@@ -27,7 +27,7 @@ async function main() {
   const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }); // KST 'YYYY-MM-DD'
 
   // 미수 연체(매출): 수금예정일 지남 + 미수금(settled_on null) + 취소 아님
-  const { data: sData } = await supabase
+  const { data: sData, error: sErr } = await supabase
     .from("sale")
     .select("id, doc_no, book, total_krw, payment_due_on, partner:partner(name)")
     .is("deleted_at", null)
@@ -36,16 +36,20 @@ async function main() {
     .is("settled_on", null)
     .neq("status", "cancelled")
     .order("payment_due_on");
-  // 결제 연체(매입): 결제예정일 지남 + 미지급(paid_on null) + 취소 아님
-  const { data: pData } = await supabase
+  // 결제 연체(매입): 결제예정일 지남 + 미지급(paid_on null). 매입 상태(purchase_status)엔 '취소'가 없다 —
+  // 예전 .neq("status","cancelled") 는 enum 오류(22P02)로 조회 자체가 실패해 매입 연체가 한 번도 안 나갔다.
+  const { data: pData, error: pErr } = await supabase
     .from("purchase")
-    .select("doc_no, book, total_krw, payment_due_on, partner:partner(name)")
+    .select("id, doc_no, book, total_krw, payment_due_on, partner:partner(name)")
     .is("deleted_at", null)
     .not("payment_due_on", "is", null)
     .lt("payment_due_on", today)
     .is("paid_on", null)
-    .neq("status", "cancelled")
     .order("payment_due_on");
+  if (sErr || pErr) {
+    // 한쪽이 실패하면 반쪽 알림이 '연체 없음'처럼 보이지 않게 — 실패로 끝낸다(cron 로그에 남음).
+    throw new Error(`연체 조회 실패 — ${[sErr && `매출: ${sErr.message}`, pErr && `매입: ${pErr.message}`].filter(Boolean).join(" / ")}`);
+  }
 
   // 이미 들어온 입금(지운 매출에서 옮겨 온 수금 등)은 빼고 남은 미수만 — 다 받은 매출은 알리지 않는다.
   const overdueSales = (sData ?? []) as Record<string, any>[];
@@ -64,7 +68,23 @@ async function main() {
   const sales = overdueSales
     .map((r) => ({ ...r, total_krw: Number(r.total_krw) - (received.get(r.id) ?? 0) }))
     .filter((r) => r.total_krw > 0);
-  const purchases = (pData ?? []) as Record<string, any>[];
+  // 이미 나간 출금(지운 매입에서 옮겨 온 결제 등)은 빼고 남은 미지급만 — 다 낸 매입은 알리지 않는다.
+  const overduePurchases = (pData ?? []) as Record<string, any>[];
+  const paid = new Map<string, number>();
+  for (let i = 0; i < overduePurchases.length; i += 100) {
+    const { data } = await supabase
+      .from("bank_transaction")
+      .select("purchase_id, amount_krw")
+      .in("purchase_id", overduePurchases.slice(i, i + 100).map((r) => r.id))
+      .is("deleted_at", null)
+      .lt("amount_krw", 0);
+    for (const r of (data ?? []) as Array<{ purchase_id: string; amount_krw: number }>) {
+      paid.set(r.purchase_id, (paid.get(r.purchase_id) ?? 0) - Number(r.amount_krw));
+    }
+  }
+  const purchases = overduePurchases
+    .map((r) => ({ ...r, total_krw: Number(r.total_krw) - (paid.get(r.id) ?? 0) }))
+    .filter((r) => r.total_krw > 0);
   if (sales.length === 0 && purchases.length === 0) {
     console.log("연체 없음 — 알림 생략");
     return;

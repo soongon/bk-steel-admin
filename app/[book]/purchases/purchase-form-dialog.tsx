@@ -285,6 +285,19 @@ export function PurchaseFormDialog({
         return;
       }
     }
+    // 결제완료·홈택스 계산서 연결 매입은 자료종류를 바꿔 세율(과세 10% ↔ 면세·무자료 0%)이 달라지면 서버가 거부한다 —
+    // 품목만 먼저 저장되고 나머지가 실패하지 않게 여기서 미리 막는다(updatePurchaseHeader 와 같은 기준).
+    if (editing && (editing.paid_on || editing.invoice) && (editing.subtotal_krw ?? 0) !== 0) {
+      const rateOf = (doc: boolean, type: string) => (!doc || type === "none" || type === "invoice" ? 0 : 10);
+      if (rateOf(isDocumented, taxDocType) !== rateOf(editing.is_documented, editing.tax_doc_type)) {
+        setError(
+          editing.paid_on
+            ? "결제완료된 매입은 자료종류를 바꿔 합계를 바꿀 수 없습니다 — 새 매입을 만들고 이 매입을 삭제(결제·계산서 옮기기)하세요."
+            : "홈택스 계산서와 연결된 매입은 자료종류를 바꿔 합계를 바꿀 수 없습니다(국세청 계산서 금액 기준).",
+        );
+        return;
+      }
+    }
     if (editing && canEditLines && linesDirty) {
       if (allLines.length === 0) {
         setError("품목을 1개 이상 남겨주세요.");

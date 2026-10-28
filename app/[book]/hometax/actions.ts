@@ -63,6 +63,10 @@ export async function classifyAndProcess(nts: string, kind: SupplyKind): Promise
   const { data: inv, error } = await supabase.from("hometax_invoice").select("*").eq("nts_confirm_num", nts).single();
   if (error || !inv) return { ok: false, error: "수집본을 찾을 수 없습니다." };
   if (inv.direction !== "buy") return { ok: false, error: "매입 계산서만 분류할 수 있습니다." };
+  // 아직 처리 안 된 '분류 대기' 행만 — 옛 화면·두 번 누르기로 이미 연결·무시(매입 삭제)된 행을 다시 처리하지 않게.
+  if (inv.match_status !== "candidate" || inv.purchase_id || inv.receipt_id || !String(inv.notes ?? "").startsWith("분류 대기")) {
+    return { ok: false, error: "이미 처리된 계산서입니다 — 화면을 새로고침하세요." };
+  }
   const book = inv.book as "bk" | "sl";
   const { data: job } = await supabase
     .from("hometax_collection_job")
@@ -86,4 +90,24 @@ export async function classifyAndProcess(nts: string, kind: SupplyKind): Promise
     if (job) await supabase.from("hometax_collection_job").update({ state: "failed", error: (e as Error).message, finished_at: new Date().toISOString() }).eq("id", job.id);
     return { ok: false, error: e instanceof Error ? e.message : "처리 실패" };
   }
+}
+
+/**
+ * 지운 매입의 공급자 계산서(수집본) 정리 완료 — 공급자 수정세금계산서(−)를 받았거나 대체 매입에 반영했으면 표시한다.
+ * close_deleted_purchase_invoice RPC(0095): 그 책 manager 이상, 지운 매입에 연결된 매입 계산서만.
+ */
+export async function closeDeletedPurchaseInvoice(hometaxInvoiceId: string, note: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("close_deleted_purchase_invoice", {
+    p_hometax_invoice_id: hometaxInvoiceId,
+    p_note: note.trim().slice(0, 300) || null,
+  });
+  if (error) {
+    return {
+      ok: false,
+      error: error.message.includes("Could not find the function") ? "정리 기능(마이그레이션 0095)이 DB에 아직 적용되지 않았습니다." : error.message,
+    };
+  }
+  for (const b of ["all", "bk", "sl"]) revalidatePath(`/${b}/hometax`);
+  return { ok: true };
 }

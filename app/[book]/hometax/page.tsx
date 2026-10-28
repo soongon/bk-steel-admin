@@ -16,6 +16,7 @@ import { BookBadge } from "@/components/admin/book-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { HometaxCollectButton } from "./collect-button";
 import { ClassifyButtons } from "./classify-buttons";
+import { ClosePurchaseInvoiceButton } from "./close-purchase-invoice-button";
 import { looksLikeInventory } from "@/lib/hometax/reconcile-buy";
 
 // [지금 수집]은 팝빌 작업 완료를 기다리므로(보통 수십 초) 이 라우트의 서버 액션 상한을 넉넉히.
@@ -30,6 +31,19 @@ function shiftMonth(month: string, delta: number): string {
   const idx = y * 12 + (m - 1) + delta;
   return `${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, "0")}`;
 }
+
+/** 수집본에 연결된 거래(매출·매입) — 지운 거래면 배지로 알린다(FK 힌트: 0094·0095 이후 경로가 여럿). */
+type LinkedDoc = { doc_no: string; deleted_at: string | null } | null;
+type LinkedRow = HometaxInvoiceRow & { sale: LinkedDoc; purchase: LinkedDoc };
+type OrphanBuyRow = {
+  id: string;
+  book: Book;
+  nts_confirm_num: string;
+  write_date: string;
+  supplier: { name?: string | null } | null;
+  total_amount: number;
+  purchase: { id: string; doc_no: string; deleted_at: string | null } | null;
+};
 
 /**
  * 홈택스 대사 — 팝빌 홈택스 연계로 수집한 (세금)계산서 원장. 1단계: 수집·조회·수집 이력.
@@ -64,11 +78,11 @@ export default async function HometaxPage({
   }
 
   const supabase = await createClient();
-  const [rowsRes, jobsRes, countsRes] = await Promise.all([
+  const [rowsRes, jobsRes, countsRes, orphanRes] = await Promise.all([
     supabase
       .from("hometax_invoice")
       .select(
-        "id, book, direction, nts_confirm_num, kind, tax_type, issue_type, purpose, modify_code, orig_nts_confirm_num, write_date, issue_date, send_date, supplier, invoicee, supply_amount, tax_amount, total_amount, item_summary, items, match_status, sale_id, purchase_id, tax_invoice_id, notes, collected_at",
+        "id, book, direction, nts_confirm_num, kind, tax_type, issue_type, purpose, modify_code, orig_nts_confirm_num, write_date, issue_date, send_date, supplier, invoicee, supply_amount, tax_amount, total_amount, item_summary, items, match_status, sale_id, purchase_id, tax_invoice_id, notes, collected_at, sale:sale!hometax_invoice_sale_id_fkey(doc_no, deleted_at), purchase:purchase!hometax_invoice_purchase_id_fkey(doc_no, deleted_at)",
       )
       .in("book", books)
       .eq("direction", dir)
@@ -91,8 +105,24 @@ export default async function HometaxPage({
       .is("deleted_at", null)
       .gte("write_date", `${month}-01`)
       .lt("write_date", nextMonthStart(month)),
+    // 지운 매입에 남은 공급자 계산서 — 달과 무관하게 정리할 때까지(0095).
+    supabase
+      .from("hometax_invoice")
+      .select(
+        "id, book, nts_confirm_num, write_date, supplier, total_amount, purchase:purchase!hometax_invoice_purchase_id_fkey!inner(id, doc_no, deleted_at)",
+      )
+      .in("book", books)
+      .eq("direction", "buy")
+      .is("deleted_at", null)
+      .is("resolved_at", null)
+      .not("purchase.deleted_at", "is", null)
+      .order("write_date", { ascending: true })
+      .limit(500),
   ]);
-  const rows = (rowsRes.data ?? []) as unknown as HometaxInvoiceRow[];
+  const rows = (rowsRes.data ?? []) as unknown as LinkedRow[];
+  // 0095 미적용(resolved_at 없음)이면 빈 목록 — 표(rowsRes)는 새 열을 읽지 않으니 화면은 그대로 돈다.
+  const orphans = orphanRes.error ? [] : ((orphanRes.data ?? []) as unknown as OrphanBuyRow[]);
+  const unresolved = new Set(orphans.map((o) => o.id));
   const jobs = (jobsRes.data ?? []) as unknown as HometaxJobRow[];
   const dirCounts: Record<HometaxDirection, number> = { sell: 0, buy: 0 };
   for (const r of (countsRes.data ?? []) as Array<{ direction: HometaxDirection }>) dirCounts[r.direction] = (dirCounts[r.direction] ?? 0) + 1;
@@ -133,6 +163,39 @@ export default async function HometaxPage({
             ? "hometax_invoice 테이블이 아직 없습니다 — 마이그레이션 0084 를 적용해 주세요."
             : `조회 실패: ${err.message}`}
         </div>
+      ) : null}
+
+      {orphans.length > 0 ? (
+        <section className="flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50/60 p-3 dark:border-amber-900 dark:bg-amber-950/20">
+          <div className="text-sm font-medium text-amber-800 dark:text-amber-200">
+            지운 매입의 계산서 — 정리 필요 ({orphans.length}건)
+          </div>
+          <p className="text-xs text-muted-foreground">
+            매입을 지웠지만 공급자 계산서는 국세청에 남아 있습니다. 공급자에게 수정세금계산서(−)를 받거나 다른 매입에 반영한 뒤 [정리
+            완료]를 누르세요. 다음 대사에서 매입을 다시 만들지 않습니다. 지운 매입과 무관한 새 거래의 계산서라면 [정리 완료] 대신 매입을
+            새로 등록하세요 — 다음 대사가 그 매입 쪽으로 판단합니다.
+          </p>
+          <ul className="flex flex-col divide-y rounded-md border bg-card text-sm">
+            {orphans.map((o) => (
+              <li key={o.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+                {view === "all" ? <BookBadge book={o.book} /> : null}
+                <span className="font-mono text-xs tabular-nums">{o.write_date}</span>
+                <span className="min-w-0 flex-1 truncate">{o.supplier?.name ?? "—"}</span>
+                <span className="text-xs text-muted-foreground">
+                  지운 매입 <span className="font-mono">{o.purchase?.doc_no ?? "—"}</span>
+                </span>
+                <span className="tabular-nums">{fmtKrw(Number(o.total_amount))}</span>
+                <span className="font-mono text-[10px] text-muted-foreground" title="국세청 승인번호">
+                  {o.nts_confirm_num}
+                </span>
+                <ClosePurchaseInvoiceButton
+                  hometaxInvoiceId={o.id}
+                  label={`${o.supplier?.name ?? "공급자"} ${o.write_date} ${fmtKrw(Number(o.total_amount))} (지운 매입 ${o.purchase?.doc_no ?? "—"})`}
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       {/* 방향 탭 */}
@@ -192,6 +255,12 @@ export default async function HometaxPage({
                 const party = dir === "sell" ? r.invoicee : r.supplier;
                 const st = HOMETAX_MATCH_STATUS_LABEL[r.match_status] ?? { label: r.match_status, cls: "" };
                 const isModify = (r.modify_code ?? 0) !== 0;
+                // 연결된 거래가 지워졌으면 — 매입은 정리 전/후, 매출은 계산서 화면에서 정리.
+                const gone = dir === "buy" ? r.purchase : r.sale;
+                const goneLabel =
+                  gone?.deleted_at
+                    ? `지운 ${dir === "buy" ? "매입" : "매출"} ${gone.doc_no}${dir === "buy" ? (unresolved.has(r.id) ? " · 정리 필요" : " · 정리됨") : ""}`
+                    : null;
                 return (
                   <TableRow key={r.id} className={isModify ? "bg-amber-50/40 dark:bg-amber-950/10" : undefined}>
                     <TableCell className="text-xs tabular-nums">
@@ -230,6 +299,19 @@ export default async function HometaxPage({
                     </TableCell>
                     <TableCell className="text-center">
                       <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${st.cls}`}>{st.label}</span>
+                      {goneLabel ? (
+                        <div className="mt-1">
+                          <span
+                            className={`inline-flex h-4 items-center whitespace-nowrap rounded px-1.5 text-[10px] ${
+                              dir === "buy" && unresolved.has(r.id)
+                                ? "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                                : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300"
+                            }`}
+                          >
+                            {goneLabel}
+                          </span>
+                        </div>
+                      ) : null}
                       {dir === "buy" && r.match_status === "candidate" && (r.notes ?? "").startsWith("분류 대기") ? (
                         <div className="mt-1">
                           <ClassifyButtons nts={r.nts_confirm_num} supplierName={r.supplier?.name ?? null} suggestion={looksLikeInventory(r.item_summary) ? "inventory" : "expense"} />

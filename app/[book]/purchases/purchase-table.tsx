@@ -30,7 +30,8 @@ import {
   type PurchaseRow,
   type SiteOption,
 } from "./purchase-form-dialog";
-import { deletePurchase, markPurchaseReceived } from "./actions";
+import { markPurchaseReceived } from "./actions";
+import { PurchaseDeleteDialog } from "./purchase-delete-dialog";
 import { fmtKrw } from "@/lib/format";
 import { isHometaxPlaceholderLine } from "@/lib/purchase-line-draft";
 import { purchaseLifecycleProgress } from "@/lib/purchase-lifecycle";
@@ -82,6 +83,8 @@ export type PurchaseListRow = {
   site_id: string | null;
   site_name: string | null;
   notes: string | null;
+  /** 이미 나간 출금(지운 매입에서 옮겨 온 결제 등) — 결제완료 전 매입의 일부 지급 표시. */
+  paid_krw?: number;
   /** 상세에서 남긴 메모 기록(0081) — 건수와 가장 최근 1건. */
   memo_count?: Array<{ count: number }>;
   latest_memo?: Array<{ body: string; created_at: string }>;
@@ -121,12 +124,22 @@ function ProgressBadge({ p }: { p: PurchaseListRow }) {
   );
 }
 
-function PaidBadge({ paidOn, dueOn }: { paidOn: string | null; dueOn: string | null }) {
+function PaidBadge({ paidOn, dueOn, paid, total }: { paidOn: string | null; dueOn: string | null; paid: number; total: number }) {
   if (paidOn) {
     return (
       <span className="inline-flex h-5 items-center rounded-full bg-emerald-100 px-2 text-xs text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
         결제 {paidOn}
       </span>
+    );
+  }
+  // 지운 매입에서 옮겨 온 출금 — 다 냈으면 '출금 완료', 일부면 남은 금액.
+  if (paid > 0) {
+    return paid >= total ? (
+      <span className="inline-flex h-5 items-center rounded-full bg-emerald-100 px-2 text-xs text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+        출금 완료
+      </span>
+    ) : (
+      <span className="text-xs text-amber-700 dark:text-amber-400">남은 {fmtKrw(total - paid)}</span>
     );
   }
   if (dueOn) {
@@ -159,6 +172,7 @@ export function PurchaseTable({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PurchaseRow | null>(null);
   const [payTarget, setPayTarget] = useState<PurchaseListRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PurchaseListRow | null>(null);
   const [, startTransition] = useTransition();
 
   function openCreate() {
@@ -199,12 +213,7 @@ export function PurchaseTable({
     setPayTarget(p);
   }
   function handleDelete(p: PurchaseListRow) {
-    if (!window.confirm(`[${p.doc_no}] 완전 삭제? (soft delete)`)) return;
-    startTransition(async () => {
-      const r = await deletePurchase(p.id);
-      if (r.ok) toast.success("삭제됨");
-      else toast.error(r.error);
-    });
+    setDeleteTarget(p);
   }
 
   return (
@@ -309,7 +318,7 @@ export function PurchaseTable({
                       <ProgressBadge p={p} />
                     </TableCell>
                     <TableCell className="text-center">
-                      <PaidBadge paidOn={p.paid_on} dueOn={p.payment_due_on} />
+                      <PaidBadge paidOn={p.paid_on} dueOn={p.payment_due_on} paid={p.paid_krw ?? 0} total={p.total_krw} />
                     </TableCell>
                     <TableCell>
                       {/* 등록 메모(purchase.notes) + 상세에서 남긴 기록 건수(툴팁에 최근 1건) */}
@@ -374,6 +383,14 @@ export function PurchaseTable({
           purchase={payTarget}
           bankAccounts={bankAccounts}
           onClose={() => setPayTarget(null)}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <PurchaseDeleteDialog
+          purchaseId={deleteTarget.id}
+          docNo={deleteTarget.doc_no}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={() => setDeleteTarget(null)}
         />
       ) : null}
     </>

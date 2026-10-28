@@ -110,6 +110,9 @@ export function describeGroup(d: Pick<BuyDecision, "group" | "groupRole">): stri
 export type BuyReport = { decisions: BuyDecision[]; summary: Record<string, number> };
 
 type PurchaseNts = { id: string; doc_no: string; tax_doc_no: string | null; origin_ref: string | null };
+/** 승인번호 없는 지운 자료 매입 — 수취 표시만 했거나 계산서가 아직 연결 전에 지운 것(0095). 거래처·합계·날짜로 알아본다. */
+type DeletedNoNts = { id: string; doc_no: string; partner_id: string | null; total: number; dates: string[]; linkedNts: Set<string> };
+const isNts = (v: unknown) => /^[0-9a-z]{24}$/.test(normalizeNts(v));
 type HometaxLite = { nts: string; write_date: string; total: number; isModify: boolean; match_status: string; purchase_id: string | null; biz: string; name: string | null };
 
 async function loadSystem(sb: SupabaseClient, book: Book, from: string, to: string) {
@@ -125,8 +128,12 @@ async function loadSystem(sb: SupabaseClient, book: Book, from: string, to: stri
     sb.from("partner").select("id, name, business_no, supply_kind").is("deleted_at", null),
     // 승인번호를 이미 가진 살아 있는 매입(기간 무관) — 옮겨 받은 계산서도 여기서 잡는다(0095).
     sb.from("purchase").select("id, doc_no, tax_doc_no, origin_ref").eq("book", book).is("deleted_at", null).or("tax_doc_no.not.is.null,origin_ref.not.is.null"),
-    // 지운 매입 — 그 계산서로 매입을 되살리지 않게(0095).
-    sb.from("purchase").select("id, doc_no, tax_doc_no, origin_ref").eq("book", book).not("deleted_at", "is", null),
+    // 지운 매입 — 그 계산서로 매입을 되살리지 않게(0095). 승인번호 없는 것은 거래처·합계·날짜로 알아본다.
+    sb
+      .from("purchase")
+      .select("id, doc_no, tax_doc_no, origin_ref, partner_id, total_krw, is_documented, ordered_on, delivered_on, tax_invoice_received_on")
+      .eq("book", book)
+      .not("deleted_at", "is", null),
     // 수집본 매입 행(±10일 여유) — 취소·재발행 묶기의 당초 작성일, 엑셀엔 없는데 DB 에 남은 (−) 후보.
     sb
       .from("hometax_invoice")
@@ -151,11 +158,38 @@ async function loadSystem(sb: SupabaseClient, book: Book, from: string, to: stri
     }
     return m;
   };
+  // 승인번호 없는 지운 자료 매입 + 이미 그 매입을 가리키는 수집본(다른 계산서가 이미 잡혔으면 그 매입은 더 쓰지 않는다).
+  const deletedRows = (deletedRes.data ?? []) as Array<
+    PurchaseNts & { partner_id: string | null; total_krw: number; is_documented: boolean; ordered_on: string; delivered_on: string | null; tax_invoice_received_on: string | null }
+  >;
+  const noNtsRows = deletedRows.filter((d) => d.is_documented && !normalizeNts(d.tax_doc_no) && !isNts(d.origin_ref));
+  const linkedNts = new Map<string, Set<string>>();
+  for (let i = 0; i < noNtsRows.length; i += 100) {
+    const { data: lk, error: lkErr } = await sb
+      .from("hometax_invoice")
+      .select("purchase_id, nts_confirm_num")
+      .in("purchase_id", noNtsRows.slice(i, i + 100).map((d) => d.id));
+    if (lkErr) throw new Error(`지운 매입 연결 수집본 조회 실패: ${lkErr.message}`);
+    for (const r of lk ?? []) {
+      const k = String(r.purchase_id);
+      linkedNts.set(k, (linkedNts.get(k) ?? new Set()).add(normalizeNts(r.nts_confirm_num)));
+    }
+  }
   return {
     purchases: (pRes.data ?? []).map((r) => ({ ...r, total_krw: Number(r.total_krw ?? 0) })) as PurchaseLite[],
     partners: (partnersRes.data ?? []) as PartnerLite[],
     liveByNts: byNts((liveNtsRes.data ?? []) as PurchaseNts[]),
-    deletedByNts: byNts((deletedRes.data ?? []) as PurchaseNts[]),
+    deletedByNts: byNts(deletedRows),
+    deletedNoNts: noNtsRows.map(
+      (d): DeletedNoNts => ({
+        id: d.id,
+        doc_no: d.doc_no,
+        partner_id: d.partner_id,
+        total: Number(d.total_krw ?? 0),
+        dates: [d.ordered_on, d.delivered_on, d.tax_invoice_received_on].filter((x): x is string => !!x),
+        linkedNts: linkedNts.get(d.id) ?? new Set(),
+      }),
+    ),
     hometaxRows: (htRes.data ?? []).map((h) => {
       const sup = (h.supplier ?? {}) as { biz_no?: string; name?: string | null };
       return {
@@ -222,7 +256,7 @@ export async function planBuy(sb: SupabaseClient, book: Book, rows: ExcelInvoice
   const buyRows = rows.filter((r) => r.insert.direction === "buy");
   const dates = buyRows.map((r) => r.insert.write_date).sort();
   if (dates.length === 0) return { decisions: [], summary: {} };
-  const { purchases, partners, liveByNts, deletedByNts, hometaxRows } = await loadSystem(sb, book, dates[0], dates[dates.length - 1]);
+  const { purchases, partners, liveByNts, deletedByNts, deletedNoNts, hometaxRows } = await loadSystem(sb, book, dates[0], dates[dates.length - 1]);
   const byBiz = new Map<string, PartnerLite[]>();
   const byName = new Map<string, PartnerLite[]>();
   for (const p of partners) {
@@ -315,6 +349,42 @@ export async function planBuy(sb: SupabaseClient, book: Book, rows: ExcelInvoice
     return { ...common, case: "D_modify", status: "candidate", note: `${who} — 그룹(당초 ${o} · 매입 ${g.purchaseDocNo}) 순합계 ${won(g.net)} ≠ 당초 ${won(g.origTotal)} · 차액 ${signed(g.diff)} → 금액 변동·환입, 매입 금액 확인 뒤 사람이 처리` };
   };
 
+  // 승인번호 없는 지운 매입 대체 판정 — 같은 거래처·같은 합계(공급자 세액 끝전 10원까지)·날짜(발주·입고·수취일) ±31일.
+  // 사람이 볼 후보만 만든다(매입 생성·연결 안 함). 다음이면 하지 않는다:
+  //   · 비용 업체 — 계산서는 영수증(R_create) 대상이고, 지운 매입은 그 반대 근거가 못 된다.
+  //   · 살아 있는 같은 금액 미증빙 자료 매입이 있음 — 대체 매입·수취 표시를 옮겨 받은 매입이 우선(평소 P_link·D_dup 판정).
+  //   · 이미 다른 계산서가 그 지운 매입을 가리킴.
+  // 한 지운 매입에 이번 파일의 여러 행이 걸리면 어느 것인지 모르니 매입 연결 없이 후보로만(1:1 일 때만 연결).
+  const near = (a: number, b: number) => Math.abs(a - b) <= 10;
+  const deletedMatches = (partner: PartnerLite | null, ins: HometaxInvoiceInsert) => {
+    if (!partner || partner.supply_kind === "expense") return [];
+    const liveSame = purchases.some(
+      (p) =>
+        p.partner_id === partner.id &&
+        p.is_documented &&
+        !p.tax_doc_no &&
+        !covered.has(p.id) &&
+        near(p.total_krw, ins.total_amount) &&
+        daysBetween(p.ordered_on, ins.write_date) <= 180,
+    );
+    if (liveSame) return [];
+    const nts = normalizeNts(ins.nts_confirm_num);
+    return deletedNoNts.filter(
+      (d) =>
+        d.partner_id === partner.id &&
+        near(d.total, ins.total_amount) &&
+        d.dates.some((x) => daysBetween(x, ins.write_date) <= 31) &&
+        [...d.linkedNts].every((n) => n === nts),
+    );
+  };
+  const deletedHitCount = new Map<string, number>();
+  for (const r of eligible) {
+    const ins = r.insert;
+    if ((ins.modify_code ?? 0) !== 0 || grouped.byNts.has(ins.nts_confirm_num)) continue;
+    for (const d of deletedMatches(findPartner(ins.supplier.biz_no, ins.supplier.name), ins)) deletedHitCount.set(d.id, (deletedHitCount.get(d.id) ?? 0) + 1);
+  }
+  const claimedDeleted = new Set<string>();
+
   // 3) 행마다 결정
   for (const r of buyRows) {
     const ins = r.insert;
@@ -343,6 +413,18 @@ export async function planBuy(sb: SupabaseClient, book: Book, rows: ExcelInvoice
     if (exact.length === 1) {
       covered.add(exact[0].id);
       decisions.push({ ...base, case: "P_link", status: "linked", partner, purchaseId: exact[0].id, purchaseDocNo: exact[0].doc_no, note: `기존 매입 ${exact[0].doc_no} 금액 일치 → 승인번호 연결` });
+      continue;
+    }
+    // 승인번호 없는 지운 매입의 계산서 — 매입을 되살리지(P_create) 않고 사람이 본다(홈택스 화면 '정리 필요').
+    const gone = deletedMatches(partner, ins);
+    if (gone.length > 0) {
+      const one = gone.length === 1 && (deletedHitCount.get(gone[0].id) ?? 0) <= 1 && !claimedDeleted.has(gone[0].id) ? gone[0] : null;
+      if (one) claimedDeleted.add(one.id);
+      decisions.push(
+        one
+          ? { ...base, case: "D_deleted", status: "candidate", partner, purchaseId: one.id, purchaseDocNo: one.doc_no, note: `지운 매입 ${one.doc_no}(승인번호 없음)과 거래처·합계·날짜 일치 — 공급자 수정세금계산서(−)·대체 매입 확인(자동 처리 안 함)` }
+          : { ...base, case: "D_deleted", status: "candidate", partner, note: `지운 매입 ${gone.map((g) => g.doc_no).join(", ")}과 거래처·합계 일치(여럿) — 어느 매입의 계산서인지 확인(자동 처리 안 함)` },
+      );
       continue;
     }
     // 중복 가드: 같은 금액 매입이 180일 안에(증빙 있든 없든, 이미 짝지어졌든)
@@ -476,7 +558,7 @@ export async function applyBuy(sb: SupabaseClient, book: Book, rows: ExcelInvoic
   const byNts = new Map(rows.map((r) => [r.insert.nts_confirm_num, r]));
   // 결정에만 있는 승인번호(DB 에만 있던 (−) 후보)·묶음의 당초 장도 이전 상태를 읽어 둔다.
   const ntsList = [...new Set([...rows.map((r) => r.insert.nts_confirm_num), ...report.decisions.flatMap((d) => [d.nts, ...(d.group ? [d.group.origNts] : [])])])];
-  const { data: existing } = await sb.from("hometax_invoice").select("nts_confirm_num, match_status, sale_id, tax_invoice_id, notes").in("nts_confirm_num", ntsList);
+  const { data: existing } = await sb.from("hometax_invoice").select("nts_confirm_num, match_status, sale_id, tax_invoice_id, purchase_id, receipt_id, notes").in("nts_confirm_num", ntsList);
   const existingMap = new Map((existing ?? []).map((e) => [String(e.nts_confirm_num), e]));
   const partnerCache = new Map<string, string>();
   const groupsDone = new Set<string>(); // purchaseId — 묶음당 매입 갱신·메모는 한 번
@@ -487,9 +569,17 @@ export async function applyBuy(sb: SupabaseClient, book: Book, rows: ExcelInvoic
     if (!row && !(d.case === "P_group" && d.fromDb)) continue;
     const ins = row?.insert ?? null;
     const prev = existingMap.get(d.nts);
+    // purchase_id·receipt_id 도 남긴다 — 되돌릴 때 이전 연결(예: 지운 매입을 가리키던 D_deleted 후보)을 그대로 복원(0095).
     const prevState = prev
-      ? { match_status: String(prev.match_status), sale_id: (prev.sale_id as string | null) ?? null, tax_invoice_id: (prev.tax_invoice_id as string | null) ?? null, notes: (prev.notes as string | null) ?? null }
-      : { match_status: "unmatched", sale_id: null, tax_invoice_id: null, notes: null };
+      ? {
+          match_status: String(prev.match_status),
+          sale_id: (prev.sale_id as string | null) ?? null,
+          tax_invoice_id: (prev.tax_invoice_id as string | null) ?? null,
+          purchase_id: (prev.purchase_id as string | null) ?? null,
+          receipt_id: (prev.receipt_id as string | null) ?? null,
+          notes: (prev.notes as string | null) ?? null,
+        }
+      : { match_status: "unmatched", sale_id: null, tax_invoice_id: null, purchase_id: null, receipt_id: null, notes: null };
     let purchaseId: string | null = null;
     let receiptId: string | null = null;
     let notes = d.note;
@@ -596,7 +686,7 @@ export async function applyBuy(sb: SupabaseClient, book: Book, rows: ExcelInvoic
       })
       .eq("nts_confirm_num", d.nts);
     if (uErr) throw new Error(`상태 갱신 실패(${d.nts}): ${uErr.message}`);
-    actions.push({ type: "invoice_status", nts: d.nts, prev: prevState });
+    actions.push({ type: "invoice_status", nts: d.nts, prev: prevState, next: { purchase_id: purchaseId, receipt_id: receiptId } });
   }
   return actions;
 }
