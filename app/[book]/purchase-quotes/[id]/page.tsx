@@ -94,7 +94,7 @@ export default async function PurchaseQuoteDetailPage({ params }: { params: Prom
   const [company, partnersRes, itemsRes, cardsRes] = await Promise.all([
     fetchCompanyProfile(supabase, book),
     supabase.from("partner").select("id, name, representative, address, phone").is("deleted_at", null).eq("is_active", true).order("name"),
-    supabase.from("item").select("id, name").is("deleted_at", null).eq("is_active", true).neq("id", STEEL_CUSTOM_ITEM_ID).order("name"),
+    supabase.from("item").select("id, name, category, rebar_spec_code, length_m").is("deleted_at", null).eq("is_active", true).neq("id", STEEL_CUSTOM_ITEM_ID).order("name"),
     // 판매자 명함(첨부, 0077)
     supabase
       .from("attachment")

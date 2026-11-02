@@ -34,6 +34,7 @@ import {
 import { PurchaseQuoteDocument, type PurchaseQuoteDocumentData } from "@/components/admin/purchase-quote-document";
 import { PurchaseQuoteCardPicker, revokeStagedCards, type StagedCard } from "@/components/admin/purchase-quote-cards";
 import { ReferenceNote } from "@/components/admin/reference-note";
+import { isRebarItem, isSelectableRebarItem } from "@/lib/rebar";
 import { createPurchaseQuote, updatePurchaseQuote } from "@/app/[book]/purchase-quotes/actions";
 
 export type PurchaseQuotePartner = {
@@ -43,7 +44,14 @@ export type PurchaseQuotePartner = {
   address?: string | null;
   phone?: string | null;
 };
-export type PurchaseQuoteItemOption = { id: string; name: string };
+/** 품목명 datalist 선택지 — 철근 길이 숨김(6·9·11M) 판정에 category·spec·length 필요. */
+export type PurchaseQuoteItemOption = {
+  id: string;
+  name: string;
+  category: string;
+  rebar_spec_code: string | null;
+  length_m: number | null;
+};
 
 /** 수정 진입 프리필(book 은 별도 prop, status·doc_no 보존). */
 export type EditingPurchaseQuote = {
@@ -436,7 +444,7 @@ export function PurchaseQuoteDialog({
                     <option key={n} value={n} />
                   ))}
                   {items
-                    .filter((i) => !COMMON_NAMES.includes(i.name))
+                    .filter((i) => !COMMON_NAMES.includes(i.name) && (!isRebarItem(i) || isSelectableRebarItem(i)))
                     .map((i) => (
                       <option key={i.id} value={i.name} />
                     ))}
