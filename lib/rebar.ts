@@ -40,24 +40,23 @@ const gradeMpa = (code: string | null | undefined) => {
   return Number.isFinite(n) ? n : 9999;
 };
 
-/** 철근 정렬: 8M 우선 → 지름(10미리부터) → 길이 → 강종(SD400·SD500·SD600). */
+/** 철근 정렬: 강종(SD400 전부 → SD500 → SD600) → 8M 우선 → 지름(10미리부터) → 길이. */
 export function sortRebar(
   a: { length_m: number | null; rebar_spec_code: string | null; rebar_grade_code?: string | null },
   b: { length_m: number | null; rebar_spec_code: string | null; rebar_grade_code?: string | null },
 ): number {
+  const ga = gradeMpa(a.rebar_grade_code);
+  const gb = gradeMpa(b.rebar_grade_code);
+  if (ga !== gb) return ga - gb;
+  const gc = String(a.rebar_grade_code ?? "").localeCompare(String(b.rebar_grade_code ?? "")); // SD400 < SD400S·W
+  if (gc !== 0) return gc;
   const a8 = Number(a.length_m) === 8 ? 0 : 1;
   const b8 = Number(b.length_m) === 8 ? 0 : 1;
   if (a8 !== b8) return a8 - b8;
   const sa = specMm(a.rebar_spec_code);
   const sb = specMm(b.rebar_spec_code);
   if (sa !== sb) return sa - sb;
-  const la = Number(a.length_m ?? 0);
-  const lb = Number(b.length_m ?? 0);
-  if (la !== lb) return la - lb;
-  const ga = gradeMpa(a.rebar_grade_code);
-  const gb = gradeMpa(b.rebar_grade_code);
-  if (ga !== gb) return ga - gb;
-  return String(a.rebar_grade_code ?? "").localeCompare(String(b.rebar_grade_code ?? "")); // SD400 < SD400S·W
+  return Number(a.length_m ?? 0) - Number(b.length_m ?? 0);
 }
 
 export type RebarCalc = {

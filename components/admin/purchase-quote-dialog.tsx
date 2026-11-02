@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FileTextIcon, PlusIcon, PrinterIcon, SaveIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -34,7 +34,7 @@ import {
 import { PurchaseQuoteDocument, type PurchaseQuoteDocumentData } from "@/components/admin/purchase-quote-document";
 import { PurchaseQuoteCardPicker, revokeStagedCards, type StagedCard } from "@/components/admin/purchase-quote-cards";
 import { ReferenceNote } from "@/components/admin/reference-note";
-import { isRebarItem, isSelectableRebarItem } from "@/lib/rebar";
+import { isRebarItem, isSelectableRebarItem, sortRebar } from "@/lib/rebar";
 import { createPurchaseQuote, updatePurchaseQuote } from "@/app/[book]/purchase-quotes/actions";
 
 export type PurchaseQuotePartner = {
@@ -50,6 +50,7 @@ export type PurchaseQuoteItemOption = {
   name: string;
   category: string;
   rebar_spec_code: string | null;
+  rebar_grade_code: string | null;
   length_m: number | null;
 };
 
@@ -116,6 +117,14 @@ export function PurchaseQuoteDialog({
   defaults?: PurchaseQuoteDefaults | null;
 }) {
   const { partners, items } = sources;
+  // 품목명 추천 — 철근(6·9·11M 제외)을 견적·매출·매입 폼과 같은 순서(SD400 전부 → SD500 → SD600)로 먼저, 그 외는 이름순.
+  const pqItemOptions = useMemo(() => {
+    const rest = items.filter((i) => !COMMON_NAMES.includes(i.name));
+    return [
+      ...rest.filter(isSelectableRebarItem).sort(sortRebar),
+      ...rest.filter((i) => !isRebarItem(i)),
+    ];
+  }, [items]);
   const [selectedBook, setSelectedBook] = useState<Book>(book !== "all" ? book : "sl");
   const company = sources.companies?.[selectedBook] ?? sources.company ?? null;
   const [error, setError] = useState<string | null>(null);
@@ -443,11 +452,9 @@ export function PurchaseQuoteDialog({
                   {COMMON_NAMES.map((n) => (
                     <option key={n} value={n} />
                   ))}
-                  {items
-                    .filter((i) => !COMMON_NAMES.includes(i.name) && (!isRebarItem(i) || isSelectableRebarItem(i)))
-                    .map((i) => (
-                      <option key={i.id} value={i.name} />
-                    ))}
+                  {pqItemOptions.map((i) => (
+                    <option key={i.id} value={i.name} />
+                  ))}
                 </datalist>
               </Field>
               <Field label="규격 · 상태">

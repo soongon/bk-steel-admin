@@ -97,7 +97,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
   };
   const pqSources: PurchaseQuoteSources = {
     partners: activePartners,
-    items: items.filter((i) => i.id !== STEEL_CUSTOM_ITEM_ID).map((i): PurchaseQuoteItemOption => ({ id: i.id, name: i.name, category: i.category, rebar_spec_code: i.rebar_spec_code, length_m: i.length_m })),
+    items: items.filter((i) => i.id !== STEEL_CUSTOM_ITEM_ID).map((i): PurchaseQuoteItemOption => ({ id: i.id, name: i.name, category: i.category, rebar_spec_code: i.rebar_spec_code, rebar_grade_code: i.rebar_grade_code, length_m: i.length_m })),
     companies: pqCompanies,
   };
 

@@ -65,7 +65,7 @@ export default async function PurchaseQuotesPage({
       .is("deleted_at", null)
       .eq("is_active", true)
       .order("name"),
-    supabase.from("item").select("id, name, category, rebar_spec_code, length_m").is("deleted_at", null).eq("is_active", true).neq("id", STEEL_CUSTOM_ITEM_ID).order("name"),
+    supabase.from("item").select("id, name, category, rebar_spec_code, rebar_grade_code, length_m").is("deleted_at", null).eq("is_active", true).neq("id", STEEL_CUSTOM_ITEM_ID).order("name"),
     // 책별 회사정보 — B계좌는 SL 폴백(fetchCompanyProfile)까지 적용해 상세와 같은 공급자로 미리보기.
     Promise.all((view !== "all" ? [view as Book] : [...BOOKS]).map((b) => fetchCompanyProfile(supabase, b))),
   ]);
