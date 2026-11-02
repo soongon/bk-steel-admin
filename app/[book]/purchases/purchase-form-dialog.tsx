@@ -15,7 +15,7 @@ import { Field } from "@/components/admin/field";
 import { PlusIcon, XIcon } from "lucide-react";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
-import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
+import { isRebarItem, isSelectableRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import { fmtKrw, fmtNum } from "@/lib/format";
 import { TAX_DOC_OPTIONS } from "@/lib/tax-doc";
 import {
@@ -123,7 +123,7 @@ export function PurchaseFormDialog({
   const itemOptions = useMemo(
     () =>
       itemKind === "rebar"
-        ? items.filter(isRebarItem).sort(sortRebar)
+        ? items.filter(isSelectableRebarItem).sort(sortRebar)
         : items.filter((i) => !isRebarItem(i)).sort((a, b) => a.name.localeCompare(b.name, "ko")),
     [items, itemKind],
   );

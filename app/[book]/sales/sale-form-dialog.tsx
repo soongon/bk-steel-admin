@@ -18,7 +18,7 @@ import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
 import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
-import { isRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
+import { isRebarItem, isSelectableRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import {
   type LineDraft,
   UNIT_OPTIONS,
@@ -159,7 +159,7 @@ export function SaleFormDialog({
   const itemOptions = useMemo(
     () =>
       itemKind === "rebar"
-        ? items.filter(isRebarItem).sort(sortRebar)
+        ? items.filter(isSelectableRebarItem).sort(sortRebar)
         : items.filter((i) => !isRebarItem(i)).sort((a, b) => a.name.localeCompare(b.name, "ko")),
     [items, itemKind],
   );

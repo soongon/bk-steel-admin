@@ -7,6 +7,16 @@
 export const isRebarItem = (i: { category: string; rebar_spec_code: string | null }) =>
   i.category === "rebar" || !!i.rebar_spec_code;
 
+/** 품목 선택(견적·매출·매입 폼)에서 숨기는 철근 길이(m) — 8·10·12M 만 낸다. 품목 마스터·기존 라인은 그대로. */
+const HIDDEN_REBAR_LENGTHS = new Set([6, 9, 11]);
+
+/** 폼 철근 품목 선택지 — 철근이면서 숨김 길이(6·9·11M)가 아닌 것. */
+export const isSelectableRebarItem = (i: {
+  category: string;
+  rebar_spec_code: string | null;
+  length_m: number | null;
+}) => isRebarItem(i) && !HIDDEN_REBAR_LENGTHS.has(Number(i.length_m));
+
 /** 철근 규격 라벨 조합 — "D13 SD400 8M". 명세표·견적서·계산서 공통(4곳 중복 제거). */
 export function rebarSpecLabel(item: {
   rebar_spec_code?: string | null;
