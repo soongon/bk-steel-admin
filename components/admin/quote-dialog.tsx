@@ -88,6 +88,9 @@ export type QuoteSources = {
   sites?: Array<{ id: string; name: string }>;
 };
 
+/** 견적 철근 품목 선택에서 숨기는 길이(m) — 견적은 8·10·12M 만 낸다(매출·매입 폼은 그대로 전 길이). */
+const QUOTE_HIDDEN_LENGTHS = new Set([6, 9, 11]);
+
 /**
  * 견적서 작성 다이얼로그 (범용·재사용).
  * 거래처는 선택(현장명·잠재명만으로도 작성), 부가세 포함/제외 토글, 멀티라인 품목(매출 폼 동일 환산).
@@ -143,7 +146,7 @@ export function QuoteDialog({
   const itemOptions = useMemo(
     () =>
       itemKind === "rebar"
-        ? items.filter(isRebarItem).sort(sortRebar)
+        ? items.filter((i) => isRebarItem(i) && !QUOTE_HIDDEN_LENGTHS.has(Number(i.length_m))).sort(sortRebar)
         : items.filter((i) => !isRebarItem(i)).sort((a, b) => a.name.localeCompare(b.name, "ko")),
     [items, itemKind],
   );
