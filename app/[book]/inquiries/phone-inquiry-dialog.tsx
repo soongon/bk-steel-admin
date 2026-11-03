@@ -19,6 +19,7 @@ import { type BookView } from "@/lib/book";
 import { INQUIRY_STATUSES, INQUIRY_TYPES, type InquiryStatus, type InquiryType, inquiryKindLabel } from "@/lib/inquiry";
 import { LEAD_NOTE_PLACEHOLDER, LEAD_SOURCES, type LeadSource } from "@/lib/lead-source";
 import { createPhoneInquiry } from "./actions";
+import { StatusDot } from "./inquiry-status-pill";
 
 /** 지금 한국 시각 — <input type="datetime-local"> 값 형식(YYYY-MM-DDTHH:mm). */
 const kstNowLocal = () => new Date().toLocaleString("sv-SE", { timeZone: "Asia/Seoul", hourCycle: "h23" }).slice(0, 16).replace(" ", "T");
@@ -152,11 +153,20 @@ export function PhoneInquiryButton({ view }: { view: BookView }) {
             <div className="flex flex-col gap-1 text-sm">
               <span className="text-muted-foreground">상태</span>
               <div className="flex gap-1">
-                {INQUIRY_STATUSES.map((s) => (
-                  <button type="button" key={s.value} onClick={() => setStatus(s.value)} className={`flex-1 ${toggleCls(status === s.value)}`}>
-                    {s.label}
-                  </button>
-                ))}
+                {INQUIRY_STATUSES.map((s) => {
+                  const on = status === s.value;
+                  return (
+                    <button
+                      type="button"
+                      key={s.value}
+                      onClick={() => setStatus(s.value)}
+                      className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold ${on ? `border-transparent ${s.solid}` : "bg-background text-muted-foreground"}`}
+                    >
+                      <StatusDot status={s.value} onSolid={on} />
+                      {s.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

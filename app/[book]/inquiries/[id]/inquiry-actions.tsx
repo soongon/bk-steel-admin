@@ -3,6 +3,8 @@
 import { createContext, useContext, useOptimistic, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Building2Icon, FileTextIcon, Loader2Icon, ScaleIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { InquiryStatusPill, StatusDot } from "../inquiry-status-pill";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { type BookView } from "@/lib/book";
@@ -48,23 +50,35 @@ export function InquiryStatusProvider({ id, status, children }: { id: string; st
 /** 제목 옆 상태 배지. */
 export function InquiryStatusBadge() {
   const { status } = useInquiryStatus();
-  const st = inquiryStatusMeta(status);
-  return <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${st.cls}`}>{st.label}</span>;
+  return <InquiryStatusPill status={status} size="md" />;
 }
 
 /** 상태 3단(새 문의·진행중·완료) — 지금 상태는 눌린 모양. 저장 중에도 다시 누를 수 있다(마지막에 누른 것으로 저장). */
 export function InquiryStatusButtons() {
   const { status, saving, change } = useInquiryStatus();
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="문의 상태" aria-busy={saving}>
-      {INQUIRY_STATUSES.map((s) => {
-        const on = s.value === status;
-        return (
-          <Button key={s.value} type="button" size="sm" variant={on ? "default" : "outline"} aria-pressed={on} onClick={() => change(s.value)}>
-            {s.label}
-          </Button>
-        );
-      })}
+    // 세그먼트 버튼 — 지금 상태는 그 상태 색으로 꽉 차고, 나머지는 색 점만(어느 칸이 무슨 상태인지 한눈에).
+    <div className="flex items-center gap-2" role="group" aria-label="문의 상태" aria-busy={saving}>
+      <div className="inline-flex items-center gap-1 rounded-xl border bg-muted/60 p-1 shadow-xs">
+        {INQUIRY_STATUSES.map((s) => {
+          const on = s.value === status;
+          return (
+            <button
+              key={s.value}
+              type="button"
+              aria-pressed={on}
+              onClick={() => change(s.value)}
+              className={cn(
+                "inline-flex h-9 items-center gap-2 rounded-lg px-4 text-sm font-semibold transition-all outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                on ? s.solid : "text-muted-foreground hover:bg-background hover:text-foreground hover:shadow-xs",
+              )}
+            >
+              <StatusDot status={s.value} onSolid={on} />
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
       {saving ? (
         <span className="ml-1 inline-flex items-center gap-1 text-xs text-muted-foreground" role="status">
           <Loader2Icon className="size-3 animate-spin" aria-hidden /> 저장 중

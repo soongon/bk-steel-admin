@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { InquiryUnavailable } from "./inquiry-unavailable";
 import { InquiryDeleteButton } from "./inquiry-delete-button";
 import { InquiryRow } from "./inquiry-row";
+import { InquiryStatusPill, StatusDot } from "./inquiry-status-pill";
 import { PhoneInquiryButton } from "./phone-inquiry-dialog";
 
 /**
@@ -94,6 +95,7 @@ export default async function InquiriesPage({
             const on = c.key === statusFilter;
             return (
               <Link key={c.key ?? "all"} href={c.key ? `/${view}/inquiries?status=${c.key}` : `/${view}/inquiries`} className={chipCls(on)}>
+                {c.key ? <StatusDot status={c.key} onSolid={on} /> : null}
                 {c.label}
                 <span className={`tabular-nums ${on ? "opacity-80" : "text-muted-foreground"}`}>{c.count}</span>
               </Link>
@@ -113,7 +115,7 @@ export default async function InquiriesPage({
               <TableHead className="hidden w-36 sm:table-cell">연락처</TableHead>
               <TableHead className="hidden lg:table-cell">내용</TableHead>
               <TableHead className="hidden w-32 xl:table-cell">유입</TableHead>
-              <TableHead className="w-20 text-center">상태</TableHead>
+              <TableHead className="w-24 text-center">상태</TableHead>
               {canWrite ? <TableHead className="w-10" aria-label="삭제" /> : null}
             </TableRow>
           </TableHeader>
@@ -127,7 +129,6 @@ export default async function InquiriesPage({
             ) : (
               rows.map((i) => {
                 const kind = inquiryKind(i.inquiry_type);
-                const st = inquiryStatusMeta(i.status);
                 const partner = partnerByPhone.get(phoneKey(i.phone));
                 const phoneIn = isPhoneInquiry(i.source);
                 const memo = memoLog.get(i.id);
@@ -187,7 +188,7 @@ export default async function InquiriesPage({
                       {srcText ? <div className="mt-0.5 max-w-[8rem] truncate text-[10px] text-muted-foreground" title={srcText}>{srcText}</div> : null}
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs whitespace-nowrap ${st.cls}`}>{st.label}</span>
+                      <InquiryStatusPill status={i.status} />
                     </TableCell>
                     {canWrite ? (
                       <TableCell className="text-center">

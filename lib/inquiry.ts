@@ -14,10 +14,35 @@ export const HOMEPAGE_URL = "https://www.sl-steel.co.kr";
  * 상태 3가지 — 새 문의 → 진행중 → 완료. 저장값은 홈페이지 관리자와 같은 new/read/resolved 그대로(같은 행을 같이 바꾼다)
  * 이고 read 를 '진행중'으로 부른다(2026-11-03 '확인' 상태 폐지). 메모를 남기거나 견적서를 저장하면 새 문의 → 진행중.
  */
+/**
+ * 화면 색 — cls: 작은 배지(옆 목록 등), pill: 상태 배지(연한 바탕 + 테두리), dot: 점, solid: 눌린 상태 버튼.
+ * 진행중은 지금 손댈 건이라 배지부터 진한 파랑(pill 도 solid)으로 가장 눈에 띄게, 완료는 차분하게.
+ */
 export const INQUIRY_STATUSES = [
-  { value: "new", label: "새 문의", cls: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300" },
-  { value: "read", label: "진행중", cls: "bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300" },
-  { value: "resolved", label: "완료", cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" },
+  {
+    value: "new",
+    label: "새 문의",
+    cls: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300",
+    pill: "bg-red-50 text-red-700 ring-red-600/25 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-400/30",
+    dot: "bg-red-500",
+    solid: "bg-red-600 text-white shadow-sm shadow-red-600/30 dark:bg-red-500",
+  },
+  {
+    value: "read",
+    label: "진행중",
+    cls: "bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300",
+    pill: "bg-sky-600 text-white ring-sky-700/40 shadow-sm shadow-sky-600/30 dark:bg-sky-500 dark:ring-sky-300/40",
+    dot: "bg-sky-500",
+    solid: "bg-sky-600 text-white shadow-sm shadow-sky-600/30 dark:bg-sky-500",
+  },
+  {
+    value: "resolved",
+    label: "완료",
+    cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
+    pill: "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-400/25",
+    dot: "bg-emerald-500",
+    solid: "bg-emerald-600 text-white shadow-sm shadow-emerald-600/30 dark:bg-emerald-500",
+  },
 ] as const;
 
 export type InquiryStatus = (typeof INQUIRY_STATUSES)[number]["value"];
@@ -29,8 +54,18 @@ export function isInquiryStatus(v: unknown): v is InquiryStatus {
 /** 처리할 문의(메뉴 배지) — 새 문의 + 진행중. */
 export const OPEN_INQUIRY_STATUSES: readonly InquiryStatus[] = ["new", "read"];
 
-export function inquiryStatusMeta(status: string): { label: string; cls: string } {
-  return INQUIRY_STATUSES.find((s) => s.value === status) ?? { label: status, cls: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300" };
+export type InquiryStatusMeta = { label: string; cls: string; pill: string; dot: string; solid: string };
+
+export function inquiryStatusMeta(status: string): InquiryStatusMeta {
+  return (
+    INQUIRY_STATUSES.find((s) => s.value === status) ?? {
+      label: status,
+      cls: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300",
+      pill: "bg-zinc-50 text-zinc-700 ring-zinc-500/20 dark:bg-zinc-800/60 dark:text-zinc-300",
+      dot: "bg-zinc-400",
+      solid: "bg-zinc-700 text-white",
+    }
+  );
 }
 
 /** 문의 구분 값 — 홈페이지 폼과 같은 문자열(접미사 포함). 전화 문의 입력도 이 둘 중 하나. */
