@@ -8,7 +8,7 @@ import { type Inquiry, type InquirySource, type InquiryStatus, type InquiryType 
  * 홈페이지 문의 읽기·상태 변경 — 홈페이지 전용 Supabase(어드민과 다른 프로젝트)를 서비스 롤로 연다.
  * env: HOMEPAGE_SUPABASE_URL · HOMEPAGE_SUPABASE_SERVICE_ROLE_KEY. 없으면 화면은 '연결 설정 필요', 메뉴 배지는 없음.
  * 서비스 롤은 RLS 를 건너뛰므로 권한은 여기서 어드민 로그인·책 권한으로 직접 확인한다.
- * 홈페이지 쪽에는 status·updated_at 과 직접 입력한 전화 문의(insertPhoneInquiry)만 쓴다
+ * 홈페이지 쪽에는 status·updated_at, 직접 입력한 전화 문의(insertPhoneInquiry), 문의 삭제(removeInquiry)만 쓴다
  * (책·거래 정보는 홈페이지로 보내지 않는다).
  */
 
@@ -110,6 +110,20 @@ export async function insertPhoneInquiry(input: PhoneInquiryInput): Promise<Inqu
     .single();
   if (error) return { ok: false, error: error.message };
   return { ok: true, data: { id: String(data.id) } };
+}
+
+/**
+ * 문의 삭제 — 홈페이지 DB 에서 행을 실제로 지운다(되돌릴 수 없음, 홈페이지 관리자에서도 사라짐).
+ * 문의↔견적 연결은 DB 에 없으므로 견적·거래처는 그대로 남는다. deleted = 실제로 지운 행이 있었는지.
+ */
+export async function removeInquiry(id: string): Promise<InquiryResult<{ deleted: boolean }>> {
+  if (!homepageConfigured()) return UNCONFIGURED;
+  const access = await checkAccess();
+  if (!access.ok) return access;
+  if (!access.canWrite) return { ok: false, error: "권한이 없습니다 (staff 이상 필요)." };
+  const { data, error } = await homepageDb().from("inquiries").delete().eq("id", id).select("id");
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, data: { deleted: (data ?? []).length > 0 } };
 }
 
 /** 메뉴 배지용 새 문의 수 — 레이아웃이 기다리지 않고 넘기므로 절대 throw 하지 않는다(연결 없음·오류면 null). */

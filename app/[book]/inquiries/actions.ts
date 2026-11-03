@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { digitsOnly } from "@/lib/format";
 import { type InquirySource, isInquiryStatus, isInquiryType } from "@/lib/inquiry";
 import { isLeadSource } from "@/lib/lead-source";
-import { insertPhoneInquiry, writeInquiryStatus } from "@/lib/homepage-inquiry";
+import { insertPhoneInquiry, removeInquiry, writeInquiryStatus } from "@/lib/homepage-inquiry";
 
 export type InquiryActionResult = { ok: true } | { ok: false; error: string };
 
@@ -20,6 +20,16 @@ export async function updateInquiryStatus(id: string, status: string): Promise<I
   const r = await writeInquiryStatus(id, status);
   if (!r.ok) return { ok: false, error: r.error };
   if (!r.data.changed) return { ok: false, error: "문의를 찾지 못했습니다. 새로고침해 주세요." };
+  refresh();
+  return { ok: true };
+}
+
+/** 문의 삭제(목록 휴지통) — 홈페이지 DB 에서 실제로 지운다. */
+export async function deleteInquiry(id: string): Promise<InquiryActionResult> {
+  if (!UUID_RE.test(id)) return { ok: false, error: "잘못된 문의입니다." };
+  const r = await removeInquiry(id);
+  if (!r.ok) return { ok: false, error: r.error };
+  if (!r.data.deleted) return { ok: false, error: "문의를 찾지 못했습니다. 이미 지워졌을 수 있습니다." };
   refresh();
   return { ok: true };
 }

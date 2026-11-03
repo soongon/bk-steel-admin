@@ -16,6 +16,8 @@ export function InquiryRow({ href, className, ...props }: ComponentProps<typeof 
       {...props}
       className={cn("cursor-pointer", className)}
       onClick={(e) => {
+        // 행 안 버튼이 띄운 창(포털)의 클릭도 React 에선 이 행으로 올라온다 — DOM 상 행 밖이면 무시.
+        if (!e.currentTarget.contains(e.target as Node)) return;
         if ((e.target as HTMLElement).closest("a, button")) return;
         if (window.getSelection()?.toString()) return; // 글자 드래그 선택은 이동하지 않음
         if (e.metaKey || e.ctrlKey) window.open(href, "_blank");

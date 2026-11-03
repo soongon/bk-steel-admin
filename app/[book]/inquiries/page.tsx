@@ -20,6 +20,7 @@ import { LeadSourceBadge } from "@/components/admin/lead-source-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { InquiryUnavailable } from "./inquiry-unavailable";
+import { InquiryDeleteButton } from "./inquiry-delete-button";
 import { InquiryRow } from "./inquiry-row";
 import { PhoneInquiryButton } from "./phone-inquiry-dialog";
 
@@ -102,12 +103,13 @@ export default async function InquiriesPage({
               <TableHead className="hidden lg:table-cell">내용</TableHead>
               <TableHead className="hidden w-32 xl:table-cell">유입</TableHead>
               <TableHead className="w-20 text-center">상태</TableHead>
+              {canWrite ? <TableHead className="w-10" aria-label="삭제" /> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+                <TableCell colSpan={canWrite ? 8 : 7} className="py-12 text-center text-muted-foreground">
                   {statusFilter ? `'${inquiryStatusMeta(statusFilter).label}' 문의가 없습니다.` : "들어온 문의가 없습니다."}
                 </TableCell>
               </TableRow>
@@ -170,6 +172,11 @@ export default async function InquiriesPage({
                     <TableCell className="text-center">
                       <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs whitespace-nowrap ${st.cls}`}>{st.label}</span>
                     </TableCell>
+                    {canWrite ? (
+                      <TableCell className="text-center">
+                        <InquiryDeleteButton id={i.id} label={`${received.slice(0, 10)} ${i.name}`} />
+                      </TableCell>
+                    ) : null}
                   </InquiryRow>
                 );
               })
