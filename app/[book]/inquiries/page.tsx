@@ -128,11 +128,12 @@ export default async function InquiriesPage({
                 return (
                   <InquiryRow key={i.id} href={`/${view}/inquiries/${i.id}`} className={cn(i.status === "new" && "bg-red-50/50 dark:bg-red-950/15")}>
                     <TableCell className="text-xs tabular-nums">
-                      {/* 휴대폰 폭에선 연도를 빼 상태 칸까지 한 화면에 */}
-                      <div>
-                        <span className="sm:hidden">{received.slice(5)}</span>
-                        <span className="hidden sm:inline">{received}</span>
+                      {/* 날짜는 크게, 시각은 아래 작게. 휴대폰 폭에선 연도를 빼 상태 칸까지 한 화면에 */}
+                      <div className="text-base font-semibold">
+                        <span className="sm:hidden">{received.slice(5, 10)}</span>
+                        <span className="hidden sm:inline">{received.slice(0, 10)}</span>
                       </div>
+                      <div className="text-muted-foreground">{received.slice(11)}</div>
                       {(i.submit_count ?? 1) > 1 ? <div className="text-muted-foreground">{i.submit_count}회 제출</div> : null}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">{kindBadge}</TableCell>
