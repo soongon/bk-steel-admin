@@ -45,11 +45,20 @@ export function InquiryStatusProvider({ id, status, children }: { id: string; st
   return <InquiryStatusContext.Provider value={{ status: shown, saving, change }}>{children}</InquiryStatusContext.Provider>;
 }
 
-/** 제목 옆 상태 배지. */
-export function InquiryStatusBadge() {
+/** 제목 옆 상태 배지 — 메모가 있고 완료 전이면 '진행중'도(목록과 같은 규칙, 상태 버튼을 누르면 바로 따라 바뀐다). */
+export function InquiryStatusBadge({ hasMemo = false }: { hasMemo?: boolean }) {
   const { status } = useInquiryStatus();
   const st = inquiryStatusMeta(status);
-  return <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${st.cls}`}>{st.label}</span>;
+  return (
+    <>
+      <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${st.cls}`}>{st.label}</span>
+      {hasMemo && status !== "resolved" ? (
+        <span className="inline-flex h-5 items-center rounded-full bg-sky-100 px-2 text-xs text-sky-700 dark:bg-sky-950/50 dark:text-sky-300" title="메모 기록이 있고 아직 완료 전">
+          진행중
+        </span>
+      ) : null}
+    </>
+  );
 }
 
 /** 상태 3단(새 문의·확인·완료) — 지금 상태는 눌린 모양. 저장 중에도 다시 누를 수 있다(마지막에 누른 것으로 저장). */

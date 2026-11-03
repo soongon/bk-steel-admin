@@ -150,7 +150,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
                 {kindLabel}
               </span>
               <h1 className="text-xl font-semibold">{inq.name}</h1>
-              <InquiryStatusBadge />
+              <InquiryStatusBadge hasMemo={memos.length > 0} />
             </div>
             {/* 접수 날짜는 크게(목록과 같이), 경로·구분은 옆에 작게 */}
             <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
