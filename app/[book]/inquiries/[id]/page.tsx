@@ -12,9 +12,11 @@ import {
   INQUIRY_KIND_CLS,
   describeSource,
   guessLeadSource,
+  inquiryChannelLabel,
   inquiryKind,
   inquiryKindLabel,
   inquiryStatusMeta,
+  isPhoneInquiry,
   phoneKey,
 } from "@/lib/inquiry";
 import { LeadSourceBadge } from "@/components/admin/lead-source-badge";
@@ -31,7 +33,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 type PartnerRow = QuotePartner & { is_active: boolean };
 
 /**
- * 홈페이지 문의 상세 — 전화·문자 → 견적서(매입이면 매입견적서)·거래처 등록을 이 화면에서 바로.
+ * 문의 상세(홈페이지 폼·직접 입력한 전화 문의 공용) — 전화·문자 → 견적서(매입이면 매입견적서)·거래처 등록을 이 화면에서 바로.
  * 견적 폼은 문의의 이름·현장·유입경로로 채워 열고, 저장하면 문의를 '확인'으로 바꾼다.
  */
 export default async function InquiryDetailPage({ params }: { params: Promise<{ book: string; id: string }> }) {
@@ -73,6 +75,8 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
 
   const kind = inquiryKind(inq.inquiry_type);
   const kindLabel = inquiryKindLabel(inq.inquiry_type);
+  const phoneIn = isPhoneInquiry(inq.source);
+  const channel = inquiryChannelLabel(inq.source); // '전화' | '홈페이지'
   const lead = guessLeadSource(inq.source);
   const srcText = describeSource(inq.source);
   const received = fmtKstDateTime(inq.created_at);
@@ -107,13 +111,13 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
     partner_name: partnerName,
     site_name: inq.location ?? "",
     lead_source: lead,
-    lead_note: `홈페이지 문의 ${received.slice(5, 10)}${srcText ? ` · ${srcText}` : ""}`,
+    lead_note: `${channel} 문의 ${received.slice(5, 10)}${srcText ? ` · ${srcText}` : ""}`,
     reference: inq.message || null,
   };
   const partnerPrefill: PartnerPrefill = {
     name: inq.name,
     phone: key,
-    notes: `홈페이지 ${kindLabel} 문의 ${received.slice(0, 10)}${inq.location ? ` · ${inq.location}` : ""}`,
+    notes: `${channel} ${kindLabel} 문의 ${received.slice(0, 10)}${inq.location ? ` · ${inq.location}` : ""}`,
     from_inquiry_id: inq.id,
   };
 
@@ -137,7 +141,8 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
               <InquiryStatusBadge />
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              홈페이지 {inq.inquiry_type} · 접수 {received}
+              {channel} {inq.inquiry_type}
+              {phoneIn ? "(직접 입력)" : ""} · 접수 {received}
               {(inq.submit_count ?? 1) > 1 ? ` · ${inq.submit_count}회 제출(합침)` : ""}
             </p>
           </div>
@@ -218,13 +223,16 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
           <section className="rounded-lg border bg-card p-4">
             <h2 className="text-xs text-muted-foreground">유입</h2>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {phoneIn ? (
+                <span className="inline-flex h-5 items-center rounded-full border px-2 text-xs text-muted-foreground">전화 문의</span>
+              ) : null}
               <LeadSourceBadge source={lead} />
               {srcText ? <span className="text-xs text-muted-foreground">{srcText}</span> : null}
             </div>
             {inq.source?.landing_path ? (
               <p className="mt-1 text-xs break-all text-muted-foreground">처음 본 화면: {inq.source.landing_path}</p>
             ) : null}
-            {!inq.source || Object.keys(inq.source).length === 0 ? (
+            {!phoneIn && (!inq.source || Object.keys(inq.source).length === 0) ? (
               <p className="mt-1 text-xs text-muted-foreground">유입 기록 없음(2026-10-16 전 접수)</p>
             ) : null}
           </section>
@@ -232,10 +240,19 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
           <section className="rounded-lg border bg-card p-4">
             <h2 className="text-xs text-muted-foreground">접수 기록</h2>
             <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-              <dt className="text-muted-foreground">알림 메일</dt>
-              <dd>{inq.notified_at ? `발송 ${fmtKstDateTime(inq.notified_at)}` : "미발송"}</dd>
-              <dt className="text-muted-foreground">제출</dt>
-              <dd>{(inq.submit_count ?? 1) > 1 ? `${inq.submit_count}회 (10분 안 재제출 합침)` : "1회"}</dd>
+              {phoneIn ? (
+                <>
+                  <dt className="text-muted-foreground">입력</dt>
+                  <dd>어드민 직접 입력 (알림 메일 없음)</dd>
+                </>
+              ) : (
+                <>
+                  <dt className="text-muted-foreground">알림 메일</dt>
+                  <dd>{inq.notified_at ? `발송 ${fmtKstDateTime(inq.notified_at)}` : "미발송"}</dd>
+                  <dt className="text-muted-foreground">제출</dt>
+                  <dd>{(inq.submit_count ?? 1) > 1 ? `${inq.submit_count}회 (10분 안 재제출 합침)` : "1회"}</dd>
+                </>
+              )}
               <dt className="text-muted-foreground">마지막 변경</dt>
               <dd>{fmtKstDateTime(inq.updated_at)}</dd>
             </dl>

@@ -8,7 +8,7 @@ export function InquiryUnavailable({ error, unconfigured }: { error: string; unc
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">홈페이지 문의</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">문의 관리</h1>
       </header>
       <div className="rounded-lg border border-dashed bg-card p-6 text-sm">
         <p className="font-medium">홈페이지 문의를 불러오지 못했습니다.</p>

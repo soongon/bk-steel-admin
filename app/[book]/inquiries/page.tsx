@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { type BookView } from "@/lib/book";
 import { fmtKstDateTime, formatPhone } from "@/lib/format";
-import { listInquiries } from "@/lib/homepage-inquiry";
+import { canWriteInquiries, listInquiries } from "@/lib/homepage-inquiry";
 import {
   INQUIRY_KIND_CLS,
   INQUIRY_STATUSES,
@@ -13,15 +13,18 @@ import {
   inquiryKindLabel,
   inquiryStatusMeta,
   isInquiryStatus,
+  isPhoneInquiry,
   phoneKey,
 } from "@/lib/inquiry";
 import { LeadSourceBadge } from "@/components/admin/lead-source-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { InquiryUnavailable } from "./inquiry-unavailable";
+import { PhoneInquiryButton } from "./phone-inquiry-dialog";
 
 /**
- * 홈페이지 문의 목록 — 홈페이지 전용 Supabase 의 inquiries 를 그대로 읽는다(책과 무관한 공유 영역).
+ * 문의 목록 — 홈페이지 전용 Supabase 의 inquiries 를 그대로 읽는다(책과 무관한 공유 영역).
+ * 홈페이지 폼 문의 + 여기서 직접 입력한 전화 문의(source.channel = 'phone')가 한 목록에 섞인다.
  * 상태는 홈페이지 관리자와 같은 값이라 어느 쪽에서 바꿔도 같이 바뀐다.
  */
 export default async function InquiriesPage({
@@ -37,8 +40,9 @@ export default async function InquiriesPage({
   const statusFilter: InquiryStatus | null = isInquiryStatus(statusParam) ? statusParam : null;
   const supabase = await createClient();
 
-  const [res, partnersRes] = await Promise.all([
+  const [res, canWrite, partnersRes] = await Promise.all([
     listInquiries(),
+    canWriteInquiries(),
     // 같은 번호의 거래처를 이름 옆에 표시 — 거래처 전화는 숫자만 저장된다.
     supabase.from("partner").select("name, phone").is("deleted_at", null).not("phone", "is", null),
   ]);
@@ -63,11 +67,14 @@ export default async function InquiriesPage({
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">홈페이지 문의</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          sl-steel.co.kr 문의 폼으로 들어온 문의 · 책과 무관 · 상태는 홈페이지 관리자와 같이 바뀝니다
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">문의 관리</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            sl-steel.co.kr 문의 폼 + 직접 입력한 전화 문의 · 책과 무관 · 상태는 홈페이지 관리자와 같이 바뀝니다
+          </p>
+        </div>
+        {canWrite ? <PhoneInquiryButton view={view} /> : null}
       </header>
 
       <div className="flex flex-wrap items-center gap-1.5">
@@ -107,6 +114,7 @@ export default async function InquiriesPage({
                 const kind = inquiryKind(i.inquiry_type);
                 const st = inquiryStatusMeta(i.status);
                 const partner = partnerByPhone.get(phoneKey(i.phone));
+                const phoneIn = isPhoneInquiry(i.source);
                 const lead = guessLeadSource(i.source);
                 const srcText = describeSource(i.source);
                 const received = fmtKstDateTime(i.created_at);
@@ -131,6 +139,11 @@ export default async function InquiriesPage({
                       <Link href={`/${view}/inquiries/${i.id}`} className="font-medium hover:underline">
                         {i.name}
                       </Link>
+                      {phoneIn ? (
+                        <span className="ml-1.5 inline-flex h-5 items-center rounded-full border px-1.5 text-[10px] text-muted-foreground" title="전화로 받아 직접 입력한 문의">
+                          전화
+                        </span>
+                      ) : null}
                       {partner ? (
                         <span className="ml-1.5 inline-flex h-5 items-center rounded-full border px-1.5 text-[10px] text-muted-foreground" title="같은 번호로 등록된 거래처">
                           거래처 {partner}
@@ -147,6 +160,7 @@ export default async function InquiriesPage({
                       <p className="line-clamp-2 max-w-xs text-xs whitespace-pre-line text-muted-foreground xl:max-w-md">{i.message || "—"}</p>
                     </TableCell>
                     <TableCell className="hidden xl:table-cell">
+                      {/* 전화 문의는 이름 옆 '전화' 표시 — 여기엔 고른 유입경로만(안 골랐으면 미기록) */}
                       <LeadSourceBadge source={lead} />
                       {srcText ? <div className="mt-0.5 max-w-[8rem] truncate text-[10px] text-muted-foreground" title={srcText}>{srcText}</div> : null}
                     </TableCell>
@@ -163,3 +177,4 @@ export default async function InquiriesPage({
     </div>
   );
 }
+

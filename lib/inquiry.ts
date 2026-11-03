@@ -1,10 +1,11 @@
 /**
- * 홈페이지 문의(sl-steel.co.kr 문의 폼) — 화면 공용 상수·순수 함수. DB 접근 없음(클라이언트에서도 import 가능).
- * 원본은 홈페이지 전용 Supabase 의 inquiries 테이블(홈페이지 repo sl-steel 마이그레이션 005·007).
+ * 문의(sl-steel.co.kr 문의 폼 + 어드민에서 직접 입력한 전화 문의) — 화면 공용 상수·순수 함수.
+ * DB 접근 없음(클라이언트에서도 import 가능). 원본은 홈페이지 전용 Supabase 의 inquiries 테이블(홈페이지 repo
+ * sl-steel 마이그레이션 005·007) — 전화 문의도 같은 테이블에 source.channel = 'phone' 으로 넣는다(스키마 변경 없음).
  * 읽기·상태 변경은 서버 전용 lib/homepage-inquiry.ts.
  */
 import { digitsOnly } from "@/lib/format";
-import { type LeadSource } from "@/lib/lead-source";
+import { type LeadSource, isLeadSource } from "@/lib/lead-source";
 
 /** 홈페이지 주소 — 블로그 등 아직 홈페이지 관리자에 남은 기능은 여기로 링크한다. */
 export const HOMEPAGE_URL = "https://www.sl-steel.co.kr";
@@ -26,8 +27,23 @@ export function inquiryStatusMeta(status: string): { label: string; cls: string 
   return INQUIRY_STATUSES.find((s) => s.value === status) ?? { label: status, cls: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300" };
 }
 
-/** 폼이 hidden 으로 보낸 유입 정보(홈페이지 007 source). 2026-10-16 전 접수분은 비어 있다. */
+/** 문의 구분 값 — 홈페이지 폼과 같은 문자열(접미사 포함). 전화 문의 입력도 이 둘 중 하나. */
+export const INQUIRY_TYPES = ["매입 문의", "납품 문의"] as const;
+export type InquiryType = (typeof INQUIRY_TYPES)[number];
+
+export function isInquiryType(v: unknown): v is InquiryType {
+  return typeof v === "string" && (INQUIRY_TYPES as readonly string[]).includes(v);
+}
+
+/**
+ * 폼이 hidden 으로 보낸 유입 정보(홈페이지 007 source). 2026-10-16 전 접수분은 비어 있다.
+ * 전화 문의(어드민 직접 입력)는 channel = 'phone' + 받은 사람이 고른 lead_source·lead_note 만 담는다.
+ */
 export type InquirySource = {
+  channel?: "phone"; // 없으면 홈페이지 폼
+  lead_source?: string; // 전화 문의: 어디 보고 전화했나(LeadSource 값)
+  lead_note?: string; // 전화 문의: 유입 메모
+
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
@@ -69,15 +85,27 @@ export const INQUIRY_KIND_CLS = {
   sale: "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300",
 } as const;
 
+/** 어드민에서 직접 입력한 전화 문의인지. */
+export function isPhoneInquiry(src: InquirySource | null | undefined): boolean {
+  return src?.channel === "phone";
+}
+
+/** 접수 경로 이름 — '전화' | '홈페이지'. */
+export function inquiryChannelLabel(src: InquirySource | null | undefined): string {
+  return isPhoneInquiry(src) ? "전화" : "홈페이지";
+}
+
 /** 전화 비교 키 — 숫자만(옛 접수분 하이픈·거래처 저장 형식 차이 흡수). */
 export const phoneKey = (phone: string | null | undefined) => digitsOnly(phone);
 
 /**
  * 유입 → 어드민 유입경로(lead_source) 추정. 홈페이지 lib/inquiry-guard.ts guessLeadSource 와 같은 규칙
  * (광고 → QR → 블로그 → 플레이스 → 그 외 홈페이지). 유입 정보가 없는 옛 접수분도 홈페이지 폼으로 왔으니 homepage.
+ * 전화 문의는 받은 사람이 고른 값 그대로 — 안 골랐으면 null(미기록).
  */
-export function guessLeadSource(src: InquirySource | null | undefined): LeadSource {
+export function guessLeadSource(src: InquirySource | null | undefined): LeadSource | null {
   const s = src ?? {};
+  if (isPhoneInquiry(s)) return isLeadSource(s.lead_source) ? s.lead_source : null;
   const ref = (s.referrer ?? "").toLowerCase();
   const medium = (s.utm_medium ?? "").toLowerCase();
   const utmSource = (s.utm_source ?? "").toLowerCase();
@@ -93,6 +121,7 @@ const QR_LABEL: Record<string, string> = { card: "명함 QR", truck: "차량 QR"
 /** 유입 상세 한 줄 — 배지(guessLeadSource) 옆에 붙인다. 예: "명함 QR", "search.naver.com · 캠페인명". 없으면 "". */
 export function describeSource(src: InquirySource | null | undefined): string {
   if (!src) return "";
+  if (isPhoneInquiry(src)) return src.lead_note ?? "";
   const parts: string[] = [];
   if (src.qr_src) parts.push(QR_LABEL[src.qr_src] ?? `QR:${src.qr_src}`);
   if (src.referrer) parts.push(src.referrer);
