@@ -4,7 +4,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/s
 import { Separator } from "@/components/ui/separator";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { BookBadge } from "@/components/admin/book-badge";
-import { countNewInquiries } from "@/lib/homepage-inquiry";
+import { countOpenInquiries } from "@/lib/homepage-inquiry";
 
 export default async function BookLayout({
   children,
@@ -17,11 +17,11 @@ export default async function BookLayout({
   if (!isValidBookView(book)) notFound();
   const currentBook: BookView = book;
   // 메뉴의 새 문의 배지 — 기다리지 않고 넘긴다(홈페이지 DB 가 느려도 화면은 먼저). 실패·미설정이면 배지 없음.
-  const newInquiries = countNewInquiries();
+  const openInquiries = countOpenInquiries();
 
   return (
     <SidebarProvider>
-      <AdminSidebar book={currentBook} badges={{ newInquiries }} />
+      <AdminSidebar book={currentBook} badges={{ openInquiries }} />
       <SidebarInset>
         <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <SidebarTrigger className="-ml-1" />

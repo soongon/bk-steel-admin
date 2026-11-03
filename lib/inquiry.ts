@@ -10,10 +10,13 @@ import { type LeadSource, isLeadSource } from "@/lib/lead-source";
 /** 홈페이지 주소 — 블로그 등 아직 홈페이지 관리자에 남은 기능은 여기로 링크한다. */
 export const HOMEPAGE_URL = "https://www.sl-steel.co.kr";
 
-/** 홈페이지 관리자의 상태값 그대로(new/read/resolved) — 두 화면이 같은 행을 같이 바꾼다. */
+/**
+ * 상태 3가지 — 새 문의 → 진행중 → 완료. 저장값은 홈페이지 관리자와 같은 new/read/resolved 그대로(같은 행을 같이 바꾼다)
+ * 이고 read 를 '진행중'으로 부른다(2026-11-03 '확인' 상태 폐지). 메모를 남기거나 견적서를 저장하면 새 문의 → 진행중.
+ */
 export const INQUIRY_STATUSES = [
   { value: "new", label: "새 문의", cls: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300" },
-  { value: "read", label: "확인", cls: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" },
+  { value: "read", label: "진행중", cls: "bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300" },
   { value: "resolved", label: "완료", cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" },
 ] as const;
 
@@ -22,6 +25,9 @@ export type InquiryStatus = (typeof INQUIRY_STATUSES)[number]["value"];
 export function isInquiryStatus(v: unknown): v is InquiryStatus {
   return typeof v === "string" && INQUIRY_STATUSES.some((s) => s.value === v);
 }
+
+/** 처리할 문의(메뉴 배지) — 새 문의 + 진행중. */
+export const OPEN_INQUIRY_STATUSES: readonly InquiryStatus[] = ["new", "read"];
 
 export function inquiryStatusMeta(status: string): { label: string; cls: string } {
   return INQUIRY_STATUSES.find((s) => s.value === status) ?? { label: status, cls: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300" };

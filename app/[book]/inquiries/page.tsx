@@ -188,14 +188,6 @@ export default async function InquiriesPage({
                     </TableCell>
                     <TableCell className="text-center">
                       <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs whitespace-nowrap ${st.cls}`}>{st.label}</span>
-                      {/* 메모가 쌓였는데 아직 완료 전 = 진행 중인 건 */}
-                      {memo && i.status !== "resolved" ? (
-                        <div className="mt-1">
-                          <span className="inline-flex h-5 items-center rounded-full bg-sky-100 px-2 text-xs whitespace-nowrap text-sky-700 dark:bg-sky-950/50 dark:text-sky-300" title="메모 기록이 있고 아직 완료 전">
-                            진행중
-                          </span>
-                        </div>
-                      ) : null}
                     </TableCell>
                     {canWrite ? (
                       <TableCell className="text-center">

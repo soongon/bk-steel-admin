@@ -45,23 +45,14 @@ export function InquiryStatusProvider({ id, status, children }: { id: string; st
   return <InquiryStatusContext.Provider value={{ status: shown, saving, change }}>{children}</InquiryStatusContext.Provider>;
 }
 
-/** 제목 옆 상태 배지 — 메모가 있고 완료 전이면 '진행중'도(목록과 같은 규칙, 상태 버튼을 누르면 바로 따라 바뀐다). */
-export function InquiryStatusBadge({ hasMemo = false }: { hasMemo?: boolean }) {
+/** 제목 옆 상태 배지. */
+export function InquiryStatusBadge() {
   const { status } = useInquiryStatus();
   const st = inquiryStatusMeta(status);
-  return (
-    <>
-      <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${st.cls}`}>{st.label}</span>
-      {hasMemo && status !== "resolved" ? (
-        <span className="inline-flex h-5 items-center rounded-full bg-sky-100 px-2 text-xs text-sky-700 dark:bg-sky-950/50 dark:text-sky-300" title="메모 기록이 있고 아직 완료 전">
-          진행중
-        </span>
-      ) : null}
-    </>
-  );
+  return <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs ${st.cls}`}>{st.label}</span>;
 }
 
-/** 상태 3단(새 문의·확인·완료) — 지금 상태는 눌린 모양. 저장 중에도 다시 누를 수 있다(마지막에 누른 것으로 저장). */
+/** 상태 3단(새 문의·진행중·완료) — 지금 상태는 눌린 모양. 저장 중에도 다시 누를 수 있다(마지막에 누른 것으로 저장). */
 export function InquiryStatusButtons() {
   const { status, saving, change } = useInquiryStatus();
   return (
@@ -85,7 +76,7 @@ export function InquiryStatusButtons() {
 
 /**
  * 문의 → 견적서·매입견적서·거래처 등록. 문의 구분에 맞는 견적(매입 문의 = 매입견적서)을 앞에 둔다.
- * 견적은 저장되면 문의를 '확인'으로 바꾸고 견적 상세로 간다(바로 문자·인쇄).
+ * 견적은 저장되면 문의를 '진행중'으로 바꾸고 견적 상세로 간다(바로 문자·인쇄).
  */
 export function InquiryActions({
   inquiryId,

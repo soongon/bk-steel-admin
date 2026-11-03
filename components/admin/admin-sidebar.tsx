@@ -73,8 +73,8 @@ type MenuItem = {
 };
 
 /** 메뉴 배지 숫자 — 레이아웃이 기다리지 않고 promise 로 넘긴다(느려도 메뉴는 먼저 뜬다). null·0 이면 배지 없음. */
-type MenuBadges = { newInquiries?: Promise<number | null> };
-const BADGE_LABEL: Record<keyof MenuBadges, string> = { newInquiries: "새 문의" };
+type MenuBadges = { openInquiries?: Promise<number | null> };
+const BADGE_LABEL: Record<keyof MenuBadges, string> = { openInquiries: "새 문의·진행중" };
 
 type MenuGroup = {
   label: string;
@@ -118,7 +118,7 @@ function buildMenuGroups(): MenuGroup[] {
       // 문의는 이 어드민에서(홈페이지 DB 를 직접 읽음). 블로그 관리는 아직 홈페이지 관리자(별도 로그인) — 새 탭 링크.
       label: "홈페이지",
       items: [
-        { label: "문의 관리", href: "/inquiries", icon: InboxIcon, badge: "newInquiries" },
+        { label: "문의 관리", href: "/inquiries", icon: InboxIcon, badge: "openInquiries" },
         { label: "블로그 글", href: `${HOMEPAGE_URL}/admin`, icon: NewspaperIcon, external: true },
         { label: "빠른 글쓰기", href: `${HOMEPAGE_URL}/admin/quick-post`, icon: PenLineIcon, external: true, more: true },
         { label: "모바일 글쓰기", href: `${HOMEPAGE_URL}/admin/mobile-post`, icon: SmartphoneIcon, external: true, more: true },

@@ -27,7 +27,7 @@ const toggleCls = (on: boolean) => `rounded-md border px-2.5 py-1 text-xs ${on ?
 
 /**
  * 전화 문의 직접 입력 — 홈페이지 문의와 같은 목록에 들어가 상태·견적 작성·거래처 등록을 그대로 쓴다.
- * 이미 통화한 문의라 상태는 '확인'이 기본. 저장하면 상세로 가서 바로 견적서를 쓸 수 있다.
+ * 이미 통화한 문의라 상태는 '진행중'이 기본. 저장하면 상세로 가서 바로 견적서를 쓸 수 있다.
  */
 export function PhoneInquiryButton({ view }: { view: BookView }) {
   const router = useRouter();

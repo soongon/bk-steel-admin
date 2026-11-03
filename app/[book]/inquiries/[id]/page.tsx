@@ -37,7 +37,7 @@ type PartnerRow = QuotePartner & { is_active: boolean };
 
 /**
  * 문의 상세(홈페이지 폼·직접 입력한 전화 문의 공용) — 전화·문자 → 견적서(매입이면 매입견적서)·거래처 등록을 이 화면에서 바로.
- * 견적 폼은 문의의 이름·현장·유입경로로 채워 열고, 저장하면 문의를 '확인'으로 바꾼다.
+ * 견적 폼은 문의의 이름·현장·유입경로로 채워 열고, 저장하면 문의를 '진행중'으로 바꾼다(메모를 남겨도 같다).
  */
 export default async function InquiryDetailPage({ params }: { params: Promise<{ book: string; id: string }> }) {
   const { book, id } = await params;
@@ -150,7 +150,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
                 {kindLabel}
               </span>
               <h1 className="text-xl font-semibold">{inq.name}</h1>
-              <InquiryStatusBadge hasMemo={memos.length > 0} />
+              <InquiryStatusBadge />
             </div>
             {/* 접수 날짜는 크게(목록과 같이), 경로·구분은 옆에 작게 */}
             <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
@@ -213,7 +213,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
               />
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              이름·현장·유입경로를 채워 엽니다. 견적서를 저장하면 이 문의는 &lsquo;확인&rsquo;으로 바뀝니다.
+              이름·현장·유입경로를 채워 엽니다. 견적서를 저장하거나 메모를 남기면 새 문의는 &lsquo;진행중&rsquo;으로 바뀝니다.
             </p>
           </section>
 

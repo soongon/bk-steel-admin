@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { insertMemo, removeMemo } from "@/lib/memo-log-server";
 import { type MemoAddResult, type MemoDeleteResult } from "@/lib/memo-log";
-import { getInquiry } from "@/lib/homepage-inquiry";
+import { getInquiry, writeInquiryStatus } from "@/lib/homepage-inquiry";
 
 // 상세 화면만 다시 그린다 — 문의 메모는 목록·메뉴 배지와 무관.
 const refresh = () => revalidatePath("/[book]/inquiries/[id]", "page");
@@ -17,7 +17,13 @@ export async function addInquiryMemo(inquiryId: string, body: string): Promise<M
   if (!inq.ok) return { ok: false, error: inq.error };
   if (!inq.data) return { ok: false, error: "문의를 찾을 수 없습니다(삭제됐을 수 있음). 새로고침해 주세요." };
   const r = await insertMemo("inquiry", inquiryId, body);
-  if (r.ok) refresh();
+  if (!r.ok) return r;
+  // 메모를 남기면 손을 댄 문의 — '새 문의'면 '진행중'으로(이미 진행중·완료면 그대로). 메모는 저장됐으니 상태 실패는 무시.
+  if (inq.data.status === "new") {
+    const s = await writeInquiryStatus(inquiryId, "read", "new");
+    if (s.ok && s.data.changed) revalidatePath("/[book]", "layout"); // 목록 칩·메뉴 배지까지
+  }
+  refresh();
   return r;
 }
 

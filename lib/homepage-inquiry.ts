@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { type Inquiry, type InquirySource, type InquiryStatus, type InquiryType } from "@/lib/inquiry";
+import { OPEN_INQUIRY_STATUSES, type Inquiry, type InquirySource, type InquiryStatus, type InquiryType } from "@/lib/inquiry";
 
 /**
  * 홈페이지 문의 읽기·상태 변경 — 홈페이지 전용 Supabase(어드민과 다른 프로젝트)를 서비스 롤로 연다.
@@ -126,13 +126,13 @@ export async function removeInquiry(id: string): Promise<InquiryResult<{ deleted
   return { ok: true, data: { deleted: (data ?? []).length > 0 } };
 }
 
-/** 메뉴 배지용 새 문의 수 — 레이아웃이 기다리지 않고 넘기므로 절대 throw 하지 않는다(연결 없음·오류면 null). */
-export async function countNewInquiries(): Promise<number | null> {
+/** 메뉴 배지용 처리할 문의 수(새 문의 + 진행중) — 레이아웃이 기다리지 않고 넘기므로 절대 throw 하지 않는다(연결 없음·오류면 null). */
+export async function countOpenInquiries(): Promise<number | null> {
   try {
     if (!homepageConfigured()) return null;
     const [access, { count, error }] = await Promise.all([
       checkAccess(),
-      homepageDb().from("inquiries").select("id", { count: "exact", head: true }).eq("status", "new"),
+      homepageDb().from("inquiries").select("id", { count: "exact", head: true }).in("status", [...OPEN_INQUIRY_STATUSES]),
     ]);
     if (!access.ok || error) return null;
     return count ?? 0;
@@ -142,7 +142,7 @@ export async function countNewInquiries(): Promise<number | null> {
 }
 
 /**
- * 상태 변경. onlyFrom 을 주면 지금 그 상태일 때만 바꾼다(견적 저장 → '새 문의'만 '확인'으로, 이미 완료면 그대로).
+ * 상태 변경. onlyFrom 을 주면 지금 그 상태일 때만 바꾼다(견적 저장·메모 → '새 문의'만 '진행중'으로, 이미 완료면 그대로).
  * changed = 실제로 바뀐 행이 있었는지.
  */
 export async function writeInquiryStatus(
