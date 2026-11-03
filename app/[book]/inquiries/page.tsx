@@ -17,6 +17,7 @@ import {
   phoneKey,
 } from "@/lib/inquiry";
 import { LeadSourceBadge } from "@/components/admin/lead-source-badge";
+import { NoteLogBadge } from "@/components/admin/note-cell";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { InquiryUnavailable } from "./inquiry-unavailable";
@@ -42,11 +43,13 @@ export default async function InquiriesPage({
   const statusFilter: InquiryStatus | null = isInquiryStatus(statusParam) ? statusParam : null;
   const supabase = await createClient();
 
-  const [res, canWrite, partnersRes] = await Promise.all([
+  const [res, canWrite, partnersRes, memosRes] = await Promise.all([
     listInquiries(),
     canWriteInquiries(),
     // 같은 번호의 거래처를 이름 옆에 표시 — 거래처 전화는 숫자만 저장된다.
     supabase.from("partner").select("name, phone").is("deleted_at", null).not("phone", "is", null),
+    // 메모 기록(0098, 어드민 DB) 건수·최근 1건 — 문의가 다른 DB 라 embed 못 해 통째로 읽어 묶는다(문의 수십 건 규모).
+    supabase.from("inquiry_memo").select("inquiry_id, body, created_at").order("created_at", { ascending: false }).limit(5000),
   ]);
   if (!res.ok) return <InquiryUnavailable error={res.error} unconfigured={res.unconfigured} />;
 
@@ -54,6 +57,14 @@ export default async function InquiriesPage({
   for (const p of (partnersRes.data ?? []) as Array<{ name: string; phone: string | null }>) {
     const k = phoneKey(p.phone);
     if (k && !partnerByPhone.has(k)) partnerByPhone.set(k, p.name);
+  }
+
+  // 최신순으로 읽었으니 문의별 첫 행이 최근 메모.
+  const memoLog = new Map<string, { count: number; latest: { body: string; created_at: string } }>();
+  for (const m of (memosRes.data ?? []) as Array<{ inquiry_id: string; body: string; created_at: string }>) {
+    const cur = memoLog.get(m.inquiry_id);
+    if (cur) cur.count += 1;
+    else memoLog.set(m.inquiry_id, { count: 1, latest: { body: m.body, created_at: m.created_at } });
   }
 
   const all = res.data;
@@ -119,6 +130,7 @@ export default async function InquiriesPage({
                 const st = inquiryStatusMeta(i.status);
                 const partner = partnerByPhone.get(phoneKey(i.phone));
                 const phoneIn = isPhoneInquiry(i.source);
+                const memo = memoLog.get(i.id);
                 const lead = guessLeadSource(i.source);
                 const srcText = describeSource(i.source);
                 const received = fmtKstDateTime(i.created_at);
@@ -149,6 +161,11 @@ export default async function InquiriesPage({
                           전화
                         </span>
                       ) : null}
+                      {memo ? (
+                        <span className="ml-1.5 inline-flex align-middle">
+                          <NoteLogBadge count={memo.count} latest={memo.latest} />
+                        </span>
+                      ) : null}
                       {partner ? (
                         <span className="ml-1.5 inline-flex h-5 items-center rounded-full border px-1.5 text-[10px] text-muted-foreground" title="같은 번호로 등록된 거래처">
                           거래처 {partner}
@@ -171,6 +188,14 @@ export default async function InquiriesPage({
                     </TableCell>
                     <TableCell className="text-center">
                       <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs whitespace-nowrap ${st.cls}`}>{st.label}</span>
+                      {/* 메모가 쌓였는데 아직 완료 전 = 진행 중인 건 */}
+                      {memo && i.status !== "resolved" ? (
+                        <div className="mt-1">
+                          <span className="inline-flex h-5 items-center rounded-full bg-sky-100 px-2 text-xs whitespace-nowrap text-sky-700 dark:bg-sky-950/50 dark:text-sky-300" title="메모 기록이 있고 아직 완료 전">
+                            진행중
+                          </span>
+                        </div>
+                      ) : null}
                     </TableCell>
                     {canWrite ? (
                       <TableCell className="text-center">
