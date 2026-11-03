@@ -26,7 +26,10 @@ import { type PurchaseQuoteDefaults, type PurchaseQuoteItemOption, type Purchase
 import { type PartnerPrefill } from "@/app/[book]/partners/partner-form-dialog";
 import { cn } from "@/lib/utils";
 import { InquiryUnavailable } from "../inquiry-unavailable";
+import { MemoLogPanel } from "@/components/admin/memo-log-panel";
+import { MEMO_COLUMNS, type MemoEntry } from "@/lib/memo-log";
 import { InquiryActions, InquiryStatusBadge, InquiryStatusButtons, InquiryStatusProvider } from "./inquiry-actions";
+import { addInquiryMemo, deleteInquiryMemo } from "./memo-actions";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -43,7 +46,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
   const supabase = await createClient();
   const books: Book[] = view !== "all" ? [view] : [...BOOKS];
 
-  const [res, listRes, partnersRes, itemsRes, rebarSpecsRes, companyRes, pqCompanyList, sites] = await Promise.all([
+  const [res, listRes, partnersRes, itemsRes, rebarSpecsRes, companyRes, pqCompanyList, sites, memosRes, claimsRes] = await Promise.all([
     getInquiry(id),
     listInquiries(), // 같은 번호의 다른 문의
     supabase
@@ -62,6 +65,14 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
     // 매입견적서는 B계좌 공급자를 SL 로 채운다(fetchCompanyProfile) — 매입견적서 목록과 같은 공급자로 미리보기.
     Promise.all(books.map((b) => fetchCompanyProfile(supabase, b))),
     fetchSiteOptions(supabase), // 견적 폼 현장명 자동완성(문의의 현장/지역이 기존 현장이면 그대로 연결)
+    // 내부 메모 기록(0098) — 어드민 DB, 홈페이지엔 안 나간다.
+    supabase
+      .from("inquiry_memo")
+      .select(MEMO_COLUMNS)
+      .eq("inquiry_id", id)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true }),
+    supabase.auth.getClaims(),
   ]);
   if (!res.ok) return <InquiryUnavailable error={res.error} unconfigured={res.unconfigured} />;
   const inq = res.data;
@@ -73,6 +84,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
   const activePartners = allPartners.filter((p) => p.is_active);
   const others = listRes.ok ? listRes.data.filter((o) => o.id !== inq.id && key && phoneKey(o.phone) === key) : [];
 
+  const memos = (memosRes.data ?? []) as MemoEntry[];
   const kind = inquiryKind(inq.inquiry_type);
   const kindLabel = inquiryKindLabel(inq.inquiry_type);
   const phoneIn = isPhoneInquiry(inq.source);
@@ -204,6 +216,16 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
               이름·현장·유입경로를 채워 엽니다. 견적서를 저장하면 이 문의는 &lsquo;확인&rsquo;으로 바뀝니다.
             </p>
           </section>
+
+          {/* 내부 메모 기록(0098) — 통화·진행 상황을 시간순으로. 손님이 쓴 문의 내용은 위 칸 그대로. */}
+          <MemoLogPanel
+            parentId={inq.id}
+            registeredNote={null}
+            memos={memos}
+            currentUserId={claimsRes.data?.claims.sub ?? null}
+            addMemoAction={addInquiryMemo}
+            deleteMemoAction={deleteInquiryMemo}
+          />
         </div>
 
         <aside className="flex flex-col gap-4 text-sm">

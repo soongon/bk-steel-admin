@@ -2,28 +2,33 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { MEMO_COLUMNS, MEMO_MAX, type MemoAddResult, type MemoDeleteResult, type MemoEntry } from "@/lib/memo-log";
 
-/** 메모 기록 표 — 거래별로 같은 구조(0080·0081·0082). labelObj = 목적격 조사까지(매출을·견적서를). */
-const TABLES = {
-  sale: { table: "sale_memo", fk: "sale_id", parentTable: "sale", label: "매출", labelObj: "매출을" },
-  purchase: { table: "purchase_memo", fk: "purchase_id", parentTable: "purchase", label: "매입", labelObj: "매입을" },
-  quote: { table: "quote_memo", fk: "quote_id", parentTable: "quote", label: "견적서", labelObj: "견적서를" },
-} as const;
+/**
+ * 메모 기록 표 — 거래별로 같은 구조(0080·0081·0082·0098). labelObj = 목적격 조사까지(매출을·견적서를).
+ * 문의(0098)는 원본이 홈페이지 DB 라 parentTable 이 없다 — 문의가 있는지는 호출측(문의 메모 액션)이 먼저 확인한다.
+ */
+const TABLES: Record<
+  "sale" | "purchase" | "quote" | "inquiry",
+  { table: string; fk: string; parentTable: string | null; label: string; labelObj: string; noPermission: string }
+> = {
+  sale: { table: "sale_memo", fk: "sale_id", parentTable: "sale", label: "매출", labelObj: "매출을", noPermission: "권한이 없습니다 (이 책 staff 이상 필요)." },
+  purchase: { table: "purchase_memo", fk: "purchase_id", parentTable: "purchase", label: "매입", labelObj: "매입을", noPermission: "권한이 없습니다 (이 책 staff 이상 필요)." },
+  quote: { table: "quote_memo", fk: "quote_id", parentTable: "quote", label: "견적서", labelObj: "견적서를", noPermission: "권한이 없습니다 (이 책 staff 이상 필요)." },
+  inquiry: { table: "inquiry_memo", fk: "inquiry_id", parentTable: null, label: "문의", labelObj: "문의를", noPermission: "권한이 없습니다 (staff 이상 필요)." },
+};
 export type MemoParent = keyof typeof TABLES;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const NO_PERMISSION = "권한이 없습니다 (이 책 staff 이상 필요).";
-
 function friendly(parent: MemoParent, message: string): string {
-  const { table } = TABLES[parent];
-  if (message.includes("row-level security")) return NO_PERMISSION;
+  const { table, noPermission } = TABLES[parent];
+  if (message.includes("row-level security")) return noPermission;
   if (message.includes(`chk_${table}_body`)) return `메모 내용을 입력해 주세요 (${MEMO_MAX.toLocaleString()}자 이내).`;
   return message;
 }
 
-/** 사용자 세션(RLS)으로 넣는다 — 작성 시각·작성자는 트리거, 권한은 그 거래의 책 staff 이상. */
+/** 사용자 세션(RLS)으로 넣는다 — 작성 시각·작성자는 트리거, 권한은 그 거래의 책 staff 이상(문의는 어느 책이든 staff 이상). */
 export async function insertMemo(parent: MemoParent, parentId: string, body: string): Promise<MemoAddResult> {
-  const { table, fk, parentTable, label, labelObj } = TABLES[parent];
+  const { table, fk, parentTable, label, labelObj, noPermission } = TABLES[parent];
   if (!UUID_RE.test(parentId)) return { ok: false, error: `잘못된 ${label}입니다.` };
   const text = body.trim();
   if (!text) return { ok: false, error: "메모 내용을 입력해 주세요." };
@@ -36,8 +41,9 @@ export async function insertMemo(parent: MemoParent, parentId: string, body: str
     // RLS 거부에는 '권한 없음'과 '그 거래가 없음(화면을 연 사이 취소·삭제)'이 섞여 온다 — WITH CHECK 가 FK 검사보다 먼저라
     // FK 오류로는 오지 않는다. 거래가 아직 보이는지 한 번 더 보고 갈라 안내한다.
     if (message.includes("row-level security")) {
+      if (!parentTable) return { ok: false, error: noPermission };
       const { data: parentRow } = await supabase.from(parentTable).select("id").eq("id", parentId).is("deleted_at", null).maybeSingle();
-      return { ok: false, error: parentRow ? NO_PERMISSION : `${labelObj} 찾을 수 없습니다(취소·삭제됐을 수 있음). 새로고침해 주세요.` };
+      return { ok: false, error: parentRow ? noPermission : `${labelObj} 찾을 수 없습니다(취소·삭제됐을 수 있음). 새로고침해 주세요.` };
     }
     return { ok: false, error: friendly(parent, message) };
   }

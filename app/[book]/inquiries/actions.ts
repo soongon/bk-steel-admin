@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
 import { digitsOnly } from "@/lib/format";
 import { type InquirySource, isInquiryStatus, isInquiryType } from "@/lib/inquiry";
 import { isLeadSource } from "@/lib/lead-source";
@@ -30,6 +31,10 @@ export async function deleteInquiry(id: string): Promise<InquiryActionResult> {
   const r = await removeInquiry(id);
   if (!r.ok) return { ok: false, error: r.error };
   if (!r.data.deleted) return { ok: false, error: "문의를 찾지 못했습니다. 이미 지워졌을 수 있습니다." };
+  // 어드민 DB 의 메모 기록(0098, FK 없음)도 같이 — 실패해도 문의는 이미 지워졌으니 알리기만 한다(남은 메모는 보이는 곳이 없다).
+  const supabase = await createClient();
+  const { error: purgeError } = await supabase.rpc("purge_inquiry_memos", { p_inquiry_id: id });
+  if (purgeError) console.warn("purge_inquiry_memos failed:", purgeError.message);
   refresh();
   return { ok: true };
 }
