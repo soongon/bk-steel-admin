@@ -64,7 +64,7 @@ export function PhoneInquiryButton({ view }: { view: BookView }) {
         setError(r.error);
         return;
       }
-      toast.success("전화 문의를 등록했습니다");
+      toast.success("문의를 등록했습니다");
       setOpen(false);
       router.push(`/${view}/inquiries/${r.id}`);
     });
@@ -75,12 +75,12 @@ export function PhoneInquiryButton({ view }: { view: BookView }) {
   return (
     <>
       <Button size="sm" onClick={openDialog}>
-        <PhoneIcon /> 전화 문의 입력
+        <PhoneIcon /> 문의 입력
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[92vh] !max-w-[min(32rem,calc(100%-2rem))] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>전화 문의 입력</DialogTitle>
+            <DialogTitle>문의 입력</DialogTitle>
             <DialogDescription>전화로 받은 문의를 문의 목록에 남깁니다. 저장 후 바로 견적서를 쓸 수 있습니다.</DialogDescription>
           </DialogHeader>
 

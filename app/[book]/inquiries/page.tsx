@@ -20,6 +20,7 @@ import { LeadSourceBadge } from "@/components/admin/lead-source-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { InquiryUnavailable } from "./inquiry-unavailable";
+import { InquiryRow } from "./inquiry-row";
 import { PhoneInquiryButton } from "./phone-inquiry-dialog";
 
 /**
@@ -67,26 +68,27 @@ export default async function InquiriesPage({
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">문의 관리</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            sl-steel.co.kr 문의 폼 + 직접 입력한 전화 문의 · 책과 무관 · 상태는 홈페이지 관리자와 같이 바뀝니다
-          </p>
-        </div>
-        {canWrite ? <PhoneInquiryButton view={view} /> : null}
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">문의 관리</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          sl-steel.co.kr 문의 폼 + 직접 입력한 전화 문의 · 책과 무관 · 상태는 홈페이지 관리자와 같이 바뀝니다
+        </p>
       </header>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        {chips.map((c) => {
-          const on = c.key === statusFilter;
-          return (
-            <Link key={c.key ?? "all"} href={c.key ? `/${view}/inquiries?status=${c.key}` : `/${view}/inquiries`} className={chipCls(on)}>
-              {c.label}
-              <span className={`tabular-nums ${on ? "opacity-80" : "text-muted-foreground"}`}>{c.count}</span>
-            </Link>
-          );
-        })}
+      {/* 상태 칩 + [문의 입력] — 표 바로 위 한 줄 */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {chips.map((c) => {
+            const on = c.key === statusFilter;
+            return (
+              <Link key={c.key ?? "all"} href={c.key ? `/${view}/inquiries?status=${c.key}` : `/${view}/inquiries`} className={chipCls(on)}>
+                {c.label}
+                <span className={`tabular-nums ${on ? "opacity-80" : "text-muted-foreground"}`}>{c.count}</span>
+              </Link>
+            );
+          })}
+        </div>
+        {canWrite ? <PhoneInquiryButton view={view} /> : null}
       </div>
 
       <div className="overflow-x-auto rounded-lg border bg-card">
@@ -124,7 +126,7 @@ export default async function InquiriesPage({
                   </span>
                 );
                 return (
-                  <TableRow key={i.id} className={cn(i.status === "new" && "bg-red-50/50 dark:bg-red-950/15")}>
+                  <InquiryRow key={i.id} href={`/${view}/inquiries/${i.id}`} className={cn(i.status === "new" && "bg-red-50/50 dark:bg-red-950/15")}>
                     <TableCell className="text-xs tabular-nums">
                       {/* 휴대폰 폭에선 연도를 빼 상태 칸까지 한 화면에 */}
                       <div>
@@ -167,7 +169,7 @@ export default async function InquiriesPage({
                     <TableCell className="text-center">
                       <span className={`inline-flex h-5 items-center rounded-full px-2 text-xs whitespace-nowrap ${st.cls}`}>{st.label}</span>
                     </TableCell>
-                  </TableRow>
+                  </InquiryRow>
                 );
               })
             )}
