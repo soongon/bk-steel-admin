@@ -140,10 +140,16 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
               <h1 className="text-xl font-semibold">{inq.name}</h1>
               <InquiryStatusBadge />
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {channel} {inq.inquiry_type}
-              {phoneIn ? "(직접 입력)" : ""} · 접수 {received}
-              {(inq.submit_count ?? 1) > 1 ? ` · ${inq.submit_count}회 제출(합침)` : ""}
+            {/* 접수 날짜는 크게(목록과 같이), 경로·구분은 옆에 작게 */}
+            <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
+              <span>접수</span>
+              <span className="text-lg font-semibold text-foreground tabular-nums">{received.slice(0, 10)}</span>
+              <span className="tabular-nums">{received.slice(11)}</span>
+              <span>
+                · {channel} {inq.inquiry_type}
+                {phoneIn ? "(직접 입력)" : ""}
+                {(inq.submit_count ?? 1) > 1 ? ` · ${inq.submit_count}회 제출(합침)` : ""}
+              </span>
             </p>
           </div>
           <InquiryStatusButtons />
