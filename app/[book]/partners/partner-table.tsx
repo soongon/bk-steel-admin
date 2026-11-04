@@ -187,8 +187,8 @@ export function PartnerTable({
         empty ? (
           <div className="rounded-lg border bg-card py-12 text-center text-muted-foreground">{empty}</div>
         ) : (
-          // 작은 카드 — 이름·대표자·전화·사업자번호만. 넓은 화면에서 한 줄 5장, 한 화면 30곳 안팎.
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-2">
+          // 카드 — 이름·대표자·전화·사업자번호만. 글자는 조금 크게(잘 안 보인다는 2026-11-04 피드백), 넓은 화면에서 한 줄 5장 안팎.
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-3">
             {visible.map((p) => (
               <div
                 key={p.id}
@@ -202,12 +202,12 @@ export function PartnerTable({
                   }
                 }}
                 className={cn(
-                  "group relative flex cursor-pointer flex-col gap-0.5 rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "group relative flex cursor-pointer flex-col gap-1 rounded-lg border bg-card px-4 py-3 text-sm transition-colors hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   !p.is_active && "opacity-60",
                 )}
               >
                 <div className="flex items-start gap-1.5">
-                  <span className="min-w-0 flex-1 truncate font-medium" title={p.name}>
+                  <span className="min-w-0 flex-1 truncate text-base font-semibold" title={p.name}>
                     {p.name}
                   </span>
                   {p.doc_count ? (
@@ -217,9 +217,9 @@ export function PartnerTable({
                     </span>
                   ) : null}
                   {!p.is_active ? <span className="shrink-0 rounded-full bg-zinc-100 px-1.5 text-[10px] text-zinc-600 dark:bg-zinc-800/50">비활성</span> : null}
-                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{p.code}</span>
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">{p.code}</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                   <span className="truncate">{p.representative ?? "—"}</span>
                   <span aria-hidden>·</span>
                   {p.phone ? (
@@ -230,7 +230,7 @@ export function PartnerTable({
                     <span className="shrink-0">—</span>
                   )}
                 </div>
-                <BizNoLine businessNo={p.business_no} />
+                <BizNoLine businessNo={p.business_no} size="md" />
                 <button
                   type="button"
                   onClick={(e) => {
@@ -239,7 +239,7 @@ export function PartnerTable({
                   }}
                   aria-label="삭제"
                   title="삭제"
-                  className="absolute right-1.5 bottom-1.5 rounded p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-destructive focus:opacity-100"
+                  className="absolute right-2 bottom-2 rounded p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-destructive focus:opacity-100"
                 >
                   <Trash2Icon className="size-3.5" />
                 </button>
@@ -350,12 +350,13 @@ export function PartnerTable({
   );
 }
 
-/** 사업자번호 — 있으면 번호, 없으면 주황 '번호 없음'(세금계산서 발행 전 채워야 할 곳이 한눈에). */
-function BizNoLine({ businessNo }: { businessNo: string | null }) {
+/** 사업자번호 — 있으면 번호, 없으면 주황 '번호 없음'(세금계산서 발행 전 채워야 할 곳이 한눈에). size md = 카드용(조금 크게). */
+function BizNoLine({ businessNo, size = "sm" }: { businessNo: string | null; size?: "sm" | "md" }) {
+  const md = size === "md";
   return businessNo ? (
-    <span className="font-mono text-xs text-muted-foreground tabular-nums">{formatBusinessNo(businessNo)}</span>
+    <span className={cn("font-mono text-muted-foreground tabular-nums", md ? "text-sm" : "text-xs")}>{formatBusinessNo(businessNo)}</span>
   ) : (
-    <span className="inline-flex w-fit items-center rounded bg-amber-50 px-1.5 text-[11px] text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+    <span className={cn("inline-flex w-fit items-center rounded bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300", md ? "px-2 py-0.5 text-xs" : "px-1.5 text-[11px]")}>
       사업자번호 없음
     </span>
   );
