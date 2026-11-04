@@ -461,18 +461,6 @@ export default async function PurchaseDetailPage({
         </div>
       </section>
 
-      {/* 사진 — 계근표·현장·영수증(0099), 고르는 즉시 올라간다 */}
-      <section className="px-6 pb-6">
-        <TradeDocPanel
-          parentId={purchase.id}
-          docs={docs ?? []}
-          loadError={docs === null}
-          currentUserId={claimsData?.claims.sub ?? null}
-          canWrite={canWriteDocs === true}
-          syncAction={syncPurchaseDocs}
-        />
-      </section>
-
       {/* 메모 — 등록 메모(purchase.notes) + 시간순 기록(purchase_memo), 바로 추가 */}
       <section className="px-6 pb-6">
         <MemoLogPanel
@@ -483,6 +471,18 @@ export default async function PurchaseDetailPage({
           currentUserId={claimsData?.claims.sub ?? null}
           addMemoAction={addPurchaseMemo}
           deleteMemoAction={deletePurchaseMemo}
+        />
+      </section>
+
+      {/* 사진 — 계근표·현장·영수증(0099), 고르는 즉시 올라간다 */}
+      <section className="px-6 pb-6">
+        <TradeDocPanel
+          parentId={purchase.id}
+          docs={docs ?? []}
+          loadError={docs === null}
+          currentUserId={claimsData?.claims.sub ?? null}
+          canWrite={canWriteDocs === true}
+          syncAction={syncPurchaseDocs}
         />
       </section>
     </div>

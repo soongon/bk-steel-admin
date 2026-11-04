@@ -594,16 +594,6 @@ export default async function SaleDetailPage({
         </div>
       </section>
 
-      {/* 사진 — 계근표·현장·영수증(0099), 고르는 즉시 올라간다 */}
-      <TradeDocPanel
-        parentId={sale.id}
-        docs={docs ?? []}
-        loadError={docs === null}
-        currentUserId={claimsData?.claims.sub ?? null}
-        canWrite={canWriteDocs === true}
-        syncAction={syncSaleDocs}
-      />
-
       {/* 메모 — 등록 메모(sale.notes) + 시간순 기록(sale_memo), 바로 추가 */}
       <MemoLogPanel
         parentId={sale.id}
@@ -615,6 +605,15 @@ export default async function SaleDetailPage({
         deleteMemoAction={deleteSaleMemo}
       />
 
+      {/* 사진 — 계근표·현장·영수증(0099), 고르는 즉시 올라간다 */}
+      <TradeDocPanel
+        parentId={sale.id}
+        docs={docs ?? []}
+        loadError={docs === null}
+        currentUserId={claimsData?.claims.sub ?? null}
+        canWrite={canWriteDocs === true}
+        syncAction={syncSaleDocs}
+      />
     </div>
   );
 }
