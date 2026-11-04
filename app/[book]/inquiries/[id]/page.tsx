@@ -7,7 +7,7 @@ import { type CompanyProfile, fetchCompanyProfile } from "@/lib/company-profile"
 import { fetchSiteOptions } from "@/lib/site";
 import { STEEL_CUSTOM_ITEM_ID } from "@/lib/transaction-draft";
 import { fmtKstDateTime, formatPhone } from "@/lib/format";
-import { getInquiry, listInquiries } from "@/lib/homepage-inquiry";
+import { canWriteInquiries, getInquiry, listInquiries } from "@/lib/homepage-inquiry";
 import {
   INQUIRY_KIND_CLS,
   describeSource,
@@ -38,6 +38,7 @@ type PartnerRow = QuotePartner & { is_active: boolean };
 /**
  * 문의 상세(홈페이지 폼·직접 입력한 전화 문의 공용) — 전화·문자 → 견적서(매입이면 매입견적서)·거래처 등록을 이 화면에서 바로.
  * 견적 폼은 문의의 이름·현장·유입경로로 채워 열고, 저장하면 문의를 '진행중'으로 바꾼다(메모를 남겨도 같다).
+ * '새 문의'는 쓰기 권한이 있는 사람이 이 화면을 열면 바로 '진행중'이 된다(보기 전용 역할은 그대로).
  */
 export default async function InquiryDetailPage({ params }: { params: Promise<{ book: string; id: string }> }) {
   const { book, id } = await params;
@@ -46,7 +47,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
   const supabase = await createClient();
   const books: Book[] = view !== "all" ? [view] : [...BOOKS];
 
-  const [res, listRes, partnersRes, itemsRes, rebarSpecsRes, companyRes, pqCompanyList, sites, memosRes, claimsRes] = await Promise.all([
+  const [res, listRes, partnersRes, itemsRes, rebarSpecsRes, companyRes, pqCompanyList, sites, memosRes, claimsRes, canWrite] = await Promise.all([
     getInquiry(id),
     listInquiries(), // 같은 번호의 다른 문의
     supabase
@@ -73,6 +74,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
       .order("created_at", { ascending: true })
       .order("id", { ascending: true }),
     supabase.auth.getClaims(),
+    canWriteInquiries(),
   ]);
   if (!res.ok) return <InquiryUnavailable error={res.error} unconfigured={res.unconfigured} />;
   const inq = res.data;
@@ -141,8 +143,8 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
         </Link>
       </div>
 
-      {/* 상태는 누르는 즉시 배지·버튼에 반영(저장은 뒤에서) */}
-      <InquiryStatusProvider id={inq.id} status={inq.status}>
+      {/* 상태는 누르는 즉시 배지·버튼에 반영(저장은 뒤에서). 새 문의는 열자마자 진행중으로 */}
+      <InquiryStatusProvider id={inq.id} status={inq.status} autoStart={canWrite && inq.status === "new"}>
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -213,7 +215,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
               />
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              이름·현장·유입경로를 채워 엽니다. 견적서를 저장하거나 메모를 남기면 새 문의는 &lsquo;진행중&rsquo;으로 바뀝니다.
+              이름·현장·유입경로를 채워 엽니다. 새 문의는 이 화면을 열면 &lsquo;진행중&rsquo;으로 바뀝니다.
             </p>
           </section>
 

@@ -255,7 +255,7 @@ export default async function InquiriesPage({
             <StatusDot status="new" />
             <h2 className="text-sm font-semibold text-red-800 dark:text-red-300">새로 들어온 문의</h2>
             <span className="rounded-full bg-red-600 px-2 text-xs font-semibold text-white tabular-nums">{fresh.length}</span>
-            <span className="ml-auto hidden text-xs text-red-700/80 sm:inline dark:text-red-300/80">확인했으면 [진행 시작]을 눌러 진행중으로 넘기세요</span>
+            <span className="ml-auto hidden text-xs text-red-700/80 sm:inline dark:text-red-300/80">열어 보거나 [진행 시작]을 누르면 진행중으로 넘어갑니다</span>
           </div>
           <div className="overflow-x-auto">
             <Table className="table-fixed">

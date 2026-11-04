@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useOptimistic, useState, useTransition } from "react";
+import { createContext, useContext, useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Building2Icon, FileTextIcon, Loader2Icon, ScaleIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -32,9 +32,30 @@ function useInquiryStatus(): InquiryStatusState {
   return ctx;
 }
 
-export function InquiryStatusProvider({ id, status, children }: { id: string; status: string; children: React.ReactNode }) {
+export function InquiryStatusProvider({
+  id,
+  status,
+  autoStart = false,
+  children,
+}: {
+  id: string;
+  status: string;
+  autoStart?: boolean; // 새 문의를 열면 바로 진행중으로(쓰기 권한 있을 때만 서버가 켠다)
+  children: React.ReactNode;
+}) {
   const [saving, startTransition] = useTransition();
   const [shown, setShown] = useOptimistic(status);
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!autoStart || autoStarted.current) return; // 개발 모드 이펙트 두 번 실행 대비(서버도 '새 문의'일 때만 바꾼다)
+    autoStarted.current = true;
+    startTransition(async () => {
+      setShown("read");
+      const r = await markInquiryHandled(id);
+      if (r.ok) toast.success("새 문의를 열어 '진행중'으로 바꿨습니다");
+      else toast.error(r.error);
+    });
+  }, [autoStart, id, setShown]);
   function change(next: InquiryStatus) {
     if (next === shown) return;
     startTransition(async () => {
