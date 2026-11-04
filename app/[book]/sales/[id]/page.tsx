@@ -9,7 +9,7 @@ import { type StatementData } from "@/components/admin/trading-statement";
 import { fetchCompanyProfile, fetchAllCompanyProfiles } from "@/lib/company-profile";
 import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { listTradeDocs } from "@/lib/trade-docs-server";
-import { TradeDocPanel } from "@/components/admin/trade-doc-panel";
+import { TradeDocGallery, TradeDocUploadButton } from "@/components/admin/trade-docs";
 import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
 import { MemoLogPanel } from "@/components/admin/memo-log-panel";
 import { MEMO_COLUMNS, type MemoEntry } from "@/lib/memo-log";
@@ -394,6 +394,7 @@ export default async function SaleDetailPage({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          {canWriteDocs === true ? <TradeDocUploadButton parentId={sale.id} count={docs?.length ?? 0} loadError={docs === null} syncAction={syncSaleDocs} /> : null}
           <SaleEditButton
             sale={saleRow}
             view={book}
@@ -605,15 +606,17 @@ export default async function SaleDetailPage({
         deleteMemoAction={deleteSaleMemo}
       />
 
-      {/* 사진 — 계근표·현장·영수증(0099), 고르는 즉시 올라간다 */}
-      <TradeDocPanel
-        parentId={sale.id}
-        docs={docs ?? []}
-        loadError={docs === null}
-        currentUserId={claimsData?.claims.sub ?? null}
-        canWrite={canWriteDocs === true}
-        syncAction={syncSaleDocs}
-      />
+      {/* 사진(0099) — 있을 때만, 메모 아래. 올리기는 머리의 [사진 올리기] */}
+      {docs === null || docs.length > 0 ? (
+        <TradeDocGallery
+          parentId={sale.id}
+          docs={docs ?? []}
+          loadError={docs === null}
+          currentUserId={claimsData?.claims.sub ?? null}
+          canWrite={canWriteDocs === true}
+          syncAction={syncSaleDocs}
+        />
+      ) : null}
     </div>
   );
 }

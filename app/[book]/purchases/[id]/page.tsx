@@ -6,7 +6,7 @@ import { type Book } from "@/lib/book";
 import { buttonVariants } from "@/components/ui/button";
 import { BookBadge } from "@/components/admin/book-badge";
 import { listTradeDocs } from "@/lib/trade-docs-server";
-import { TradeDocPanel } from "@/components/admin/trade-doc-panel";
+import { TradeDocGallery, TradeDocUploadButton } from "@/components/admin/trade-docs";
 import { fmtKrw, formatBusinessNo } from "@/lib/format";
 import { PurchaseLifecyclePanel } from "./purchase-lifecycle-panel";
 import { MemoLogPanel } from "@/components/admin/memo-log-panel";
@@ -276,6 +276,7 @@ export default async function PurchaseDetailPage({
               홈택스
             </span>
           ) : null}
+          {canWriteDocs === true ? <TradeDocUploadButton parentId={purchase.id} count={docs?.length ?? 0} loadError={docs === null} syncAction={syncPurchaseDocs} /> : null}
           <PurchaseEditButton
             purchase={purchaseRow}
             view={book}
@@ -474,17 +475,19 @@ export default async function PurchaseDetailPage({
         />
       </section>
 
-      {/* 사진 — 계근표·현장·영수증(0099), 고르는 즉시 올라간다 */}
-      <section className="px-6 pb-6">
-        <TradeDocPanel
-          parentId={purchase.id}
-          docs={docs ?? []}
-          loadError={docs === null}
-          currentUserId={claimsData?.claims.sub ?? null}
-          canWrite={canWriteDocs === true}
-          syncAction={syncPurchaseDocs}
-        />
-      </section>
+      {/* 사진(0099) — 있을 때만, 메모 아래. 올리기는 머리의 [사진 올리기] */}
+      {docs === null || docs.length > 0 ? (
+        <section className="px-6 pb-6">
+          <TradeDocGallery
+            parentId={purchase.id}
+            docs={docs ?? []}
+            loadError={docs === null}
+            currentUserId={claimsData?.claims.sub ?? null}
+            canWrite={canWriteDocs === true}
+            syncAction={syncPurchaseDocs}
+          />
+        </section>
+      ) : null}
     </div>
   );
 }
