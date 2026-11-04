@@ -21,39 +21,60 @@ import { PartnerFormDialog, type PartnerRow, type PartnerPrefill } from "./partn
 import { deletePartner } from "./actions";
 
 /**
- * 보기 방식(카드·목록) — 브라우저에 기억(localStorage). 서버 렌더는 카드로 두고 클라이언트가 붙은 뒤 저장값으로 바꾼다
- * (useSyncExternalStore 라 hydration 불일치 없음). 기본은 카드: 한 화면에 3배쯤 많이 보인다(2026-11-04 사용자 요청).
+ * 보기 방식(카드·목록)·정렬(최근 거래·이름·코드) — 브라우저에 기억(localStorage). 서버 렌더는 기본값으로 두고 클라이언트가
+ * 붙은 뒤 저장값으로 바꾼다(useSyncExternalStore 라 hydration 불일치 없음). 기본은 카드·최근 거래순(2026-11-04 사용자 요청).
  */
 type View = "card" | "list";
-const VIEW_KEY = "partners.view";
-const viewListeners = new Set<() => void>();
-function readView(): View {
-  try {
-    return window.localStorage.getItem(VIEW_KEY) === "list" ? "list" : "card";
-  } catch {
-    return "card";
-  }
-}
-function writeView(v: View) {
-  try {
-    window.localStorage.setItem(VIEW_KEY, v);
-  } catch {
-    /* 사생활 보호 모드 등 — 이번 방문만 */
-  }
-  viewListeners.forEach((l) => l());
-}
-function subscribeView(l: () => void) {
-  viewListeners.add(l);
+type Sort = "recent" | "name" | "code";
+const SORT_LABEL: Record<Sort, string> = { recent: "최근 거래", name: "이름", code: "코드" };
+const listeners = new Set<() => void>();
+function subscribe(l: () => void) {
+  listeners.add(l);
   window.addEventListener("storage", l);
   return () => {
-    viewListeners.delete(l);
+    listeners.delete(l);
     window.removeEventListener("storage", l);
   };
 }
-function useView(): [View, (v: View) => void] {
-  const view = useSyncExternalStore(subscribeView, readView, () => "card" as View);
-  return [view, writeView];
+function usePref<T extends string>(key: string, fallback: T, valid: readonly T[]): [T, (v: T) => void] {
+  const read = () => {
+    try {
+      const v = window.localStorage.getItem(key);
+      return valid.includes(v as T) ? (v as T) : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  const value = useSyncExternalStore(subscribe, read, () => fallback);
+  const write = (v: T) => {
+    try {
+      window.localStorage.setItem(key, v);
+    } catch {
+      /* 사생활 보호 모드 등 — 이번 방문만 */
+    }
+    listeners.forEach((l) => l());
+  };
+  return [value, write];
 }
+
+/** 가장 최근 거래(매출·매입 중 늦은 것) — 없으면 null. */
+function lastTrade(p: PartnerRow): { on: string; kind: "sale" | "purchase" } | null {
+  const s = p.last_sale_on ?? null;
+  const b = p.last_purchase_on ?? null;
+  if (!s && !b) return null;
+  if (s && (!b || s >= b)) return { on: s, kind: "sale" };
+  return { on: b as string, kind: "purchase" };
+}
+const sorters: Record<Sort, (a: PartnerRow, b: PartnerRow) => number> = {
+  // 최근 거래가 늦은 순, 거래 없는 곳은 맨 뒤 코드순
+  recent: (a, b) => {
+    const ta = lastTrade(a)?.on ?? "";
+    const tb = lastTrade(b)?.on ?? "";
+    return tb.localeCompare(ta) || a.code.localeCompare(b.code);
+  },
+  name: (a, b) => a.name.localeCompare(b.name, "ko") || a.code.localeCompare(b.code),
+  code: (a, b) => a.code.localeCompare(b.code),
+};
 
 export function PartnerTable({
   partners,
@@ -67,7 +88,8 @@ export function PartnerTable({
   const [open, setOpen] = useState(!!prefill);
   const [editing, setEditing] = useState<PartnerRow | null>(null);
   const [, startTransition] = useTransition();
-  const [view, setView] = useView();
+  const [view, setView] = usePref<View>("partners.view", "card", ["card", "list"]);
+  const [sort, setSort] = usePref<Sort>("partners.sort", "recent", ["recent", "name", "code"]);
   const [onlyNoBizNo, setOnlyNoBizNo] = useState(false); // 사업자번호 없는 곳만 — 정리할 때
 
   // 즉시 검색 — 검색칸 하나로 거래처명(보이는 그대로·회사 표기 무시 둘 다, 한글 조합 중에도 좁혀짐)
@@ -75,18 +97,20 @@ export function PartnerTable({
   const search = useListSearch();
   const indexed = useMemo(() => partners.map((p) => ({ p, keys: nameKeys(p.name) })), [partners]);
   const noBizNoCount = useMemo(() => partners.filter((p) => !p.business_no).length, [partners]);
+  const sorted = useMemo(() => [...partners].sort(sorters[sort]), [partners, sort]);
   const { visible, searching } = useMemo(() => {
     const q = listQuery(search.query);
-    const base = onlyNoBizNo ? partners.filter((p) => !p.business_no) : partners;
+    const base = onlyNoBizNo ? sorted.filter((p) => !p.business_no) : sorted;
     if (q.empty) return { visible: base, searching: onlyNoBizNo };
-    const baseIds = new Set(base.map((p) => p.id));
+    const keysOf = new Map(indexed.map(({ p, keys }) => [p.id, keys]));
     return {
-      visible: indexed
-        .filter(({ p, keys }) => baseIds.has(p.id) && listMatches(q, (k) => nameMatches(keys, k.name) || phoneMatches(p.phone, k.phone)))
-        .map(({ p }) => p),
+      visible: base.filter((p) => {
+        const keys = keysOf.get(p.id) ?? nameKeys(p.name);
+        return listMatches(q, (k) => nameMatches(keys, k.name) || phoneMatches(p.phone, k.phone));
+      }),
       searching: true,
     };
-  }, [indexed, partners, search.query, onlyNoBizNo]);
+  }, [indexed, sorted, search.query, onlyNoBizNo]);
 
   useEffect(() => {
     if (prefill?.from_card_id || prefill?.from_radar_id) {
@@ -168,6 +192,26 @@ export function PartnerTable({
           </button>
         ) : null}
         <div className="ml-auto flex items-center gap-2">
+          <div className="inline-flex items-center gap-1" role="radiogroup" aria-label="정렬">
+            {(Object.keys(SORT_LABEL) as Sort[]).map((k) => {
+              const on = k === sort;
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => setSort(k)}
+                  className={cn(
+                    "inline-flex h-7 items-center rounded-full border px-2.5 text-xs transition-colors",
+                    on ? "border-foreground bg-foreground text-background" : "bg-background hover:bg-muted",
+                  )}
+                >
+                  {SORT_LABEL[k]}
+                </button>
+              );
+            })}
+          </div>
           <div className="inline-flex rounded-md border p-0.5" role="group" aria-label="보기 방식">
             <Button size="icon-xs" variant={view === "card" ? "secondary" : "ghost"} onClick={() => setView("card")} aria-pressed={view === "card"} aria-label="카드로 보기" title="카드">
               <LayoutGridIcon />
@@ -230,7 +274,10 @@ export function PartnerTable({
                     <span className="shrink-0">—</span>
                   )}
                 </div>
-                <BizNoLine businessNo={p.business_no} size="md" />
+                <div className="flex items-center justify-between gap-2">
+                  <BizNoLine businessNo={p.business_no} size="md" />
+                  <LastTradeTag p={p} />
+                </div>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -255,6 +302,7 @@ export function PartnerTable({
                 <TableHead className="w-24">코드</TableHead>
                 <TableHead>거래처명</TableHead>
                 <TableHead className="w-32">사업자번호</TableHead>
+                <TableHead className="w-28">최근 거래</TableHead>
                 <TableHead className="w-24">대표자</TableHead>
                 <TableHead className="w-36">연락처</TableHead>
                 <TableHead>이메일</TableHead>
@@ -266,7 +314,7 @@ export function PartnerTable({
             <TableBody>
               {empty ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="py-12 text-center text-muted-foreground">
                     {empty}
                   </TableCell>
                 </TableRow>
@@ -293,6 +341,9 @@ export function PartnerTable({
                     </TableCell>
                     <TableCell>
                       <BizNoLine businessNo={p.business_no} />
+                    </TableCell>
+                    <TableCell>
+                      <LastTradeTag p={p} />
                     </TableCell>
                     <TableCell>{p.representative ?? "—"}</TableCell>
                     <TableCell>{p.phone ? formatPhone(p.phone) : "—"}</TableCell>
@@ -358,6 +409,25 @@ function BizNoLine({ businessNo, size = "sm" }: { businessNo: string | null; siz
   ) : (
     <span className={cn("inline-flex w-fit items-center rounded bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300", md ? "px-2 py-0.5 text-xs" : "px-1.5 text-[11px]")}>
       사업자번호 없음
+    </span>
+  );
+}
+
+/** 최근 거래 — '매출 11-04' / '매입 10-22'(연도는 올해가 아니면 붙임). 거래 없으면 흐리게 '거래 없음'. */
+function LastTradeTag({ p }: { p: PartnerRow }) {
+  const t = lastTrade(p);
+  if (!t) return <span className="text-xs text-muted-foreground/60">거래 없음</span>;
+  const thisYear = t.on.slice(0, 4) === String(new Date().getFullYear());
+  const date = thisYear ? t.on.slice(5, 10) : t.on.slice(2, 10);
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded px-1.5 text-xs tabular-nums",
+        t.kind === "sale" ? "bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300" : "bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
+      )}
+      title={`최근 ${t.kind === "sale" ? "매출" : "매입"} 주문일 ${t.on}`}
+    >
+      {t.kind === "sale" ? "매출" : "매입"} {date}
     </span>
   );
 }

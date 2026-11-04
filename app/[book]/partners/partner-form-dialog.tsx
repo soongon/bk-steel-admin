@@ -58,6 +58,9 @@ export type PartnerRow = {
   is_active: boolean;
   /** 사업자 이미지 수 — 목록 표시용(0088) */
   doc_count?: number;
+  /** 가장 최근 매출·매입 주문일(목록 '최근 거래순' 정렬·표시, 지워지거나 취소된 거래 제외) */
+  last_sale_on?: string | null;
+  last_purchase_on?: string | null;
 };
 
 /** 명함·발주 레이더에서 거래처로 이관 시 prefill 시드 데이터 (출처 id 둘 중 하나) */

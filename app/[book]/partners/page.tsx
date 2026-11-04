@@ -13,16 +13,28 @@ export default async function PartnersPage({
   const { from_card } = await searchParams;
   const supabase = await createClient();
 
+  // 최근 거래 1건씩(매출·매입 주문일) — '최근 거래순' 정렬·카드 표시. 임베드에도 거래 RLS 가 걸려 책 권한(B계좌 격리) 그대로.
   const { data, error } = await supabase
     .from("partner")
     .select(
-      "id, code, name, business_no, representative, phone, email, email2, address, business_type, business_item, notes, is_active, docs:partner_document(count)",
+      "id, code, name, business_no, representative, phone, email, email2, address, business_type, business_item, notes, is_active, docs:partner_document(count), last_sale:sale(ordered_on), last_purchase:purchase(ordered_on)",
     )
     .is("deleted_at", null)
-    .order("code", { ascending: true });
-  const partners: PartnerRow[] = ((data ?? []) as Array<PartnerRow & { docs?: Array<{ count: number }> }>).map(
-    ({ docs, ...p }) => ({ ...p, doc_count: docs?.[0]?.count ?? 0 }),
-  );
+    .is("last_sale.deleted_at", null)
+    .neq("last_sale.status", "cancelled")
+    .is("last_purchase.deleted_at", null)
+    .order("code", { ascending: true })
+    .order("ordered_on", { referencedTable: "last_sale", ascending: false })
+    .limit(1, { referencedTable: "last_sale" })
+    .order("ordered_on", { referencedTable: "last_purchase", ascending: false })
+    .limit(1, { referencedTable: "last_purchase" });
+  type Raw = PartnerRow & { docs?: Array<{ count: number }>; last_sale?: Array<{ ordered_on: string }>; last_purchase?: Array<{ ordered_on: string }> };
+  const partners: PartnerRow[] = ((data ?? []) as Raw[]).map(({ docs, last_sale, last_purchase, ...p }) => ({
+    ...p,
+    doc_count: docs?.[0]?.count ?? 0,
+    last_sale_on: last_sale?.[0]?.ordered_on ?? null,
+    last_purchase_on: last_purchase?.[0]?.ordered_on ?? null,
+  }));
 
   // 명함에서 prefill 이관
   let prefill: PartnerPrefill | null = null;
