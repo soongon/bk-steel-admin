@@ -20,15 +20,16 @@ export default async function SitesPage() {
   ]);
   const { data, error } = sitesRes;
 
-  // site_id 별 첫 납품일 — 매출이 ordered_on asc 정렬되어 있으므로 first occurrence
+  // site_id 별 첫·마지막 납품일 — 매출이 ordered_on asc 정렬되어 있으므로 처음 본 것이 첫, 마지막 본 것이 최근
   const firstSaleBySite = new Map<string, string>();
+  const lastSaleBySite = new Map<string, string>();
   for (const s of (salesRes.data ?? []) as Array<{
     site_id: string | null;
     ordered_on: string;
   }>) {
-    if (s.site_id && !firstSaleBySite.has(s.site_id)) {
-      firstSaleBySite.set(s.site_id, s.ordered_on);
-    }
+    if (!s.site_id) continue;
+    if (!firstSaleBySite.has(s.site_id)) firstSaleBySite.set(s.site_id, s.ordered_on);
+    lastSaleBySite.set(s.site_id, s.ordered_on);
   }
 
   return (
@@ -53,6 +54,7 @@ export default async function SitesPage() {
         <SiteTable
           sites={data ?? []}
           firstSaleBySite={Object.fromEntries(firstSaleBySite)}
+          lastSaleBySite={Object.fromEntries(lastSaleBySite)}
         />
       )}
     </div>

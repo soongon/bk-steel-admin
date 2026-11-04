@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { FileImageIcon, LayoutGridIcon, ListIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { formatBusinessNo, formatPhone } from "@/lib/format";
 import { listMatches, listQuery, nameKeys, nameMatches, phoneMatches } from "@/lib/search";
 import { ListSearch, useListSearch } from "@/components/admin/list-search";
+import { useListPref } from "@/components/admin/use-list-pref";
 import {
   Table,
   TableBody,
@@ -20,42 +21,9 @@ import { cn } from "@/lib/utils";
 import { PartnerFormDialog, type PartnerRow, type PartnerPrefill } from "./partner-form-dialog";
 import { deletePartner } from "./actions";
 
-/**
- * 보기 방식(카드·목록)·정렬(최근 거래·이름·코드) — 브라우저에 기억(localStorage). 서버 렌더는 기본값으로 두고 클라이언트가
- * 붙은 뒤 저장값으로 바꾼다(useSyncExternalStore 라 hydration 불일치 없음). 기본은 카드·최근 거래순(2026-11-04 사용자 요청).
- */
 type View = "card" | "list";
 type Sort = "recent" | "name" | "code";
 const SORT_LABEL: Record<Sort, string> = { recent: "최근 거래", name: "이름", code: "코드" };
-const listeners = new Set<() => void>();
-function subscribe(l: () => void) {
-  listeners.add(l);
-  window.addEventListener("storage", l);
-  return () => {
-    listeners.delete(l);
-    window.removeEventListener("storage", l);
-  };
-}
-function usePref<T extends string>(key: string, fallback: T, valid: readonly T[]): [T, (v: T) => void] {
-  const read = () => {
-    try {
-      const v = window.localStorage.getItem(key);
-      return valid.includes(v as T) ? (v as T) : fallback;
-    } catch {
-      return fallback;
-    }
-  };
-  const value = useSyncExternalStore(subscribe, read, () => fallback);
-  const write = (v: T) => {
-    try {
-      window.localStorage.setItem(key, v);
-    } catch {
-      /* 사생활 보호 모드 등 — 이번 방문만 */
-    }
-    listeners.forEach((l) => l());
-  };
-  return [value, write];
-}
 
 /** 가장 최근 거래(매출·매입 중 늦은 것) — 없으면 null. */
 function lastTrade(p: PartnerRow): { on: string; kind: "sale" | "purchase" } | null {
@@ -88,8 +56,9 @@ export function PartnerTable({
   const [open, setOpen] = useState(!!prefill);
   const [editing, setEditing] = useState<PartnerRow | null>(null);
   const [, startTransition] = useTransition();
-  const [view, setView] = usePref<View>("partners.view", "card", ["card", "list"]);
-  const [sort, setSort] = usePref<Sort>("partners.sort", "recent", ["recent", "name", "code"]);
+  // 보기 방식·정렬은 브라우저에 기억 — 기본 카드·최근 거래순(2026-11-04 사용자 요청)
+  const [view, setView] = useListPref<View>("partners.view", "card", ["card", "list"]);
+  const [sort, setSort] = useListPref<Sort>("partners.sort", "recent", ["recent", "name", "code"]);
   const [onlyNoBizNo, setOnlyNoBizNo] = useState(false); // 사업자번호 없는 곳만 — 정리할 때
 
   // 즉시 검색 — 검색칸 하나로 거래처명(보이는 그대로·회사 표기 무시 둘 다, 한글 조합 중에도 좁혀짐)
