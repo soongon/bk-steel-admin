@@ -5,7 +5,8 @@ import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { type Attachment } from "@/lib/attachment";
 
 type Props = {
-  attachments: Attachment[];
+  /** url 과 설명만 쓴다 — attachment 행(명함·매입견적서)과 거래 사진(0099, 서명 URL) 공용 */
+  attachments: Array<Pick<Attachment, "url" | "caption">>;
   index: number;
   onClose: () => void;
   onIndexChange: (next: number) => void;

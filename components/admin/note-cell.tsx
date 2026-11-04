@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquareTextIcon } from "lucide-react";
+import { CameraIcon, MessageSquareTextIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { fmtKstDateTime } from "@/lib/format";
 
@@ -43,5 +43,19 @@ export function NoteLogBadge({ count, latest }: { count: number; latest: { body:
         {`메모 기록 ${count}건${latest ? `\n최근 ${fmtKstDateTime(latest.created_at)} — ${latest.body}` : ""}`}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/** 사진 장수 배지 — 매출·매입 목록(상세에서 올린 계근표·현장·영수증 사진, 0099). */
+export function PhotoCountBadge({ count }: { count: number }) {
+  return (
+    <span
+      className="inline-flex h-4 items-center gap-0.5 rounded bg-sky-100 px-1 text-[10px] text-sky-700 tabular-nums dark:bg-sky-950/40 dark:text-sky-300"
+      title={`사진 ${count}장`}
+    >
+      <CameraIcon className="size-2.5" aria-hidden />
+      <span className="sr-only">사진 </span>
+      {count}
+    </span>
   );
 }

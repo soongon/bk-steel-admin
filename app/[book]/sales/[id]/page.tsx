@@ -8,12 +8,13 @@ import { BookBadge } from "@/components/admin/book-badge";
 import { type StatementData } from "@/components/admin/trading-statement";
 import { fetchCompanyProfile, fetchAllCompanyProfiles } from "@/lib/company-profile";
 import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
-import { type Attachment } from "@/lib/attachment";
-import { AttachmentGallery } from "@/components/admin/attachments/attachment-gallery";
+import { listTradeDocs } from "@/lib/trade-docs-server";
+import { TradeDocPanel } from "@/components/admin/trade-doc-panel";
 import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
 import { MemoLogPanel } from "@/components/admin/memo-log-panel";
 import { MEMO_COLUMNS, type MemoEntry } from "@/lib/memo-log";
 import { addSaleMemo, deleteSaleMemo } from "./memo-actions";
+import { syncSaleDocs } from "./doc-actions";
 import { mailStatusFor } from "@/lib/mail/document";
 import { type BuyerPartner } from "./tax-invoice-button";
 import { type SaleTaxInvoice } from "./tax-invoice-button";
@@ -169,19 +170,11 @@ export default async function SaleDetailPage({
     .eq("is_active", true)
     .order("is_primary", { ascending: false });
 
-  // 첨부 사진 + 메모 기록(0080, 시간순) + 지금 사용자(본인 메모만 삭제 버튼) — 동시에.
+  // 사진(0099, 서명 URL) + 올릴 권한(그 책 staff 이상) + 메모 기록(0080, 시간순) + 지금 사용자(본인 메모·사진만 삭제 버튼) — 동시에.
   // 사용자는 getClaims(JWT 확인) — getUser 는 Auth 서버 왕복이 끝날 때까지 같은 클라이언트의 다른 쿼리를 붙잡는다.
-  const [{ data: attsData }, { data: memosData }, { data: claimsData }] = await Promise.all([
-    supabase
-      .from("attachment")
-      .select(
-        "id, entity_type, entity_id, kind, storage, path, url, thumbnail_url, mime, bytes, width, height, caption, sort_order, created_at",
-      )
-      .eq("entity_type", "sale")
-      .eq("entity_id", id)
-      .is("deleted_at", null)
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true }),
+  const [docs, { data: canWriteDocs }, { data: memosData }, { data: claimsData }] = await Promise.all([
+    listTradeDocs(supabase, "sale", id),
+    supabase.rpc("current_user_has_book_role", { p_book: book, p_min_role: "staff" }),
     supabase
       .from("sale_memo")
       .select(MEMO_COLUMNS)
@@ -190,7 +183,6 @@ export default async function SaleDetailPage({
       .order("id", { ascending: true }),
     supabase.auth.getClaims(),
   ]);
-  const attachments = (attsData ?? []) as Attachment[];
   const memos = (memosData ?? []) as MemoEntry[];
 
   // 활성 세금계산서(미취소) — 라이프사이클 계산서 단계 실상태 표시용
@@ -602,6 +594,16 @@ export default async function SaleDetailPage({
         </div>
       </section>
 
+      {/* 사진 — 계근표·현장·영수증(0099), 고르는 즉시 올라간다 */}
+      <TradeDocPanel
+        parentId={sale.id}
+        docs={docs ?? []}
+        loadError={docs === null}
+        currentUserId={claimsData?.claims.sub ?? null}
+        canWrite={canWriteDocs === true}
+        syncAction={syncSaleDocs}
+      />
+
       {/* 메모 — 등록 메모(sale.notes) + 시간순 기록(sale_memo), 바로 추가 */}
       <MemoLogPanel
         parentId={sale.id}
@@ -613,13 +615,6 @@ export default async function SaleDetailPage({
         deleteMemoAction={deleteSaleMemo}
       />
 
-      {/* 첨부 사진 — 클릭 시 라이트박스 */}
-      {attachments.length > 0 ? (
-        <section>
-          <h2 className="mb-2 text-sm font-medium text-muted-foreground">첨부 사진 ({attachments.length}장)</h2>
-          <AttachmentGallery attachments={attachments} variant="square" />
-        </section>
-      ) : null}
     </div>
   );
 }

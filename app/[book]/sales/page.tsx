@@ -40,6 +40,7 @@ export default async function SalesPage({
       tax_doc_type, payment_due_on, settled_on, partner_id, delivery_cert_id, notes,
       statement_sent_on, tax_invoice_issued_on, origin, origin_ref,
       memo_count:sale_memo(count), latest_memo:sale_memo(body, created_at),
+      doc_count:sale_document(count),
       site:site(id, name, code),
       partner:partner(id, name, code),
       sale_line(id, qty, unit, unit_price_krw, display_name, item:item(id, name, code))

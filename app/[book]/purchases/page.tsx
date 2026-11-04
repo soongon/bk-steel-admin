@@ -23,6 +23,7 @@ export default async function PurchasesPage({
       subtotal_krw, vat_krw, total_krw, is_documented,
       tax_doc_type, tax_doc_no, tax_invoice_received_on, partner_id, site_id, site_name, notes, origin, origin_ref,
       memo_count:purchase_memo(count), latest_memo:purchase_memo(body, created_at),
+      doc_count:purchase_document(count),
       partner:partner(id, name, code),
       site:site(id, name, code),
       purchase_line(id, acquired_qty, acquired_unit, unit_price_krw, actual_weight_kg, theoretical_weight_kg, notes, item:item(id, name, code))

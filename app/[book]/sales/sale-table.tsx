@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { type Book, type BookView } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
-import { NoteCell, NoteLogBadge } from "@/components/admin/note-cell";
+import { NoteCell, NoteLogBadge, PhotoCountBadge } from "@/components/admin/note-cell";
 import { LinkSpinner } from "@/components/admin/link-spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -79,6 +79,7 @@ export type SaleListRow = {
   /** 상세에서 남긴 메모 기록(0080) — 건수와 가장 최근 1건. */
   memo_count?: Array<{ count: number }>;
   latest_memo?: Array<{ body: string; created_at: string }>;
+  doc_count?: Array<{ count: number }>; // 사진 장수(0099)
   partner: { id: string; name: string; code: string } | null;
   site: { id: string; name: string; code: string } | null;
   sale_line: SaleLine[];
@@ -389,6 +390,7 @@ export function SaleTable({
                         {s.memo_count?.[0]?.count ? (
                           <NoteLogBadge count={s.memo_count[0].count} latest={s.latest_memo?.[0] ?? null} />
                         ) : null}
+                        {s.doc_count?.[0]?.count ? <PhotoCountBadge count={s.doc_count[0].count} /> : null}
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
