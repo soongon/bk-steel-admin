@@ -14,7 +14,7 @@ import { sendBizCertSms } from "@/app/[book]/biz-cert-sms-actions";
 
 /**
  * 매출·매입 상세 머리 [사업자등록증] — 모달에서 우리 등록증을 보고 거래처 휴대폰으로 문자(MMS) 전송.
- * 등록증이 없는 책(bk 등)은 설정 > 회사 정보로 안내. 이미지는 공개 URL 을 브라우저에서 200KB 이하 JPEG 로 줄여 보낸다.
+ * 그 책 staff 이상에게만 보인다(서버 액션도 같은 기준으로 막는다). 등록증이 없는 책(bk 등)은 설정 > 회사 정보로 안내. 이미지는 공개 URL 을 브라우저에서 200KB 이하 JPEG 로 줄여 보낸다.
  */
 export function BizCertSmsButton({
   parent,
@@ -33,8 +33,14 @@ export function BizCertSmsButton({
   defaultPhone: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  const [phone, setPhone] = useState(defaultPhone ? formatPhone(defaultPhone) : "");
+  const [phone, setPhone] = useState("");
   const [pending, startTransition] = useTransition();
+
+  // 열 때마다 거래처의 지금 번호로 — [수정]으로 거래처가 바뀌어도, 직접 친 번호로 보낸 뒤 다시 열어도 옛 번호가 남지 않게(명세서 문자와 같은 처리)
+  function openDialog() {
+    setPhone(defaultPhone ? formatPhone(defaultPhone) : "");
+    setOpen(true);
+  }
 
   function send() {
     if (!certUrl) return;
@@ -68,7 +74,7 @@ export function BizCertSmsButton({
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+      <Button variant="outline" size="sm" onClick={openDialog}>
         <FileBadgeIcon className="size-4" /> 사업자등록증
       </Button>
       <Dialog open={open} onOpenChange={(o) => !pending && setOpen(o)}>

@@ -395,7 +395,7 @@ export default async function SaleDetailPage({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          <BizCertSmsButton parent="sale" parentId={sale.id} view={bookParam as BookView} certUrl={company?.biz_cert_url ?? null} companyName={company?.name ?? "신라철강"} defaultPhone={partner?.phone ?? null} />
+          {canWriteDocs === true ? <BizCertSmsButton parent="sale" parentId={sale.id} view={bookParam as BookView} certUrl={company?.biz_cert_url ?? null} companyName={company?.name ?? "신라철강"} defaultPhone={partner?.phone ?? null} /> : null}
           {canWriteDocs === true ? <TradeDocUploadButton parentId={sale.id} count={docs?.length ?? 0} loadError={docs === null} syncAction={syncSaleDocs} /> : null}
           <SaleEditButton
             sale={saleRow}

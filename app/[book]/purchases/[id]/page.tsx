@@ -279,7 +279,7 @@ export default async function PurchaseDetailPage({
               홈택스
             </span>
           ) : null}
-          <BizCertSmsButton parent="purchase" parentId={purchase.id} view={bookParam as BookView} certUrl={company?.biz_cert_url ?? null} companyName={company?.name ?? "신라철강"} defaultPhone={partner?.phone ?? null} />
+          {canWriteDocs === true ? <BizCertSmsButton parent="purchase" parentId={purchase.id} view={bookParam as BookView} certUrl={company?.biz_cert_url ?? null} companyName={company?.name ?? "신라철강"} defaultPhone={partner?.phone ?? null} /> : null}
           {canWriteDocs === true ? <TradeDocUploadButton parentId={purchase.id} count={docs?.length ?? 0} loadError={docs === null} syncAction={syncPurchaseDocs} /> : null}
           <PurchaseEditButton
             purchase={purchaseRow}

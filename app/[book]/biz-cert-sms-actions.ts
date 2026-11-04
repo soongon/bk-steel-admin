@@ -15,7 +15,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /**
  * 우리 사업자등록증(책별 company_profile.biz_cert_url)을 거래처에 MMS 로 보낸다 — 매출·매입 상세 머리 [사업자등록증].
  * 거래처가 계산서 발행·거래처 등록용으로 요청할 때. 이미지는 클라이언트가 공개 URL 을 읽어 200KB 이하 JPEG 로 줄인 data URL.
- * 유료 발송 전 그 거래가 보이는지(RLS = 그 책 viewer 이상)와 등록증이 있는지 확인한다. 거래 행엔 아무것도 기록하지 않는다.
+ * 유료 발송 전 그 거래가 보이는지(RLS)와 그 책 staff 이상인지(메일 발송과 같은 기준 — viewer 는 못 보냄), 등록증이 있는지 확인한다.
+ * 거래 행엔 아무것도 기록하지 않는다.
  */
 export async function sendBizCertSms(
   parent: "sale" | "purchase",
@@ -35,6 +36,11 @@ export async function sendBizCertSms(
     .is("deleted_at", null)
     .single();
   if (error || !trade) return { ok: false, error: `권한이 없거나 존재하지 않는 ${parent === "sale" ? "매출" : "매입"}입니다.` };
+
+  // 책은 클라이언트 값이 아니라 거래 행의 것으로 — 유료 발송은 그 책 staff 이상만.
+  const { data: canSend, error: roleErr } = await supabase.rpc("current_user_has_book_role", { p_book: trade.book, p_min_role: "staff" });
+  if (roleErr) return { ok: false, error: `권한 확인 실패: ${roleErr.message}` };
+  if (!canSend) return { ok: false, error: "문자 전송 권한이 없습니다 (이 책 staff 이상 필요)." };
 
   const company = await fetchCompanyProfile(supabase, trade.book as Book);
   if (!company?.biz_cert_url) return { ok: false, error: "등록된 사업자등록증이 없습니다 — 설정 > 회사 정보에서 올려 주세요." };
