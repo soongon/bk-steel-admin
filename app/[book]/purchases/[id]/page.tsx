@@ -2,11 +2,13 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeftIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { type Book } from "@/lib/book";
+import { type Book, type BookView } from "@/lib/book";
 import { buttonVariants } from "@/components/ui/button";
 import { BookBadge } from "@/components/admin/book-badge";
 import { listTradeDocs } from "@/lib/trade-docs-server";
 import { TradeDocGallery, TradeDocUploadButton } from "@/components/admin/trade-docs";
+import { BizCertSmsButton } from "@/components/admin/biz-cert-sms-button";
+import { fetchCompanyProfile } from "@/lib/company-profile";
 import { fmtKrw, formatBusinessNo } from "@/lib/format";
 import { PurchaseLifecyclePanel } from "./purchase-lifecycle-panel";
 import { MemoLogPanel } from "@/components/admin/memo-log-panel";
@@ -146,7 +148,7 @@ export default async function PurchaseDetailPage({
 
   // 사진(0099, 서명 URL) + 올릴 권한(그 책 staff 이상) + 메모 기록(0081, 시간순) + 지금 사용자(본인 메모·사진만 삭제 버튼) — 동시에.
   // 사용자는 getClaims(JWT 확인) — getUser 는 Auth 서버 왕복이 끝날 때까지 같은 클라이언트의 다른 쿼리를 붙잡는다.
-  const [docs, { data: canWriteDocs }, { data: memosData }, { data: claimsData }] = await Promise.all([
+  const [docs, { data: canWriteDocs }, { data: memosData }, { data: claimsData }, company] = await Promise.all([
     listTradeDocs(supabase, "purchase", id),
     supabase.rpc("current_user_has_book_role", { p_book: book, p_min_role: "staff" }),
     supabase
@@ -156,6 +158,7 @@ export default async function PurchaseDetailPage({
       .order("created_at", { ascending: true })
       .order("id", { ascending: true }),
     supabase.auth.getClaims(),
+    fetchCompanyProfile(supabase, book), // [사업자등록증] 문자 — 우리 등록증 이미지
   ]);
   const memos = (memosData ?? []) as MemoEntry[];
 
@@ -276,6 +279,7 @@ export default async function PurchaseDetailPage({
               홈택스
             </span>
           ) : null}
+          <BizCertSmsButton parent="purchase" parentId={purchase.id} view={bookParam as BookView} certUrl={company?.biz_cert_url ?? null} companyName={company?.name ?? "신라철강"} defaultPhone={partner?.phone ?? null} />
           {canWriteDocs === true ? <TradeDocUploadButton parentId={purchase.id} count={docs?.length ?? 0} loadError={docs === null} syncAction={syncPurchaseDocs} /> : null}
           <PurchaseEditButton
             purchase={purchaseRow}

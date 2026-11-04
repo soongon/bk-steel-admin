@@ -43,6 +43,11 @@ export async function captureNodeToJpeg(
     },
   });
 
+  return shrinkCanvas(canvas, maxBytes, ladder);
+}
+
+/** canvas 를 폭·품질 사다리로 줄여 maxBytes 이하 JPEG data URL — 못 줄이면 가장 작은 결과(서버가 최종 가드). */
+function shrinkCanvas(canvas: HTMLCanvasElement, maxBytes: number, ladder: { widths: number[]; qualities: number[] }): string {
   const { widths, qualities } = ladder;
   let smallest = encode(canvas, Math.min(canvas.width, widths[0]), qualities[0]);
   let smallestBytes = dataUrlBytes(smallest);
@@ -59,6 +64,30 @@ export async function captureNodeToJpeg(
     }
   }
   return smallest; // 상한 이하로 못 줄인 경우(초장문) — 최소 크기 결과
+}
+
+/**
+ * 이미지 URL(공개 버킷 — 사업자등록증 등)을 받아 maxBytes 이하 JPEG data URL 로.
+ * 같은 출처가 아니라 crossOrigin 으로 읽는다(Supabase 공개 버킷은 CORS 허용). 투명 PNG 는 흰 배경.
+ */
+export async function imageUrlToJpeg(url: string, maxBytes = 195_000): Promise<string> {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = url;
+  try {
+    await img.decode();
+  } catch {
+    throw new Error("이미지를 읽지 못했습니다.");
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("이미지를 변환하지 못했습니다.");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0);
+  return shrinkCanvas(canvas, maxBytes, { widths: [1400, 1200, 1000, 900, 800], qualities: [0.85, 0.75, 0.65, 0.55, 0.5] });
 }
 
 

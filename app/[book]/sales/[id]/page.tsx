@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeftIcon, FileTextIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { type Book } from "@/lib/book";
+import { type Book, type BookView } from "@/lib/book";
 import { buttonVariants } from "@/components/ui/button";
 import { BookBadge } from "@/components/admin/book-badge";
 import { type StatementData } from "@/components/admin/trading-statement";
@@ -10,6 +10,7 @@ import { fetchCompanyProfile, fetchAllCompanyProfiles } from "@/lib/company-prof
 import { buildDeliveryCertData } from "@/lib/delivery-cert-builder";
 import { listTradeDocs } from "@/lib/trade-docs-server";
 import { TradeDocGallery, TradeDocUploadButton } from "@/components/admin/trade-docs";
+import { BizCertSmsButton } from "@/components/admin/biz-cert-sms-button";
 import { SaleLifecyclePanel } from "./sale-lifecycle-panel";
 import { MemoLogPanel } from "@/components/admin/memo-log-panel";
 import { MEMO_COLUMNS, type MemoEntry } from "@/lib/memo-log";
@@ -394,6 +395,7 @@ export default async function SaleDetailPage({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          <BizCertSmsButton parent="sale" parentId={sale.id} view={bookParam as BookView} certUrl={company?.biz_cert_url ?? null} companyName={company?.name ?? "신라철강"} defaultPhone={partner?.phone ?? null} />
           {canWriteDocs === true ? <TradeDocUploadButton parentId={sale.id} count={docs?.length ?? 0} loadError={docs === null} syncAction={syncSaleDocs} /> : null}
           <SaleEditButton
             sale={saleRow}
