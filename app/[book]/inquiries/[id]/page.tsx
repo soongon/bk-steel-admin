@@ -205,6 +205,19 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
             <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap">{inq.message || "(내용 없음)"}</p>
           </section>
 
+          {/* 사진(0100) — 있을 때만, 문의 내용 바로 아래(손님이 보낸 내용과 사진을 같이 본다). 올리기는 머리의 [사진 올리기](매출·매입 상세와 같은 자리·방식) */}
+          {docs === null || docs.length > 0 ? (
+            <TradeDocGallery
+              parent="inquiry"
+              parentId={inq.id}
+              docs={docs ?? []}
+              loadError={docs === null}
+              currentUserId={claimsRes.data?.claims.sub ?? null}
+              canWrite={canWrite}
+              syncAction={syncInquiryDocs}
+            />
+          ) : null}
+
           <section className="rounded-lg border bg-card p-4">
             <h2 className="text-xs text-muted-foreground">이 문의로</h2>
             <div className="mt-2">
@@ -235,19 +248,6 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
             addMemoAction={addInquiryMemo}
             deleteMemoAction={deleteInquiryMemo}
           />
-
-          {/* 사진(0100) — 있을 때만, 메모 아래. 올리기는 머리의 [사진 올리기](매출·매입 상세와 같은 자리·방식) */}
-          {docs === null || docs.length > 0 ? (
-            <TradeDocGallery
-              parent="inquiry"
-              parentId={inq.id}
-              docs={docs ?? []}
-              loadError={docs === null}
-              currentUserId={claimsRes.data?.claims.sub ?? null}
-              canWrite={canWrite}
-              syncAction={syncInquiryDocs}
-            />
-          ) : null}
         </div>
 
         <aside className="flex flex-col gap-4 text-sm">
