@@ -5,22 +5,26 @@ import { createClient } from "@/lib/supabase/server";
 import {
   TRADE_DOC_MAX,
   type TradeDocKind,
+  type TradeDocParent,
   type TradeDocSyncResult,
   type TradeDocView,
   isTradeDocKind,
+  isTradeDocKindOf,
 } from "@/lib/trade-doc";
 
 /**
- * 매출·매입 사진 저장소 — 비공개 버킷 'trade-docs' + sale_document·purchase_document 행(0099). 서버 액션 전용.
- * 메모 기록(lib/memo-log-server.ts)처럼 거래 종류를 표로 고른다. 권한은 RLS 가 강제한다
- * (보기 = 거래가 보이면, 올리기 = 그 책 staff 이상, 빼기 = 올린 본인). 화면에는 서명 URL(1시간)로만 보여 준다.
+ * 매출·매입·문의 사진 저장소 — 비공개 버킷 'trade-docs' + sale_document·purchase_document(0099)·inquiry_document(0100) 행. 서버 액션 전용.
+ * 메모 기록(lib/memo-log-server.ts)처럼 붙이는 곳을 표로 고른다. 권한은 RLS 가 강제한다
+ * (거래: 보기 = 거래가 보이면, 올리기 = 그 책 staff 이상, 빼기 = 올린 본인 · 문의: 어느 책이든 역할/staff). 화면에는 서명 URL(1시간)로만 보여 준다.
+ * 문의 원본은 홈페이지 DB(parentTable null) — 있는지는 호출하는 서버 액션이 먼저 확인한다.
  */
 
-const TABLES = {
+const TABLES: Record<TradeDocParent, { table: string; fk: string; parentTable: "sale" | "purchase" | null; label: string; labelObj: string }> = {
   sale: { table: "sale_document", fk: "sale_id", parentTable: "sale", label: "매출", labelObj: "매출을" },
   purchase: { table: "purchase_document", fk: "purchase_id", parentTable: "purchase", label: "매입", labelObj: "매입을" },
-} as const;
-export type TradeDocParent = keyof typeof TABLES;
+  inquiry: { table: "inquiry_document", fk: "inquiry_id", parentTable: null, label: "문의", labelObj: "문의를" },
+};
+export type { TradeDocParent };
 
 const BUCKET = "trade-docs";
 const SIGNED_SECONDS = 60 * 60;
@@ -103,15 +107,17 @@ export async function syncTradeDocs(parent: TradeDocParent, parentId: string, fd
   const files = fd.getAll("file").filter((f): f is File => f instanceof File);
   const kinds = fd.getAll("kind");
   const removeIds = fd.getAll("remove_id").filter((v): v is string => typeof v === "string" && UUID_RE.test(v));
-  if (files.length !== kinds.length || kinds.some((k) => !isTradeDocKind(k))) return { ok: false, error: "사진 종류를 골라 주세요." };
+  if (files.length !== kinds.length || kinds.some((k) => !isTradeDocKindOf(parent, k))) return { ok: false, error: "사진 종류를 골라 주세요." };
   for (const f of files) {
     const err = fileError(f);
     if (err) return { ok: false, error: err };
   }
 
   const sb = await createClient();
-  const { data: parentRow } = await sb.from(parentTable).select("id").eq("id", parentId).is("deleted_at", null).maybeSingle();
-  if (!parentRow) return { ok: false, error: `${labelObj} 찾을 수 없습니다(취소·삭제됐을 수 있음). 새로고침해 주세요.` };
+  if (parentTable) {
+    const { data: parentRow } = await sb.from(parentTable).select("id").eq("id", parentId).is("deleted_at", null).maybeSingle();
+    if (!parentRow) return { ok: false, error: `${labelObj} 찾을 수 없습니다(취소·삭제됐을 수 있음). 새로고침해 주세요.` };
+  }
 
   let failed = 0;
 

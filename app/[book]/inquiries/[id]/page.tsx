@@ -30,6 +30,9 @@ import { MemoLogPanel } from "@/components/admin/memo-log-panel";
 import { MEMO_COLUMNS, type MemoEntry } from "@/lib/memo-log";
 import { InquiryActions, InquiryStatusBadge, InquiryStatusButtons, InquiryStatusProvider } from "./inquiry-actions";
 import { addInquiryMemo, deleteInquiryMemo } from "./memo-actions";
+import { syncInquiryDocs } from "./doc-actions";
+import { listTradeDocs } from "@/lib/trade-docs-server";
+import { TradeDocGallery, TradeDocUploadButton } from "@/components/admin/trade-docs";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -47,7 +50,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
   const supabase = await createClient();
   const books: Book[] = view !== "all" ? [view] : [...BOOKS];
 
-  const [res, listRes, partnersRes, itemsRes, rebarSpecsRes, companyRes, pqCompanyList, sites, memosRes, claimsRes, canWrite] = await Promise.all([
+  const [res, listRes, partnersRes, itemsRes, rebarSpecsRes, companyRes, pqCompanyList, sites, memosRes, claimsRes, canWrite, docs] = await Promise.all([
     getInquiry(id),
     listInquiries(), // 같은 번호의 다른 문의
     supabase
@@ -75,6 +78,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
       .order("id", { ascending: true }),
     supabase.auth.getClaims(),
     canWriteInquiries(),
+    listTradeDocs(supabase, "inquiry", id), // 사진(0100) — null = 읽기 실패
   ]);
   if (!res.ok) return <InquiryUnavailable error={res.error} unconfigured={res.unconfigured} />;
   const inq = res.data;
@@ -166,7 +170,10 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
               </span>
             </p>
           </div>
-          <InquiryStatusButtons />
+          <div className="flex flex-wrap items-center gap-2">
+            {canWrite ? <TradeDocUploadButton parent="inquiry" parentId={inq.id} count={docs?.length ?? 0} loadError={docs === null} syncAction={syncInquiryDocs} /> : null}
+            <InquiryStatusButtons />
+          </div>
         </header>
       </InquiryStatusProvider>
 
@@ -228,6 +235,19 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
             addMemoAction={addInquiryMemo}
             deleteMemoAction={deleteInquiryMemo}
           />
+
+          {/* 사진(0100) — 있을 때만, 메모 아래. 올리기는 머리의 [사진 올리기](매출·매입 상세와 같은 자리·방식) */}
+          {docs === null || docs.length > 0 ? (
+            <TradeDocGallery
+              parent="inquiry"
+              parentId={inq.id}
+              docs={docs ?? []}
+              loadError={docs === null}
+              currentUserId={claimsRes.data?.claims.sub ?? null}
+              canWrite={canWrite}
+              syncAction={syncInquiryDocs}
+            />
+          ) : null}
         </div>
 
         <aside className="flex flex-col gap-4 text-sm">

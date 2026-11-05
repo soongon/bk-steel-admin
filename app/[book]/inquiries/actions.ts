@@ -31,10 +31,19 @@ export async function deleteInquiry(id: string): Promise<InquiryActionResult> {
   const r = await removeInquiry(id);
   if (!r.ok) return { ok: false, error: r.error };
   if (!r.data.deleted) return { ok: false, error: "문의를 찾지 못했습니다. 이미 지워졌을 수 있습니다." };
-  // 어드민 DB 의 메모 기록(0098, FK 없음)도 같이 — 실패해도 문의는 이미 지워졌으니 알리기만 한다(남은 메모는 보이는 곳이 없다).
+  // 어드민 DB 의 메모 기록(0098)·사진(0100, FK 없음)도 같이 — 실패해도 문의는 이미 지워졌으니 알리기만 한다(남은 것은 보이는 곳이 없다).
   const supabase = await createClient();
-  const { error: purgeError } = await supabase.rpc("purge_inquiry_memos", { p_inquiry_id: id });
+  const [{ error: purgeError }, { data: paths, error: docError }] = await Promise.all([
+    supabase.rpc("purge_inquiry_memos", { p_inquiry_id: id }),
+    supabase.rpc("purge_inquiry_documents", { p_inquiry_id: id }),
+  ]);
   if (purgeError) console.warn("purge_inquiry_memos failed:", purgeError.message);
+  if (docError) console.warn("purge_inquiry_documents failed:", docError.message);
+  else if (Array.isArray(paths) && paths.length > 0) {
+    // 행은 지워졌으니 파일도(버킷 정책: 문의 경로는 staff 이상이면 남이 올린 것도 지울 수 있다)
+    const { error: rmError } = await supabase.storage.from("trade-docs").remove(paths as string[]);
+    if (rmError) console.warn("trade-docs remove failed:", rmError.message);
+  }
   refresh();
   return { ok: true };
 }

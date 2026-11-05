@@ -14,14 +14,16 @@ import {
   TRADE_DOC_KINDS,
   TRADE_DOC_KIND_LABEL,
   TRADE_DOC_MAX,
+  TRADE_DOC_UNIT,
   type TradeDocKind,
+  type TradeDocParent,
   type TradeDocSyncResult,
   type TradeDocView,
 } from "@/lib/trade-doc";
 import { AttachmentLightbox } from "@/components/admin/attachments/attachment-lightbox";
 
 /**
- * 거래 사진(매출·매입 상세 공용, 0099) — 두 조각.
+ * 거래·문의 사진(매출·매입·문의 상세 공용, 0099·0100) — 두 조각. parent 로 종류 묶음·안내 문구가 갈린다.
  *   · TradeDocUploadButton: 머리 오른쪽 [수정] 왼쪽의 [사진 올리기] — 모달에서 종류를 고르고 사진을 고르면 즉시 올린다.
  *   · TradeDocGallery: 메모 아래 — 사진이 있을 때만. 누르면 크게 보고, 본인이 올린 사진은 뺀다.
  * 둘은 상태를 나누지 않는다 — 올리거나 뺀 뒤 router.refresh() 로 서버가 목록(서명 URL)을 다시 내려 준다.
@@ -54,20 +56,24 @@ const TILE = "group relative aspect-square overflow-hidden rounded-md border bg-
 
 /** [사진 올리기] 버튼 + 모달. count = 지금 올라가 있는 장수(상한 계산). loadError 면 같은 사진이 두 번 올라가지 않게 막는다. */
 export function TradeDocUploadButton({
+  parent = "sale",
   parentId,
   count,
   loadError = false,
   syncAction,
 }: {
+  parent?: TradeDocParent;
   parentId: string;
   count: number;
   loadError?: boolean;
   syncAction: SyncAction;
 }) {
+  const kinds = TRADE_DOC_KINDS[parent];
+  const unit = TRADE_DOC_UNIT[parent];
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [staged, setStaged] = useState<Staged[]>([]);
-  const [kind, setKind] = useState<TradeDocKind>("weigh");
+  const [kind, setKind] = useState<TradeDocKind>(kinds[0]);
   const [preparing, setPreparing] = useState(false);
   const [uploaded, setUploaded] = useState(0); // 이 창에서 올린 장수(닫으면 0)
   const [baseCount, setBaseCount] = useState(count); // 창을 열 때 서버 장수
@@ -83,10 +89,10 @@ export function TradeDocUploadButton({
   async function addFiles(files: File[]) {
     if (files.length === 0) return;
     if (room === 0) {
-      toast.error(`사진은 거래당 ${TRADE_DOC_MAX}장까지입니다.`);
+      toast.error(`사진은 ${unit}당 ${TRADE_DOC_MAX}장까지입니다.`);
       return;
     }
-    if (files.length > room) toast.info(`사진은 거래당 ${TRADE_DOC_MAX}장까지 — ${room}장만 올립니다.`);
+    if (files.length > room) toast.info(`사진은 ${unit}당 ${TRADE_DOC_MAX}장까지 — ${room}장만 올립니다.`);
     setPreparing(true);
     const next: Staged[] = [];
     for (const f of files.slice(0, room)) {
@@ -156,13 +162,15 @@ export function TradeDocUploadButton({
         <DialogContent className="!max-w-[min(36rem,calc(100%-2rem))]">
           <DialogHeader>
             <DialogTitle>사진 올리기</DialogTitle>
-            <DialogDescription>계근표·현장·영수증 — 종류를 고른 뒤 사진을 고르면 바로 올라갑니다. 거래당 {TRADE_DOC_MAX}장까지.</DialogDescription>
+            <DialogDescription>
+              {kinds.map((k) => TRADE_DOC_KIND_LABEL[k]).join("·")} — 종류를 고른 뒤 사진을 고르면 바로 올라갑니다. {unit}당 {TRADE_DOC_MAX}장까지.
+            </DialogDescription>
           </DialogHeader>
 
           {/* 올릴 사진 종류 — 고른 종류로 다음 사진이 올라간다(올린 뒤엔 못 바꾼다 — 빼고 다시 올림) */}
           <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="올릴 사진 종류">
             <span className="mr-0.5 text-xs text-muted-foreground">종류</span>
-            {TRADE_DOC_KINDS.map((k) => {
+            {kinds.map((k) => {
               const on = k === kind;
               return (
                 <button
@@ -277,6 +285,8 @@ export function TradeDocGallery({
   canWrite,
   syncAction,
 }: {
+  /** 안내·종류 묶음 구분용(지금은 표시엔 안 쓴다 — 종류 라벨은 공용 표) */
+  parent?: TradeDocParent;
   parentId: string;
   docs: TradeDocView[];
   loadError?: boolean;
