@@ -1,11 +1,12 @@
 "use client";
 
 import { useOptimistic, useState, useTransition } from "react";
-import { unstable_isUnrecognizedActionError } from "next/navigation";
-import { Loader2Icon, Trash2Icon } from "lucide-react";
+import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
+import { Loader2Icon, MessageSquarePlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { fmtKstDateTime } from "@/lib/format";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { fmtKstDateTime, kstWeekday } from "@/lib/format";
 import { MEMO_MAX, type MemoAddResult, type MemoDeleteResult, type MemoEntry } from "@/lib/memo-log";
 
 type ShownMemo = MemoEntry & { pending?: boolean };
@@ -32,6 +33,7 @@ async function call<T extends { ok: boolean }>(run: () => Promise<T>): Promise<T
  * 맨 위 '등록 메모'는 거래 등록·수정 폼의 메모(notes, 목록 메모 칸과 같은 값)라 여기선 보기만 한다.
  * 추가·삭제는 누르는 즉시 반영하고(운영에선 저장·다시 그리기에 몇 초 걸린다) 실패하면 되돌린다.
  * addMemoAction·deleteMemoAction 은 거래별 서버 액션(서버 페이지가 그대로 넘긴다 — Next 규칙대로 이름 끝이 Action).
+ * composer="none" 이면 아래 입력칸을 빼고 보기만 — 쓰기는 머리의 MemoAddButton(모달)으로(문의 상세).
  */
 export function MemoLogPanel({
   parentId,
@@ -41,7 +43,9 @@ export function MemoLogPanel({
   currentUserId,
   addMemoAction,
   deleteMemoAction,
+  composer = "inline",
 }: {
+  composer?: "inline" | "none";
   parentId: string;
   registeredNote: string | null;
   /** 등록 메모 출처 설명 — 예: '매출 등록·수정에서 쓴 메모'. registeredNote 가 있을 때만 쓴다. */
@@ -121,7 +125,7 @@ export function MemoLogPanel({
       <ol className="divide-y">
         {shown.length === 0 ? (
           <li className="px-4 py-5 text-center text-sm text-muted-foreground">
-            {registeredNote ? "추가 기록 없음 — 아래에 남기면 시간순으로 쌓입니다." : "아직 남긴 메모가 없습니다."}
+            {registeredNote ? "추가 기록 없음 — 아래에 남기면 시간순으로 쌓입니다." : composer === "none" ? "아직 남긴 메모가 없습니다 — 위 [메모 남기기]로." : "아직 남긴 메모가 없습니다."}
           </li>
         ) : (
           shown.map((m) => {
@@ -129,8 +133,12 @@ export function MemoLogPanel({
             return (
               <li key={m.id} className={m.pending ? "px-4 py-2.5 opacity-60" : "px-4 py-2.5"}>
                 <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                  {/* 날짜는 요일과 함께 크게, 시각은 작게 — 언제 통화했는지가 먼저 보이게 */}
                   <time dateTime={m.created_at} className="tabular-nums">
-                    {fmtKstDateTime(m.created_at)}
+                    <span className="text-sm font-semibold text-foreground">
+                      {fmtKstDateTime(m.created_at).slice(0, 10)} ({kstWeekday(m.created_at)})
+                    </span>{" "}
+                    {fmtKstDateTime(m.created_at).slice(11)}
                   </time>
                   {m.pending ? <span>저장 중…</span> : null}
                   {mine ? (
@@ -163,6 +171,7 @@ export function MemoLogPanel({
         )}
       </ol>
 
+      {composer === "none" ? null : (
       <div className="border-t p-3">
         <textarea
           value={text}
@@ -189,6 +198,79 @@ export function MemoLogPanel({
           </Button>
         </div>
       </div>
+      )}
     </section>
+  );
+}
+
+/**
+ * 머리 [메모 남기기] 버튼 + 모달 — 문의 상세처럼 메모 칸이 입력칸 없이 보기만일 때(composer="none").
+ * 저장하면 router.refresh() 로 메모 칸이 서버에서 다시 온다(사진 올리기와 같은 방식). 저장 실패면 쓰던 글은 남겨 둔다.
+ */
+export function MemoAddButton({ parentId, addMemoAction }: { parentId: string; addMemoAction: (parentId: string, body: string) => Promise<MemoAddResult> }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [saving, startSaving] = useTransition();
+
+  function add() {
+    const body = text.trim();
+    if (!body) return;
+    startSaving(async () => {
+      const r = await call(() => addMemoAction(parentId, body));
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      setText("");
+      setOpen(false);
+      toast.success("메모를 남겼습니다");
+      router.refresh();
+    });
+  }
+
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+        <MessageSquarePlusIcon className="size-4" /> 메모 남기기
+      </Button>
+      <Dialog open={open} onOpenChange={(o) => !saving && setOpen(o)}>
+        <DialogContent className="!max-w-[min(32rem,calc(100%-2rem))]">
+          <DialogHeader>
+            <DialogTitle>메모 남기기</DialogTitle>
+            <DialogDescription>통화·진행 상황을 시간순으로 남깁니다. 남긴 시각이 함께 기록됩니다.</DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                add();
+              }
+            }}
+            rows={5}
+            maxLength={MEMO_MAX}
+            autoFocus
+            placeholder="메모 — 통화 내용·약속·다음 할 일 등"
+            aria-label="새 메모"
+            className="w-full resize-y rounded-md border border-input bg-background px-2.5 py-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+          />
+          <DialogFooter className="sm:justify-between">
+            <span className="text-xs text-muted-foreground">
+              {text.length > MEMO_MAX * 0.9 ? `${text.length.toLocaleString()} / ${MEMO_MAX.toLocaleString()}자` : "⌘/Ctrl+Enter 저장"}
+            </span>
+            <span className="flex gap-2">
+              <Button type="button" variant="outline" disabled={saving} onClick={() => setOpen(false)}>
+                닫기
+              </Button>
+              <Button type="button" disabled={saving || !text.trim()} onClick={add}>
+                {saving ? "저장 중..." : "메모 추가"}
+              </Button>
+            </span>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

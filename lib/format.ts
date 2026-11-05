@@ -15,6 +15,14 @@ export function fmtKstDateTime(iso: string | null | undefined): string {
   return d.toLocaleString("sv-SE", { timeZone: "Asia/Seoul", hourCycle: "h23" }).slice(0, 16);
 }
 
+/** ISO 시각 → 한국 요일 한 글자('월'~'일'). 메모 기록 날짜 옆에. */
+export function kstWeekday(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", weekday: "short" });
+}
+
 /** 오늘 날짜(한국) 'YYYY-MM-DD' — 서버(Vercel)는 UTC 라 Date 로컬 getter 로는 오전 9시 전에 어제가 된다. */
 export function kstToday(): string {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });

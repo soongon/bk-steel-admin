@@ -19,7 +19,7 @@ import {
   phoneKey,
 } from "@/lib/inquiry";
 import { LeadSourceBadge } from "@/components/admin/lead-source-badge";
-import { NoteLogBadge } from "@/components/admin/note-cell";
+import { NoteLogBadge, PhotoCountBadge } from "@/components/admin/note-cell";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { InquiryUnavailable } from "./inquiry-unavailable";
@@ -49,13 +49,15 @@ export default async function InquiriesPage({
   const statusFilter: InquiryStatus | null = isInquiryStatus(statusParam) ? statusParam : null;
   const supabase = await createClient();
 
-  const [res, canWrite, partnersRes, memosRes] = await Promise.all([
+  const [res, canWrite, partnersRes, memosRes, docsRes] = await Promise.all([
     listInquiries(),
     canWriteInquiries(),
     // 같은 번호의 거래처를 이름 옆에 표시 — 거래처 전화는 숫자만 저장된다.
     supabase.from("partner").select("name, phone").is("deleted_at", null).not("phone", "is", null),
     // 메모 기록(0098, 어드민 DB) 건수·최근 1건 — 문의가 다른 DB 라 embed 못 해 통째로 읽어 묶는다(문의 수십 건 규모).
     supabase.from("inquiry_memo").select("inquiry_id, body, created_at").order("created_at", { ascending: false }).limit(5000),
+    // 사진(0100) 장수 — 같은 이유로 통째로 읽어 센다(문의당 20장 상한).
+    supabase.from("inquiry_document").select("inquiry_id").limit(5000),
   ]);
   if (!res.ok) return <InquiryUnavailable error={res.error} unconfigured={res.unconfigured} />;
 
@@ -72,6 +74,9 @@ export default async function InquiriesPage({
     if (cur) cur.count += 1;
     else memoLog.set(m.inquiry_id, { count: 1, latest: { body: m.body, created_at: m.created_at } });
   }
+
+  const docCount = new Map<string, number>();
+  for (const d of (docsRes.data ?? []) as Array<{ inquiry_id: string }>) docCount.set(d.inquiry_id, (docCount.get(d.inquiry_id) ?? 0) + 1);
 
   const all = res.data;
   const counts: Record<string, number> = {};
@@ -139,6 +144,11 @@ export default async function InquiriesPage({
         {memo ? (
           <span className="ml-1.5 inline-flex align-middle">
             <NoteLogBadge count={memo.count} latest={memo.latest} />
+          </span>
+        ) : null}
+        {docCount.has(i.id) ? (
+          <span className="ml-1.5 inline-flex align-middle">
+            <PhotoCountBadge count={docCount.get(i.id)!} />
           </span>
         ) : null}
         {partner ? (
@@ -340,6 +350,7 @@ export default async function InquiriesPage({
                     <span className="w-20 shrink-0 text-xs tabular-nums">{fmtKstDateTime(i.created_at).slice(0, 10)}</span>
                     <span className="hidden shrink-0 opacity-80 sm:inline">{kindBadge(i)}</span>
                     <span className="shrink-0 font-medium">{i.name}</span>
+                    {docCount.has(i.id) ? <PhotoCountBadge count={docCount.get(i.id)!} /> : null}
                     {i.location ? <span className="hidden truncate text-xs md:inline">{i.location}</span> : null}
                     {memo ? <span className="ml-auto hidden max-w-xs truncate text-xs lg:inline">{memo.latest.body}</span> : null}
                   </Link>

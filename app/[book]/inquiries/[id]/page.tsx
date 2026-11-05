@@ -26,7 +26,7 @@ import { type PurchaseQuoteDefaults, type PurchaseQuoteItemOption, type Purchase
 import { type PartnerPrefill } from "@/app/[book]/partners/partner-form-dialog";
 import { cn } from "@/lib/utils";
 import { InquiryUnavailable } from "../inquiry-unavailable";
-import { MemoLogPanel } from "@/components/admin/memo-log-panel";
+import { MemoAddButton, MemoLogPanel } from "@/components/admin/memo-log-panel";
 import { MEMO_COLUMNS, type MemoEntry } from "@/lib/memo-log";
 import { InquiryActions, InquiryStatusBadge, InquiryStatusButtons, InquiryStatusProvider } from "./inquiry-actions";
 import { addInquiryMemo, deleteInquiryMemo } from "./memo-actions";
@@ -171,6 +171,7 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {canWrite ? <MemoAddButton parentId={inq.id} addMemoAction={addInquiryMemo} /> : null}
             {canWrite ? <TradeDocUploadButton parent="inquiry" parentId={inq.id} count={docs?.length ?? 0} loadError={docs === null} syncAction={syncInquiryDocs} /> : null}
             <InquiryStatusButtons />
           </div>
@@ -239,8 +240,9 @@ export default async function InquiryDetailPage({ params }: { params: Promise<{ 
             </p>
           </section>
 
-          {/* 내부 메모 기록(0098) — 통화·진행 상황을 시간순으로. 손님이 쓴 문의 내용은 위 칸 그대로. */}
+          {/* 내부 메모 기록(0098) — 통화·진행 상황을 시간순으로. 쓰기는 머리의 [메모 남기기] 모달. 손님이 쓴 문의 내용은 위 칸 그대로. */}
           <MemoLogPanel
+            composer="none"
             parentId={inq.id}
             registeredNote={null}
             memos={memos}
