@@ -695,7 +695,7 @@ function PartnerFormBody({
       e.preventDefault();
       const files = imageFilesOf(e.dataTransfer?.files);
       if (files.length > 0) addFilesRef.current(files);
-      else toast.error("사진 파일(JPEG·PNG·WebP)만 올릴 수 있습니다.");
+      else toast.error("사진 파일(JPEG·PNG·WebP·HEIC)만 올릴 수 있습니다.");
     };
     const onPaste = (e: ClipboardEvent) => {
       const cd = e.clipboardData;

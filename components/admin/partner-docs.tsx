@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { ImagePlusIcon, Loader2Icon, ScanTextIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
-import { compressImage } from "@/lib/image-compress";
+import { compressImage, imageAccept, ImageConvertStoppedError } from "@/lib/image-compress";
 import { PARTNER_DOC_KIND_LABEL, type PartnerDocKind, type PartnerDocView } from "@/lib/biz-doc";
 
 /** 저장 전에 고른 사업자 이미지(축소본) — 거래처를 저장할 때(또는 자동 등록할 때) 올린다. */
@@ -20,6 +20,10 @@ export async function stagePartnerDocFiles(files: File[]): Promise<StagedPartner
       const file = await compressImage(f);
       out.push({ key: `doc-${Date.now()}-${seq++}`, file, previewUrl: URL.createObjectURL(file), kind: "other" });
     } catch (e) {
+      if (e instanceof ImageConvertStoppedError) {
+        toast.error(e.message); // 다음 장도 같은 결과 — 한 번만 알리고 멈춘다(이미 줄인 장은 둔다)
+        break;
+      }
       toast.error(`${f.name}: ${e instanceof Error ? e.message : "이미지를 처리하지 못했습니다."}`);
     }
   }
@@ -116,7 +120,7 @@ export function PartnerDocPicker({
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept={imageAccept()}
             multiple
             className="sr-only"
             disabled={disabled}

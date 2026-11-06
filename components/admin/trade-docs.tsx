@@ -7,10 +7,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { fmtKstDateTime } from "@/lib/format";
-import { compressImage } from "@/lib/image-compress";
+import { compressImage, imageAccept, ImageConvertStoppedError } from "@/lib/image-compress";
 import { chunkBySize } from "@/lib/purchase-quote";
 import {
   TRADE_DOC_BATCH_BYTES,
+  TRADE_DOC_IMAGE,
   TRADE_DOC_KINDS,
   TRADE_DOC_KIND_LABEL,
   TRADE_DOC_MAX,
@@ -27,7 +28,7 @@ import { AttachmentLightbox } from "@/components/admin/attachments/attachment-li
  *   · TradeDocUploadButton: 머리 오른쪽 [수정] 왼쪽의 [사진 올리기] — 모달에서 종류를 고르고 사진을 고르면 즉시 올린다.
  *   · TradeDocGallery: 메모 아래 — 사진이 있을 때만. 누르면 크게 보고, 본인이 올린 사진은 뺀다.
  * 둘은 상태를 나누지 않는다 — 올리거나 뺀 뒤 router.refresh() 로 서버가 목록(서명 URL)을 다시 내려 준다.
- * 올리기 전에 브라우저에서 긴 변 2000px JPEG 로 줄이고(휴대폰 원본 3~8MB → 수백 KB), 3MB 단위로 나눠 보낸다.
+ * 올리기 전에 브라우저에서 종류별 크기(TRADE_DOC_IMAGE)의 JPEG 로 줄이고(휴대폰 원본 3~8MB·HEIC → 수백 KB), 3MB 단위로 나눠 보낸다.
  * syncAction 은 거래별 서버 액션(서버 페이지가 그대로 넘긴다 — 이름 끝이 Action).
  */
 
@@ -74,14 +75,14 @@ export function TradeDocUploadButton({
   const [open, setOpen] = useState(false);
   const [staged, setStaged] = useState<Staged[]>([]);
   const [kind, setKind] = useState<TradeDocKind>(kinds[0]);
-  const [preparing, setPreparing] = useState(false);
+  const [preparing, setPreparing] = useState<{ done: number; total: number } | null>(null); // 줄이는 중 진행(HEIC 는 장당 수 초)
   const [uploaded, setUploaded] = useState(0); // 이 창에서 올린 장수(닫으면 0)
   const [baseCount, setBaseCount] = useState(count); // 창을 열 때 서버 장수
   const [busy, startBusy] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
 
-  const working = preparing || busy;
+  const working = !!preparing || busy;
   // 서버 count 는 refresh 뒤에야 늘어난다 — 그 전엔 '열 때 장수 + 이 창에서 올린 장수'가 더 크므로 둘 중 큰 쪽으로 센다.
   const pending = staged.filter((d) => !d.done).length;
   const room = Math.max(0, TRADE_DOC_MAX - Math.max(count, baseCount + uploaded) - pending);
@@ -93,17 +94,23 @@ export function TradeDocUploadButton({
       return;
     }
     if (files.length > room) toast.info(`사진은 ${unit}당 ${TRADE_DOC_MAX}장까지 — ${room}장만 올립니다.`);
-    setPreparing(true);
+    const picked = files.slice(0, room);
+    setPreparing({ done: 0, total: picked.length });
     const next: Staged[] = [];
-    for (const f of files.slice(0, room)) {
+    for (const [i, f] of picked.entries()) {
       try {
-        const file = await compressImage(f);
+        const file = await compressImage(f, TRADE_DOC_IMAGE[kind]);
         next.push({ key: `doc-${Date.now()}-${seq++}`, file, previewUrl: URL.createObjectURL(file), kind });
       } catch (e) {
+        if (e instanceof ImageConvertStoppedError) {
+          toast.error(e.message); // 다음 장도 같은 결과 — 한 번만 알리고 멈춘다(이미 줄인 장은 올린다)
+          break;
+        }
         toast.error(`${f.name}: ${e instanceof Error ? e.message : "이미지를 처리하지 못했습니다."}`);
       }
+      setPreparing({ done: i + 1, total: picked.length });
     }
-    setPreparing(false);
+    setPreparing(null);
     if (next.length === 0) return;
     setStaged((cur) => [...cur, ...next]);
     startBusy(async () => {
@@ -163,7 +170,7 @@ export function TradeDocUploadButton({
           <DialogHeader>
             <DialogTitle>사진 올리기</DialogTitle>
             <DialogDescription>
-              {kinds.map((k) => TRADE_DOC_KIND_LABEL[k]).join("·")} — 종류를 고른 뒤 사진을 고르면 바로 올라갑니다. {unit}당 {TRADE_DOC_MAX}장까지.
+              {kinds.map((k) => TRADE_DOC_KIND_LABEL[k]).join("·")} — 종류를 고른 뒤 사진을 고르면 바로 올라갑니다. {unit}당 {TRADE_DOC_MAX}장까지. 글자가 작으면 가까이서 찍어 주세요.
             </DialogDescription>
           </DialogHeader>
 
@@ -178,8 +185,9 @@ export function TradeDocUploadButton({
                   type="button"
                   role="radio"
                   aria-checked={on}
+                  disabled={working} // 진행 중인 사진은 고를 때의 종류로 올라간다 — 바꾼 것처럼 보이지 않게
                   onClick={() => setKind(k)}
-                  className={`inline-flex h-8 items-center rounded-full border px-3 text-sm transition-colors ${
+                  className={`inline-flex h-8 items-center rounded-full border px-3 text-sm transition-colors disabled:opacity-60 ${
                     on ? "border-foreground bg-foreground text-background" : "bg-background hover:bg-muted"
                   }`}
                 >
@@ -198,13 +206,13 @@ export function TradeDocUploadButton({
               e.preventDefault();
               const files = imageFilesOf(e.dataTransfer.files);
               if (files.length > 0) void addFiles(files);
-              else toast.error("사진 파일(JPEG·PNG·WebP)만 올릴 수 있습니다.");
+              else toast.error("사진 파일(JPEG·PNG·WebP·HEIC)만 올릴 수 있습니다.");
             }}
           >
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept={imageAccept()}
               multiple
               className="sr-only"
               disabled={working || room === 0}
@@ -216,7 +224,7 @@ export function TradeDocUploadButton({
             />
             {working ? <Loader2Icon className="size-6 animate-spin" /> : <ImagePlusIcon className="size-6" />}
             <span className="font-medium text-foreground/80">
-              {preparing ? "사진 줄이는 중…" : busy ? "올리는 중…" : room === 0 ? "더 올릴 수 없습니다" : "사진 고르기 · 끌어다 놓기"}
+              {preparing ? `사진 줄이는 중… ${preparing.done}/${preparing.total}` : busy ? "올리는 중…" : room === 0 ? "더 올릴 수 없습니다" : "사진 고르기 · 끌어다 놓기"}
             </span>
             <span className="text-xs">
               {TRADE_DOC_KIND_LABEL[kind]}로 올림 · {TRADE_DOC_MAX - room}/{TRADE_DOC_MAX}

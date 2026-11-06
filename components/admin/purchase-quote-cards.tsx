@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { ContactIcon, ImagePlusIcon, Loader2Icon, XIcon, ZoomInIcon } from "lucide-react";
 import { toast } from "sonner";
 import { type Attachment } from "@/lib/attachment";
-import { compressImage } from "@/lib/image-compress";
+import { compressImage, imageAccept, ImageConvertStoppedError } from "@/lib/image-compress";
 import { PURCHASE_QUOTE_CARD_MAX } from "@/lib/purchase-quote";
 import { AttachmentLightbox } from "@/components/admin/attachments/attachment-lightbox";
 
@@ -52,6 +52,10 @@ export function PurchaseQuoteCardPicker({
         const file = await compressImage(f);
         out.push({ key: `${f.name}-${f.lastModified}-${out.length}-${Date.now()}`, file, previewUrl: URL.createObjectURL(file) });
       } catch (e) {
+        if (e instanceof ImageConvertStoppedError) {
+          toast.error(e.message); // 다음 장도 같은 결과 — 한 번만 알리고 멈춘다(이미 줄인 장은 둔다)
+          break;
+        }
         toast.error(`${f.name}: ${e instanceof Error ? e.message : "이미지를 처리하지 못했습니다."}`);
       }
     }
@@ -99,7 +103,7 @@ export function PurchaseQuoteCardPicker({
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept={imageAccept()}
             multiple
             className="sr-only"
             disabled={busy}

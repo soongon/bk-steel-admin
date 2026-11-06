@@ -24,6 +24,20 @@ export const TRADE_DOC_UNIT: Record<TradeDocParent, string> = { sale: "거래", 
 export const isTradeDocKind = (v: unknown): v is TradeDocKind => typeof v === "string" && Object.hasOwn(TRADE_DOC_KIND_LABEL, v);
 export const isTradeDocKindOf = (parent: TradeDocParent, v: unknown): v is TradeDocKind => isTradeDocKind(v) && TRADE_DOC_KINDS[parent].includes(v);
 
+/**
+ * 올리기 전 축소 기준(긴 변 px·JPEG 품질). 글자를 읽는 문서는 2000 — 숫자 오독은 티가 안 나고 원본도 남지 않는다.
+ * 현장·물건은 1600 — 문의 기본 종류가 '현장'이라 도면을 종류 안 바꾸고 올려도 읽히는 선.
+ */
+const TRADE_DOC_PHOTO = { maxEdge: 1600, quality: 0.8 };
+const TRADE_DOC_DOCUMENT = { maxEdge: 2000, quality: 0.8 };
+export const TRADE_DOC_IMAGE: Record<TradeDocKind, { maxEdge: number; quality: number }> = {
+  site: TRADE_DOC_PHOTO,
+  goods: TRADE_DOC_PHOTO,
+  weigh: TRADE_DOC_DOCUMENT,
+  receipt: TRADE_DOC_DOCUMENT,
+  material: TRADE_DOC_DOCUMENT,
+};
+
 /** 거래·문의 1건당 사진 상한 */
 export const TRADE_DOC_MAX = 20;
 /** 업로드 한 번(서버 액션 본문 상한 4MB, next.config)에 싣는 최대 크기 — multipart 여유를 두고 3MB(거래처 이미지와 같음). */
