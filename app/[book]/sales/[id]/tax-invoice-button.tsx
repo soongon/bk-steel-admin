@@ -19,7 +19,7 @@ import { FormattedInput } from "@/components/admin/formatted-input";
 import { type StatementData } from "@/components/admin/trading-statement";
 import { TaxInvoiceDocument } from "@/components/admin/tax-invoice-document";
 import { type CompanyProfile } from "@/lib/company-profile";
-import { TAX_INVOICE_STATE_KO, type TaxDocMode, type TaxInvoiceState } from "@/lib/tax-invoice";
+import { TAX_INVOICE_STATE_KO, reissueHint, type TaxDocMode, type TaxInvoiceState } from "@/lib/tax-invoice";
 import { digitsOnly, formatBusinessNo, formatPhone } from "@/lib/format";
 import { BIZ_TYPE_ITEM_MAX } from "@/lib/biz-doc";
 import {
@@ -85,6 +85,7 @@ export function TaxInvoiceButton({
   company,
   partners = [],
   defaultBuyerPartnerId = null,
+  settled = false,
 }: {
   saleId: string;
   mode: TaxDocMode;
@@ -93,6 +94,8 @@ export function TaxInvoiceButton({
   company: CompanyProfile | null;
   partners?: BuyerPartner[];
   defaultBuyerPartnerId?: string | null;
+  /** 수금완료 — 금액을 바꿀 수 없으니 다시 발행 안내 대신 '신규 매출로 따로'. */
+  settled?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -119,8 +122,10 @@ export function TaxInvoiceButton({
   // 상태가 실제로 바뀔 때만 router.refresh() → 무한 루프 방지. 승인/실패/취소면 폴링 종료.
   const taxState = taxInvoice?.state;
   const taxProvider = taxInvoice?.provider;
+  const fromHometax = taxProvider === "hometax"; // 홈택스 직접 발행분 — 팝빌 문서가 아니라 취소·PDF·상태조회 불가
+  const fromManual = taxProvider === "manual"; // 종이·면세 수기 기록 — 국세청 전송 개념 없음, 기록 취소는 언제나 된다
   useEffect(() => {
-    if (!taxState || taxProvider === "manual") return;
+    if (!taxState || taxProvider === "manual" || taxProvider === "hometax") return;
     if (!["issuing", "issued", "nts_sent"].includes(taxState)) return;
     let cancelled = false;
     let tries = 0;
@@ -252,12 +257,17 @@ export function TaxInvoiceButton({
     });
   }
   function onCancel() {
-    const reason = window.prompt("발행취소 사유를 입력하세요", "거래 취소");
+    const reason = window.prompt(
+      fromManual
+        ? "기록 취소 사유를 입력하세요"
+        : `발행취소 사유를 입력하세요 (국세청 전송 전에만 취소됩니다${settled ? " · 수금완료 매출이라 취소해도 금액은 바꿀 수 없습니다" : " — 취소 뒤 품목을 고치고 다시 발행할 수 있습니다"})`,
+      "거래 취소",
+    );
     if (reason === null) return;
     start(async () => {
       const r = await cancelSaleTaxInvoice(saleId, reason);
       if (r.ok) {
-        toast.success("발행취소됨");
+        toast.success(fromManual ? "기록 취소됨" : "발행취소됨");
         setOpen(false);
         router.refresh();
       } else toast.error(r.error);
@@ -311,7 +321,11 @@ export function TaxInvoiceButton({
             </DialogTitle>
             <DialogDescription>
               {has
-                ? "발행된 세금계산서 — 상태 조회·원본 PDF·발행취소."
+                ? fromManual
+                  ? "기록된 세금계산서(수기) — 잘못 기록했으면 기록 취소."
+                  : fromHometax
+                    ? "홈택스에서 직접 발행한 세금계산서."
+                    : "발행된 세금계산서 — 상태 조회·원본 PDF·발행취소(국세청 전송 전, 보통 발행 당일까지)."
                 : mode === "electronic"
                   ? "국세청 전자세금계산서를 발행합니다(공급받는자 이메일로 자동 전송 · 이메일 2 입력 시 함께 전송)."
                   : "종이·면세계산서 번호를 기록합니다(발행은 외부에서)."}
@@ -340,19 +354,28 @@ export function TaxInvoiceButton({
                 <span className="font-mono text-xs">{taxInvoice!.write_date ?? "—"}</span>
               </div>
               <div className="mt-1 flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={onPdf} disabled={pending}>
-                  <FileTextIcon className="size-4" /> 원본 PDF
-                </Button>
-                <Button size="sm" variant="outline" onClick={onRefresh} disabled={pending}>
-                  <RefreshCwIcon className="size-4" /> 상태 새로고침
-                </Button>
+                {fromHometax ? null : (
+                  <>
+                    <Button size="sm" variant="outline" onClick={onPdf} disabled={pending}>
+                      <FileTextIcon className="size-4" /> 원본 PDF
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={onRefresh} disabled={pending}>
+                      <RefreshCwIcon className="size-4" /> 상태 새로고침
+                    </Button>
+                  </>
+                )}
                 <Button size="sm" variant="outline" onClick={openSmsInput} disabled={pending}>
                   <MessageSquareIcon className="size-4" /> 문자 전송
                 </Button>
-                <Button size="sm" variant="outline" onClick={onCancel} disabled={pending} className="text-destructive">
-                  <XCircleIcon className="size-4" /> 발행취소
-                </Button>
+                {fromHometax ? null : (
+                  <Button size="sm" variant="outline" onClick={onCancel} disabled={pending} className="text-destructive">
+                    <XCircleIcon className="size-4" /> {fromManual ? "기록 취소" : "발행취소"}
+                  </Button>
+                )}
               </div>
+              <p className="text-xs text-muted-foreground">
+                추가 주문이 오면: {reissueHint(taxProvider, settled)}
+              </p>
 
               {/* 문자 전송 — 인라인 수신번호(펼침). 계산서 이미지를 거래처 휴대폰으로 MMS. */}
               {smsOpen ? (

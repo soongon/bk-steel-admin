@@ -53,6 +53,10 @@ export type EtaxResult = {
 export type EtaxStatus = {
   state: EtaxState;
   ntsConfirmNum: string | null;
+  /** 국세청 전송이 시작됨(전송 중·성공) — 발행취소 불가, 수정세금계산서만. */
+  ntsSent: boolean;
+  /** ASP 쪽에서 이미 취소됨(팝빌 사이트 등에서). */
+  cancelledAtAsp: boolean;
   raw: unknown;
 };
 
@@ -63,6 +67,8 @@ export interface EtaxProvider {
   getStatus(corpNum: string, mgtKey: string): Promise<EtaxStatus>;
   cancel(corpNum: string, mgtKey: string, reason: string): Promise<EtaxResult>;
   getPrintUrl(corpNum: string, mgtKey: string): Promise<string>;
+  /** 이 문서관리번호를 ASP 가 이미 쓰고 있는지(발행취소된 문서 포함) — 다시 발행할 때 새 번호를 고르는 데 쓴다. */
+  isMgtKeyInUse(corpNum: string, mgtKey: string): Promise<boolean>;
   /** 발행된 세금계산서를 지정 이메일로 (재)전송 — 2번째 수신처 등. */
   sendEmail(corpNum: string, mgtKey: string, receiver: string): Promise<void>;
 }

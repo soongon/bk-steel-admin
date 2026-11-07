@@ -14,10 +14,13 @@ export const mockProvider: EtaxProvider = {
     };
   },
   async getStatus(_corpNum, mgtKey) {
-    return { state: "nts_approved", ntsConfirmNum: `TEST-${mgtKey}`, raw: { mock: true } };
+    return { state: "nts_approved", ntsConfirmNum: `TEST-${mgtKey}`, ntsSent: false, cancelledAtAsp: false, raw: { mock: true } };
   },
   async cancel(_corpNum, mgtKey) {
     return { mgtKey, state: "cancelled", ntsConfirmNum: null, raw: { mock: true } };
+  },
+  async isMgtKeyInUse() {
+    return false;
   },
   async getPrintUrl() {
     throw new Error("테스트(mock) 모드 — 실제 PDF가 없습니다. 팝빌 키를 설정하세요.");

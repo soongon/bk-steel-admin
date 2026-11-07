@@ -342,6 +342,7 @@ export default async function SaleDetailPage({
           supply_krw: Number((taxInvoiceRow as { supply_krw?: number | string | null }).supply_krw ?? sale.subtotal_krw),
           total_krw: Number((taxInvoiceRow as { total_krw?: number | string | null }).total_krw ?? sale.total_krw),
           nts_confirm_num: taxInvoiceRow.nts_confirm_num ?? null,
+          provider: (taxInvoiceRow as { provider?: string | null }).provider ?? null,
         }
       : null,
   };

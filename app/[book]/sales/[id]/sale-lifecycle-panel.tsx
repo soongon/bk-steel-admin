@@ -205,6 +205,7 @@ export function SaleLifecyclePanel({
                       company={company}
                       partners={partners}
                       defaultBuyerPartnerId={sale.partner_id}
+                      settled={settled}
                     />
                     {!taxInvoice ? (
                       <Button size="xs" variant={s.done ? "secondary" : "outline"} onClick={toggleInvoice} disabled={pending}>

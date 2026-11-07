@@ -53,13 +53,15 @@ export function summarizeEtaxLines(lines: EtaxLine[]): string | null {
  * 매출+공급자(회사)+거래처(보강값)로 전자세금계산서 발행 payload 구성.
  * buyer 의 사업자번호·이메일·대표자는 호출자가 보강(opts override 우선)한 값으로 넘긴다.
  * 업태·종목은 opts 로 넘기면 그 값(null = 빈 칸), 안 넘기면(undefined) 거래처의 업태·종목.
- * mgtKey = `{book}-{doc_no}`(멱등). 부수효과 없음.
+ * mgtKey = opts.mgtKey(다시 발행 때 새 번호) 또는 `{book}-{doc_no}`. 부수효과 없음.
  */
 export function buildSaleEtaxInput(
   sale: Record<string, any>,
   company: CompanyProfile,
   opts: {
     writeDateIso: string;
+    /** 문서관리번호 — 발행취소 뒤 다시 발행하면 `{book}-{doc_no}-2` 처럼 새 번호(tax-invoice-actions 가 고른다). */
+    mgtKey?: string;
     purpose: "charge" | "receipt";
     remark: string | null;
     buyerBizNo: string;
@@ -73,7 +75,7 @@ export function buildSaleEtaxInput(
   const partner = sale.partner as Record<string, any> | null;
   const lines = buildSaleEtaxLines(sale);
   return {
-    mgtKey: `${sale.book}-${sale.doc_no}`,
+    mgtKey: opts.mgtKey ?? `${sale.book}-${sale.doc_no}`,
     writeDate: digitsOnly(opts.writeDateIso),
     purpose: opts.purpose,
     taxType: taxTypeOf(String(sale.vat_type)),

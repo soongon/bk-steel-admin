@@ -33,6 +33,13 @@ declare module "popbill" {
       success: (r: PopbillTaxinvoiceInfo) => void,
       error: (e: PopbillError) => void,
     ): void;
+    checkMgtKeyInUse(
+      corpNum: string,
+      keyType: string,
+      mgtKey: string,
+      success: (inUse: boolean) => void,
+      error: (e: PopbillError) => void,
+    ): void;
     cancelIssue(
       corpNum: string,
       keyType: string,

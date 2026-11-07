@@ -31,6 +31,7 @@ import {
 } from "@/lib/transaction-draft";
 import { fmtKrw, fmtNum } from "@/lib/format";
 import { TAX_DOC_OPTIONS } from "@/lib/tax-doc";
+import { reissueHint } from "@/lib/tax-invoice";
 import { createSale, updateSaleHeader, updateSaleLines } from "./actions";
 
 export type Partner = {
@@ -83,7 +84,7 @@ export type SaleRow = {
   statement_sent_on?: string | null;
   origin?: string | null;
   /** 활성 발행 기록(미취소 tax_invoice) — 있으면 합계 고정 안내 + 차액 맞춤 버튼. */
-  invoice?: { supply_krw: number; total_krw: number; nts_confirm_num: string | null } | null;
+  invoice?: { supply_krw: number; total_krw: number; nts_confirm_num: string | null; provider?: string | null } | null;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -234,6 +235,10 @@ export function SaleFormDialog({
   // 발행 기록이 있으면 합계 고정 — 목표 공급가액(= 현재 헤더 공급가액, 0086 으로 계산서와 같음)과의 차액.
   const fixedSubtotal = editing?.invoice ? Number(editing.subtotal_krw ?? editing.invoice.supply_krw) : null;
   const invoiceDiff = fixedSubtotal != null ? fixedSubtotal - lineSubtotal : 0;
+  // 품목이 계산서보다 많을 때 안내 — 계산서 종류(팝빌·홈택스·수기)·수금완료별. 입력한 품목은 저장되지 않는다는 것도 알린다.
+  const reissueText = editing?.invoice
+    ? `${reissueHint(editing.invoice.provider, editing.status === "settled")} (지금 입력한 품목은 저장되지 않으니 그때 다시 입력하세요.)`
+    : "";
   // 라인이 바뀌었는지 — 직렬화 비교(수정 모드에서 안 바뀌면 라인 RPC 를 부르지 않는다).
   const linesDirty =
     !!editing && canEditLines && serializeLines(items, rebarSpecs, allLines) !== serializeLines(items, rebarSpecs, editing.lines ?? []);
@@ -483,7 +488,11 @@ export function SaleFormDialog({
       return;
     }
     if (canEditLines && linesDirty && fixedSubtotal != null && invoiceDiff !== 0) {
-      setError(`발행된 계산서 공급가액(${fmtKrw(fixedSubtotal)})과 라인 합이 ${fmtKrw(Math.abs(invoiceDiff))} 다릅니다 — '계산서 금액 맞춤'으로 차액을 넣거나 라인을 고치세요.`);
+      setError(
+        invoiceDiff < 0
+          ? `품목 합이 발행된 계산서 공급가액(${fmtKrw(fixedSubtotal)})보다 ${fmtKrw(-invoiceDiff)} 많아 저장할 수 없습니다 — ${reissueText}`
+          : `발행된 계산서 공급가액(${fmtKrw(fixedSubtotal)})과 라인 합이 ${fmtKrw(invoiceDiff)} 다릅니다 — '계산서 금액 맞춤'으로 차액을 넣거나 라인을 고치세요.`,
+      );
       return;
     }
     doSave();
@@ -778,10 +787,24 @@ export function SaleFormDialog({
                       <span className="font-normal text-amber-700/80 dark:text-amber-400/80"> · 승인 …{editing.invoice.nts_confirm_num.slice(-6)}</span>
                     ) : null}
                   </p>
-                  {invoiceDiff !== 0 ? (
+                  {invoiceDiff < 0 ? (
+                    // 품목이 계산서보다 많다 = 대개 추가 주문. 맞춤 버튼을 누르면 추가분만큼 (−) 줄이 들어가 추가한 게 없어진다 —
+                    // 계산서를 다시 발행하는 길을 먼저 안내하고, 맞춤은 할인·끝전 정리용으로만 작게 남긴다.
+                    <div className="flex flex-col gap-1.5">
+                      <span className="tabular-nums text-red-700 dark:text-red-300">
+                        품목 합 {fmtKrw(lineSubtotal)} — 계산서보다 {fmtKrw(-invoiceDiff)} 많습니다
+                      </span>
+                      <p className="text-amber-900 dark:text-amber-200">추가 주문이면: {reissueText}</p>
+                      <div className="flex justify-end">
+                        <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={addAdjustmentLine}>
+                          할인·끝전이면: 차액을 빼서 계산서 금액에 맞추기
+                        </Button>
+                      </div>
+                    </div>
+                  ) : invoiceDiff > 0 ? (
                     <div className="flex items-center justify-between gap-2">
                       <span className="tabular-nums text-red-700 dark:text-red-300">
-                        차액 {invoiceDiff > 0 ? "+" : "−"}{fmtKrw(Math.abs(invoiceDiff))} (라인 합 {fmtKrw(lineSubtotal)})
+                        차액 +{fmtKrw(invoiceDiff)} (라인 합 {fmtKrw(lineSubtotal)})
                       </span>
                       <Button type="button" variant="outline" size="sm" onClick={addAdjustmentLine}>
                         계산서 금액 맞춤

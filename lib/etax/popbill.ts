@@ -5,6 +5,7 @@
 // SDK 로드·config·promisify 는 lib/popbill-config 공용(메시지 어댑터와 공유).
 import { popbill, popbillIsTest, popbillConfigure, popbillPromisify } from "@/lib/popbill-config";
 import type { EtaxProvider, EtaxIssueInput, EtaxState, EtaxStatus } from "./types";
+import { popbillStateFlags } from "@/lib/tax-invoice";
 
 const SELL = "SELL"; // MgtKeyType.SELL — 정발행(판매자 문서관리번호)
 
@@ -16,16 +17,19 @@ function service() {
   return popbill.TaxinvoiceService();
 }
 
-// 팝빌 stateCode 상세값은 테스트베드에서 최종 확정 필요. 국세청 승인번호(ntsconfirmNum) 유무를
-// 1차 신호로 사용 — 발행 직후 'issued', 국세청 승인되면 'nts_approved'.
+// 팝빌 stateCode: 3xx 발행완료(끝 자리 0 발행완료·1 전송전·2 전송대기·3 전송중·4 전송성공·5 전송실패).
+// 승인번호(ntsconfirmNum)는 발행 즉시 붙으므로 3xx 면 끝 자리로 판단한다 — 승인번호만 보고 '국세청 승인'이라 하면
+// 아직 발행취소가 되는 계산서를 취소 못 하는 것처럼 보인다. 3xx 가 아닌 코드는 예전 규칙(승인번호 유무).
 function mapStatus(info: { stateCode?: number; ntsconfirmNum?: string }): EtaxStatus {
   const nts = (info.ntsconfirmNum ?? "").trim() || null;
   const code = Number(info.stateCode ?? 0);
+  const { ntsSent, transmitted, cancelled } = popbillStateFlags(code);
   let state: EtaxState = "issued";
-  if (nts) state = "nts_approved";
+  if (Math.floor(code / 100) === 3) state = transmitted ? "nts_approved" : ntsSent ? "nts_sent" : "issued";
+  else if (nts) state = "nts_approved";
   else if (code >= 400) state = "nts_sent";
   else if (code > 0 && code < 300) state = "issuing";
-  return { state, ntsConfirmNum: nts, raw: info };
+  return { state, ntsConfirmNum: nts, ntsSent, cancelledAtAsp: cancelled, raw: info };
 }
 
 function buildTaxinvoice(input: EtaxIssueInput): Record<string, unknown> {
@@ -102,6 +106,10 @@ export const popbillProvider: EtaxProvider = {
     const svc = service();
     await promisify((s, e) => svc.cancelIssue(corpNum, SELL, mgtKey, reason || "발행취소", "", s, e));
     return { mgtKey, state: "cancelled", ntsConfirmNum: null, raw: { cancelled: true } };
+  },
+  async isMgtKeyInUse(corpNum, mgtKey) {
+    const svc = service();
+    return promisify<boolean>((s, e) => svc.checkMgtKeyInUse(corpNum, SELL, mgtKey, s, e));
   },
   async getPrintUrl(corpNum, mgtKey) {
     const svc = service();
