@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MGT_KEY_MAX, mgtKeyCandidates, popbillStateFlags, reissueHint } from "../lib/tax-invoice";
+import { MGT_KEY_MAX, mgtKeyCandidates, mgtKeyInUseFromError, popbillStateFlags, reissueHint } from "../lib/tax-invoice";
 
 test("팝빌 상태: 전송중(3x3)·전송성공(3x4)만 발행취소 불가, 그 전·실패는 팝빌에 맡긴다", () => {
   for (const c of [300, 301, 302, 305, 310, 311, 312]) assert.equal(popbillStateFlags(c).ntsSent, false, String(c));
@@ -27,4 +27,12 @@ test("문서관리번호 후보: 처음은 예전 번호, 다시 발행은 -2, -
   const long = mgtKeyCandidates("manual-bk-20261107-001-extra");
   assert.ok(long.every((k) => k.length <= MGT_KEY_MAX));
   assert.equal(new Set(long).size, long.length);
+});
+
+test("문서번호 사용 여부: '문서 없음'(-11000005)만 안 쓰는 번호, 다른 오류는 모름(발행을 멈춘다)", () => {
+  assert.equal(mgtKeyInUseFromError({ code: -11000005 }), false);
+  assert.equal(mgtKeyInUseFromError({ code: "-11000005" }), false);
+  assert.equal(mgtKeyInUseFromError({ code: -99999999 }), null); // 인증·연결 오류 등
+  assert.equal(mgtKeyInUseFromError({}), null);
+  assert.equal(mgtKeyInUseFromError(null), null);
 });

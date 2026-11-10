@@ -5,7 +5,7 @@
 // SDK 로드·config·promisify 는 lib/popbill-config 공용(메시지 어댑터와 공유).
 import { popbill, popbillIsTest, popbillConfigure, popbillPromisify } from "@/lib/popbill-config";
 import type { EtaxProvider, EtaxIssueInput, EtaxState, EtaxStatus } from "./types";
-import { popbillStateFlags } from "@/lib/tax-invoice";
+import { mgtKeyInUseFromError, popbillStateFlags } from "@/lib/tax-invoice";
 
 const SELL = "SELL"; // MgtKeyType.SELL — 정발행(판매자 문서관리번호)
 
@@ -108,8 +108,24 @@ export const popbillProvider: EtaxProvider = {
     return { mgtKey, state: "cancelled", ntsConfirmNum: null, raw: { cancelled: true } };
   },
   async isMgtKeyInUse(corpNum, mgtKey) {
+    // SDK 의 checkMgtKeyInUse 는 쓰지 않는다(popbill@1.64.2 결함): 5개 인자 오버로드가 UserID 자리를 끼워 원래 함수로
+    // 넘기는데 원래 함수엔 UserID 인자가 없어 콜백이 한 칸씩 밀린다 — 없는 번호면 오류 객체가 success 로 와서 '사용 중'으로
+    // 읽히고(2026-11-10 신규 발행이 전부 막혔다), 있는 번호면 콜백이 아예 오지 않는다. 문서 조회(getInfo)로 판단한다.
     const svc = service();
-    return promisify<boolean>((s, e) => svc.checkMgtKeyInUse(corpNum, SELL, mgtKey, s, e));
+    return new Promise<boolean>((resolve, reject) => {
+      svc.getInfo(
+        corpNum,
+        SELL,
+        mgtKey,
+        "",
+        () => resolve(true),
+        (err) => {
+          const inUse = mgtKeyInUseFromError(err);
+          if (inUse === false) resolve(false);
+          else reject(new Error(err?.message || "팝빌 처리 오류"));
+        },
+      );
+    });
   },
   async getPrintUrl(corpNum, mgtKey) {
     const svc = service();

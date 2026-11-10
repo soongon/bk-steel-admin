@@ -33,13 +33,7 @@ declare module "popbill" {
       success: (r: PopbillTaxinvoiceInfo) => void,
       error: (e: PopbillError) => void,
     ): void;
-    checkMgtKeyInUse(
-      corpNum: string,
-      keyType: string,
-      mgtKey: string,
-      success: (inUse: boolean) => void,
-      error: (e: PopbillError) => void,
-    ): void;
+    // checkMgtKeyInUse 는 일부러 선언하지 않는다 — 1.64.2 에서 콜백이 밀리는 결함(lib/etax/popbill.ts isMgtKeyInUse 주석). getInfo 로 대신한다.
     cancelIssue(
       corpNum: string,
       keyType: string,

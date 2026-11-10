@@ -80,6 +80,17 @@ export function popbillStateFlags(stateCode: number | null | undefined): { ntsSe
   };
 }
 
+/** 팝빌 오류 코드: 그 문서번호의 (세금)계산서가 없음. */
+export const POPBILL_NO_SUCH_DOC = -11000005;
+
+/**
+ * 문서 조회(getInfo)가 오류로 끝났을 때 — '그 번호의 문서 없음'이면 false(안 쓰는 번호), 그 밖의 오류면 null(모름).
+ * 모르면 호출자가 발행을 멈춘다: 연결 오류를 '안 쓰는 번호'로 읽으면 중복 발행이 된다.
+ */
+export function mgtKeyInUseFromError(err: { code?: number | string } | null | undefined): false | null {
+  return Number(err?.code) === POPBILL_NO_SUCH_DOC ? false : null;
+}
+
 /** 계산서가 발행된 매출에 품목을 더할 때 — 계산서 종류·매출 상태별 안내(수정 창·계산서 창 공용). */
 export function reissueHint(provider: string | null | undefined, settled: boolean): string {
   if (settled) return "수금완료된 매출은 금액을 바꿀 수 없습니다 — 추가분은 [신규 매출]로 따로 등록해 계산서를 따로 발행하세요.";
