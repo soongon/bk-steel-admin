@@ -44,7 +44,7 @@ export type PurchaseQuotePartner = {
   address?: string | null;
   phone?: string | null;
 };
-/** 품목명 datalist 선택지 — 철근 길이 숨김(6·9·11M) 판정에 category·spec·length 필요. */
+/** 품목명 datalist 선택지 — 철근 길이 숨김(6·11M) 판정에 category·spec·length 필요. */
 export type PurchaseQuoteItemOption = {
   id: string;
   name: string;
@@ -117,7 +117,7 @@ export function PurchaseQuoteDialog({
   defaults?: PurchaseQuoteDefaults | null;
 }) {
   const { partners, items } = sources;
-  // 품목명 추천 — 철근(6·9·11M 제외)을 견적·매출·매입 폼과 같은 순서(SD400 전부 → SD500 → SD600)로 먼저, 그 외는 이름순.
+  // 품목명 추천 — 철근(6·11M 제외)을 견적·매출·매입 폼과 같은 순서(SD400 전부 → SD500 → SD600)로 먼저, 그 외는 이름순.
   const pqItemOptions = useMemo(() => {
     const rest = items.filter((i) => !COMMON_NAMES.includes(i.name));
     return [
