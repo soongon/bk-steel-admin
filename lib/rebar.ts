@@ -7,15 +7,63 @@
 export const isRebarItem = (i: { category: string; rebar_spec_code: string | null }) =>
   i.category === "rebar" || !!i.rebar_spec_code;
 
-/** 품목 선택(견적·매출·매입 폼)에서 숨기는 철근 길이(m) — 8·9·10·12M 만 낸다. 품목 마스터·기존 라인은 그대로. */
-const HIDDEN_REBAR_LENGTHS = new Set([6, 11]);
+/**
+ * 품목 선택(견적·매출·매입 폼) 목록에 내는 철근 길이(m) — 6·8·9·10·12M.
+ * 11M 와 길이 직접 입력으로 생긴 비공인 길이(6.5M 등)는 목록에 안 낸다(품목 마스터·기존 라인은 그대로).
+ */
+const LISTED_REBAR_LENGTHS = new Set([6, 8, 9, 10, 12]);
 
-/** 폼 철근 품목 선택지 — 철근이면서 숨김 길이(6·11M)가 아닌 것. */
+/** 폼 철근 품목 선택지 — 철근이면서 목록 길이(6·8·9·10·12M)인 것. 길이 없는 품목은 그대로 낸다. */
 export const isSelectableRebarItem = (i: {
   category: string;
   rebar_spec_code: string | null;
   length_m: number | null;
-}) => isRebarItem(i) && !HIDDEN_REBAR_LENGTHS.has(Number(i.length_m));
+}) => isRebarItem(i) && (i.length_m == null || LISTED_REBAR_LENGTHS.has(Number(i.length_m)));
+
+// ---- 길이 직접 입력(비공인 길이) ----
+// 매출 폼에서 규격·강종·길이를 직접 넣으면, 품목이 아직 없을 때 임시 id('rebar:D13:SD400:6.5')로 환산·미리보기를 하고
+// 저장할 때 서버가 실제 품목으로 바꾼다(lib/rebar-item resolveCustomRebarItems → ensure_rebar_item, 0103).
+// 비공인 길이는 가닥으로만 거래 — 중량 = 가닥 × 단위중량(kg/m) × 길이. 1톤 표준본수는 없다.
+
+/** 직접 입력 길이 상한(m) — ensure_rebar_item(0103)과 같은 값. */
+export const REBAR_CUSTOM_LENGTH_MAX = 12;
+
+/** 길이 입력값 → m(소수 둘째 자리까지). 0 이하·12m 초과·숫자 아님은 null. */
+export function parseRebarLength(raw: string): number | null {
+  const n = Math.round(Number(raw) * 100) / 100;
+  return Number.isFinite(n) && n > 0 && n <= REBAR_CUSTOM_LENGTH_MAX ? n : null;
+}
+
+const CUSTOM_REBAR_PREFIX = "rebar:";
+
+/** 아직 품목이 없는 규격×강종×길이의 임시 품목 id. */
+export const customRebarItemId = (spec: string, grade: string, lengthM: number) =>
+  `${CUSTOM_REBAR_PREFIX}${spec}:${grade}:${lengthM}`;
+
+/** 임시 품목 id → 규격·강종·길이. 임시 id 가 아니면 null. */
+export function parseCustomRebarItemId(id: string): { spec: string; grade: string; lengthM: number } | null {
+  if (!id.startsWith(CUSTOM_REBAR_PREFIX)) return null;
+  const [spec, grade, len, ...rest] = id.slice(CUSTOM_REBAR_PREFIX.length).split(":");
+  const lengthM = parseRebarLength(len ?? "");
+  if (!spec || !grade || lengthM == null || rest.length > 0) return null;
+  return { spec, grade, lengthM };
+}
+
+/** 임시 품목 id → 폼 환산·미리보기용 품목(저장 뒤 실제 품목과 같은 이름·코드). 임시 id 가 아니면 null. */
+export function customRebarItem(id: string) {
+  const p = parseCustomRebarItemId(id);
+  if (!p) return null;
+  return {
+    id,
+    code: `REBAR_${p.spec}_${p.grade}_${p.lengthM}M`,
+    name: `철근 ${p.spec} ${p.grade} ${p.lengthM}M`,
+    category: "rebar",
+    rebar_spec_code: p.spec,
+    rebar_grade_code: p.grade,
+    length_m: p.lengthM,
+    bars_per_tonne: null,
+  };
+}
 
 /** 철근 규격 라벨 조합 — "D13 SD400 8M". 명세표·견적서·계산서 공통(4곳 중복 제거). */
 export function rebarSpecLabel(item: {

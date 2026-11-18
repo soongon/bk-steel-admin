@@ -5,6 +5,7 @@ import { type Book, BOOK_LABEL } from "@/lib/book";
 import { notifyKakaoWork, adminUrl, fmtWon } from "@/lib/kakaowork";
 import { resolveSiteId } from "@/lib/site";
 import { resolvePartnerId } from "@/lib/partner";
+import { resolveCustomRebarItems } from "@/lib/rebar-item";
 import { computeVat, revalidateTransactionPaths } from "@/lib/transaction";
 import { kstToday } from "@/lib/format";
 
@@ -216,8 +217,12 @@ export async function createSale(formData: FormData): Promise<SaleActionResult> 
   const resolvedPartnerId = await resolvePartnerId(supabase, parsed.partner_id ?? null, parsed.partner_name ?? null);
   if (!resolvedPartnerId) return { ok: false, error: "거래처를 확인해주세요." };
 
+  // 길이 직접 입력(비공인 길이) 라인 — 임시 품목 id 를 실제 품목으로(없으면 생성).
+  const resolvedLines = await resolveCustomRebarItems(supabase, parsed.lines);
+  if ("error" in resolvedLines) return { ok: false, error: resolvedLines.error };
+
   // 라인별 공급가 → 헤더 합계.
-  const lines = toRpcLines(parsed.lines);
+  const lines = toRpcLines(resolvedLines.lines);
   const subtotal = lines.reduce((s, l) => s + l.line_subtotal_krw, 0);
   const documented = parsed.is_documented;
   const { vatType, vatRate, vat, total } = computeVat(documented, parsed.tax_doc_type, subtotal);
@@ -362,9 +367,12 @@ export async function updateSaleLines(id: string, linesJson: string): Promise<Sa
   const parsed = parseLinesJson(linesJson);
   if ("error" in parsed) return { ok: false, error: parsed.error };
   const supabase = await createClient();
+  // 길이 직접 입력(비공인 길이) 라인 — 임시 품목 id 를 실제 품목으로(없으면 생성).
+  const resolvedLines = await resolveCustomRebarItems(supabase, parsed.lines);
+  if ("error" in resolvedLines) return { ok: false, error: resolvedLines.error };
   const { error } = await supabase.rpc("replace_sale_lines", {
     p_sale_id: id,
-    p_lines: toRpcLines(parsed.lines),
+    p_lines: toRpcLines(resolvedLines.lines),
     p_recalc: true,
   });
   if (error) return { ok: false, error: friendly(error.message) };
