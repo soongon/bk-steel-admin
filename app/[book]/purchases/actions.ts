@@ -5,6 +5,7 @@ import { type Book, BOOK_LABEL } from "@/lib/book";
 import { notifyKakaoWork, adminUrl, fmtWon } from "@/lib/kakaowork";
 import { resolveSiteId } from "@/lib/site";
 import { resolvePartnerId } from "@/lib/partner";
+import { resolveCustomRebarItems } from "@/lib/rebar-item";
 import { computeVat, revalidateTransactionPaths } from "@/lib/transaction";
 import { kstToday } from "@/lib/format";
 
@@ -206,8 +207,12 @@ export async function createPurchase(formData: FormData): Promise<PurchaseAction
     .eq("preferred_book", parsed.book)
     .maybeSingle();
 
+  // 길이 직접 입력(비공인 길이) 라인 — 임시 품목 id 를 실제 품목으로(없으면 생성).
+  const resolvedLines = await resolveCustomRebarItems(supabase, parsed.lines);
+  if ("error" in resolvedLines) return { ok: false, error: resolvedLines.error };
+
   // 라인별 공급가 → 헤더 합계 + RPC 라인 배열(창고·존은 모든 라인 공통).
-  const lines = toRpcPurchaseLines(parsed.lines, parsed.status).map((l) => ({
+  const lines = toRpcPurchaseLines(resolvedLines.lines, parsed.status).map((l) => ({
     warehouse_id: warehouse.id,
     warehouse_zone_id: zone?.id ?? null,
     ...l,
@@ -339,9 +344,12 @@ export async function updatePurchaseLines(id: string, linesJson: string): Promis
   const supabase = await createClient();
   const { data: cur } = await supabase.from("purchase").select("status").eq("id", id).maybeSingle();
   if (!cur) return { ok: false, error: "매입을 찾을 수 없습니다." };
+  // 길이 직접 입력(비공인 길이) 라인 — 임시 품목 id 를 실제 품목으로(없으면 생성).
+  const resolvedLines = await resolveCustomRebarItems(supabase, parsed.lines);
+  if ("error" in resolvedLines) return { ok: false, error: resolvedLines.error };
   const { error } = await supabase.rpc("replace_purchase_lines", {
     p_purchase_id: id,
-    p_lines: toRpcPurchaseLines(parsed.lines, String(cur.status)),
+    p_lines: toRpcPurchaseLines(resolvedLines.lines, String(cur.status)),
     p_recalc: true,
   });
   if (error) return { ok: false, error: friendly(error.message) };

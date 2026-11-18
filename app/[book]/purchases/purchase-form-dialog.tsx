@@ -16,6 +16,12 @@ import { PlusIcon, XIcon } from "lucide-react";
 import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { BookBadge } from "@/components/admin/book-badge";
 import { isRebarItem, isSelectableRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
+import {
+  useRebarCustomLength,
+  RebarCustomLengthInputs,
+  RebarCustomLengthToggle,
+  REBAR_CUSTOM_LENGTH_HINT,
+} from "@/components/admin/rebar-custom-length";
 import { fmtKrw, fmtNum } from "@/lib/format";
 import { TAX_DOC_OPTIONS } from "@/lib/tax-doc";
 import {
@@ -90,7 +96,7 @@ export function PurchaseFormDialog({
   editing,
   view,
   partners,
-  items,
+  items: masterItems,
   rebarSpecs,
   sites,
 }: {
@@ -118,6 +124,16 @@ export function PurchaseFormDialog({
   const [siteName, setSiteName] = useState(editing?.site_name ?? "");
   const matchedSite = sites.find((s) => s.name === siteName);
 
+  // 누적 품목 라인 (신규 등록 — 여러 품목 / 수정 — 기존 라인 프리필 후 추가·삭제)
+  const [lines, setLines] = useState<PurchaseLineDraft[]>([]);
+  // 품목 — 목록에서 고르거나(pickedItemId), 길이 직접 입력(6.5M 등 목록에 없는 길이, 가닥·kg 단위).
+  const [pickedItemId, setItemId] = useState("");
+  const custom = useRebarCustomLength(masterItems, lines);
+  const resetCustomLen = custom.reset;
+  const itemId = custom.on ? custom.itemId : pickedItemId;
+  // 품목 마스터 + 아직 품목이 없는 직접 입력 길이(임시 품목) — 환산·합계·직렬화가 같은 목록을 쓴다.
+  const items = custom.items;
+
   // 품목 구분(철근/철제) — 매출 폼과 동일. 토글 시 선택 초기화.
   const [itemKind, setItemKind] = useState<"rebar" | "steel">("rebar");
   const itemOptions = useMemo(
@@ -128,7 +144,6 @@ export function PurchaseFormDialog({
     [items, itemKind],
   );
 
-  const [itemId, setItemId] = useState("");
   const selectedItem = items.find((i) => i.id === itemId);
   const rebarSpec = selectedItem?.rebar_spec_code
     ? rebarSpecs.find((s) => s.spec_code === selectedItem.rebar_spec_code)
@@ -144,8 +159,6 @@ export function PurchaseFormDialog({
   const [actualWeightStr, setActualWeightStr] = useState("");
   const actualWeight = actualWeightStr ? Number(actualWeightStr) : null;
 
-  // 누적 품목 라인 (신규 등록 — 여러 품목 / 수정 — 기존 라인 프리필 후 추가·삭제)
-  const [lines, setLines] = useState<PurchaseLineDraft[]>([]);
   // 수정 모드 라인 편집은 상세 페이지가 editing.lines 를 넘길 때만(목록의 헤더 전용 호출과 구분).
   const canEditLines = !editing || editing.lines !== undefined;
 
@@ -218,6 +231,7 @@ export function PurchaseFormDialog({
         // 라인 편집 — 기존 라인 프리필, 입력칸 초기화.
         setLines(editing.lines ?? []);
         setItemId("");
+        resetCustomLen();
         setItemKind("rebar");
         setUnit("ea");
         setQtyStr("");
@@ -228,6 +242,7 @@ export function PurchaseFormDialog({
         setPartnerInput("");
         setSiteName("");
         setItemId("");
+        resetCustomLen();
         setItemKind("rebar");
         setUnit("ea");
         setQtyStr("");
@@ -240,14 +255,15 @@ export function PurchaseFormDialog({
         setNotes("");
       }
     }
-  }, [open, editing, view, today]);
+  }, [open, editing, view, today, resetCustomLen]);
 
   function addLine() {
-    if (!itemId) { setError("품목을 선택해주세요."); return; }
+    if (!itemId) { setError(custom.on ? REBAR_CUSTOM_LENGTH_HINT : "품목을 선택해주세요."); return; }
     if (qty <= 0) { setError("수량을 입력해주세요."); return; }
     if (unitPrice <= 0) { setError("단가를 입력해주세요."); return; }
     setLines((prev) => [...prev, { itemKind, itemId, unit, qty, unitPrice, actualWeight: unit === "kg" ? qty : actualWeight }]);
     setItemId("");
+    custom.clearSpec(); // 길이 직접 입력은 길이·강종을 남겨 둔다(같은 길이로 규격만 바꿔 이어 넣기)
     setQtyStr("");
     setUnitPriceStr("");
     setActualWeightStr("");
@@ -264,6 +280,7 @@ export function PurchaseFormDialog({
     setLines(next.lines);
     if (pendingLine) {
       setItemId("");
+      custom.clearSpec();
       setQtyStr("");
       setUnitPriceStr("");
       setActualWeightStr("");
@@ -468,6 +485,7 @@ export function PurchaseFormDialog({
                         onClick={() => {
                           setItemKind(k);
                           setItemId("");
+                          custom.setOn(false);
                         }}
                         className={`flex-1 rounded-md border px-2 py-1 text-xs ${itemKind === k ? "bg-foreground text-background" : "bg-background"}`}
                       >
@@ -477,23 +495,39 @@ export function PurchaseFormDialog({
                   </div>
                 </Field>
                 <Field label="품목 *">
-                  <select
-                    value={itemId}
-                    onChange={(e) => setItemId(e.target.value)}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                  >
-                    <option value="">— 선택 —</option>
-                    {itemOptions.map((i) => (
-                      <option key={i.id} value={i.id}>
-                        {i.name}
-                      </option>
-                    ))}
-                  </select>
+                  {custom.on && itemKind === "rebar" ? (
+                    <RebarCustomLengthInputs custom={custom} rebarSpecs={rebarSpecs} />
+                  ) : (
+                    <select
+                      value={itemId}
+                      onChange={(e) => setItemId(e.target.value)}
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                    >
+                      <option value="">— 선택 —</option>
+                      {itemOptions.map((i) => (
+                        <option key={i.id} value={i.id}>
+                          {i.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {itemOptions.length === 0 ? (
                     <p className="text-[10px] text-amber-600">이 구분의 활성 품목이 없습니다</p>
                   ) : null}
                 </Field>
               </div>
+
+              {/* 길이 직접 입력 토글 — 목록에 없는 길이(6.5M 등). 가닥·kg 만(1톤 표준본수가 없어 톤은 못 쓴다). 이론중량 = 가닥 × 단위중량 × 길이. */}
+              {itemKind === "rebar" ? (
+                <RebarCustomLengthToggle
+                  custom={custom}
+                  unitNote="가닥·kg 단위"
+                  onToggle={(on) => {
+                    setItemId("");
+                    if (on && unit === "ton") setUnit("ea");
+                  }}
+                />
+              ) : null}
 
               <div className="grid grid-cols-3 gap-3">
                 <Field label="단위 *">
@@ -505,7 +539,7 @@ export function PurchaseFormDialog({
                     className="h-8 rounded-md border border-input bg-background px-2 text-sm"
                   >
                     {UNIT_OPTIONS.map((u) => (
-                      <option key={u.value} value={u.value}>
+                      <option key={u.value} value={u.value} disabled={u.value === "ton" && custom.on && itemKind === "rebar"}>
                         {u.label}
                       </option>
                     ))}
@@ -584,9 +618,10 @@ export function PurchaseFormDialog({
                     const w = l.actualWeight ?? theoreticalKg;
                     return (
                       <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-xs">
-                        <span className="flex-1 truncate font-medium" title={l.notes ?? undefined}>
+                        {/* 품목명은 줄임표 대신 줄바꿈(직접 입력 길이 6.5M 가 잘리지 않게), 비고는 아랫줄에서 줄임. */}
+                        <span className="min-w-0 flex-1 font-medium" title={l.notes ?? undefined}>
                           {li?.name ?? "—"}
-                          {l.notes?.trim() ? <span className="font-normal text-muted-foreground"> {l.notes.trim()}</span> : null}
+                          {l.notes?.trim() ? <span className="block truncate font-normal text-muted-foreground">{l.notes.trim()}</span> : null}
                           {l.adjustment ? (
                             <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-normal text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">조정</span>
                           ) : null}

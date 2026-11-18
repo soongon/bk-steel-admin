@@ -21,6 +21,12 @@ import { QuoteDocument, type QuoteDocumentData } from "@/components/admin/quote-
 import { ReferenceNote } from "@/components/admin/reference-note";
 import { isRebarItem, isSelectableRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import {
+  useRebarCustomLength,
+  RebarCustomLengthInputs,
+  RebarCustomLengthToggle,
+  REBAR_CUSTOM_LENGTH_HINT,
+} from "@/components/admin/rebar-custom-length";
+import {
   type LineDraft,
   UNIT_OPTIONS,
   STEEL_CUSTOM_ITEM_ID,
@@ -118,7 +124,15 @@ export function QuoteDialog({
   /** 폼 위에 참고로 보여 줄 원문(홈페이지 문의 내용) — 저장·출력하지 않는다. */
   reference?: string | null;
 }) {
-  const { partners, items, rebarSpecs } = sources;
+  const { partners, items: masterItems, rebarSpecs } = sources;
+  const [lines, setLines] = useState<LineDraft[]>([]);
+  // 품목 — 목록에서 고르거나(pickedItemId), 길이 직접 입력(6.5M 등 목록에 없는 길이, 가닥 단위).
+  const [pickedItemId, setItemId] = useState("");
+  const custom = useRebarCustomLength(masterItems, lines);
+  const resetCustomLen = custom.reset;
+  const itemId = custom.on ? custom.itemId : pickedItemId;
+  // 품목 마스터 + 아직 품목이 없는 직접 입력 길이(임시 품목) — 환산·견적서 미리보기·직렬화가 같은 목록을 쓴다.
+  const items = custom.items;
   const saveMode = book !== undefined; // 저장 모드(견적 메뉴) vs 미리보기(현장 진입)
   const [selectedBook, setSelectedBook] = useState<Book | "">(book && book !== "all" ? book : "sl");
   // 미리보기·출력 공급자: 선택 책 우선, 없으면 단일 진입 company.
@@ -148,7 +162,6 @@ export function QuoteDialog({
     [items, itemKind],
   );
 
-  const [itemId, setItemId] = useState("");
   const selectedItem = items.find((i) => i.id === itemId);
   const rebarSpec = selectedItem?.rebar_spec_code
     ? rebarSpecs.find((s) => s.spec_code === selectedItem.rebar_spec_code)
@@ -165,7 +178,6 @@ export function QuoteDialog({
   const [manualAmountStr, setManualAmountStr] = useState("");
   const manualAmount = manualMode ? Number(manualAmountStr) || 0 : 0;
 
-  const [lines, setLines] = useState<LineDraft[]>([]);
   const [notes, setNotes] = useState("");
 
   // 매출과 동일 환산(실중량 올림 ceilWeight=true)
@@ -200,6 +212,7 @@ export function QuoteDialog({
     setShowStatement(false);
     // 입력 중 라인 영역은 항상 초기화
     setItemId("");
+    resetCustomLen();
     setItemKind("rebar");
     setUnit("ea");
     setTonMetric(false);
@@ -227,7 +240,7 @@ export function QuoteDialog({
       setLines([]);
       setNotes("");
     }
-  }, [open, defaultSiteName, defaultPartnerName, book, editing]);
+  }, [open, defaultSiteName, defaultPartnerName, book, editing, resetCustomLen]);
 
   const statementData: QuoteDocumentData | null = (() => {
     if (allLines.length === 0) return null;
@@ -264,7 +277,7 @@ export function QuoteDialog({
     if (itemKind === "steel") {
       if (!steelName.trim()) { setError("품목명을 입력해주세요."); return; }
     } else if (!itemId) {
-      setError("품목을 선택해주세요."); return;
+      setError(custom.on ? REBAR_CUSTOM_LENGTH_HINT : "품목을 선택해주세요."); return;
     }
     if (qty <= 0) { setError("수량을 입력해주세요."); return; }
     if (manualMode ? manualAmount <= 0 : unitPrice <= 0) {
@@ -276,6 +289,7 @@ export function QuoteDialog({
       { itemKind, itemId: effItemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null, displayName: effDisplayName, specText: effSpecText },
     ]);
     setItemId("");
+    custom.clearSpec(); // 길이 직접 입력은 길이·강종을 남겨 둔다(같은 길이로 규격만 바꿔 이어 넣기)
     setSteelName("");
     setSteelSpec("");
     setQtyStr("");
@@ -455,6 +469,7 @@ export function QuoteDialog({
                       onClick={() => {
                         setItemKind(k);
                         setItemId("");
+                        custom.setOn(false);
                         setSteelName("");
                         setSteelSpec("");
                       }}
@@ -481,6 +496,8 @@ export function QuoteDialog({
                       className="flex-1"
                     />
                   </div>
+                ) : custom.on ? (
+                  <RebarCustomLengthInputs custom={custom} rebarSpecs={rebarSpecs} />
                 ) : (
                   <select
                     value={itemId}
@@ -497,6 +514,19 @@ export function QuoteDialog({
                 )}
               </Field>
             </div>
+            {/* 길이 직접 입력 토글 — 목록에 없는 길이(6.5M 등). 가닥 단위만, 입력한 길이의 무게(가닥 × 단위중량 × 길이)로 계산. */}
+            {itemKind === "rebar" ? (
+              <RebarCustomLengthToggle
+                custom={custom}
+                onToggle={(on) => {
+                  setItemId("");
+                  if (on) {
+                    setUnit("ea");
+                    setTonMetric(false);
+                  }
+                }}
+              />
+            ) : null}
             {/* 단위 칸을 조금 넓게 — '가닥/EA (톤기준)'이 384px 폼에서 잘리지 않게. */}
             <div className="grid grid-cols-[1.35fr_1fr_1fr] gap-3">
               <Field label="단위 *">
@@ -507,7 +537,8 @@ export function QuoteDialog({
                     setUnit(u.unit);
                     setTonMetric(u.tonMetric);
                   }}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                  disabled={custom.on && itemKind === "rebar"} // 길이 직접 입력은 가닥만
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60"
                 >
                   {UNIT_OPTIONS.map((u) => (
                     <option key={u.value} value={u.value}>
@@ -572,7 +603,8 @@ export function QuoteDialog({
                   const reb = !!li?.rebar_spec_code && !!c;
                   return (
                     <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-xs">
-                      <span className="flex-1 truncate font-medium">
+                      {/* 줄임표 대신 줄바꿈 — 직접 입력 길이(6.5M)처럼 이름 끝이 잘리면 안 된다. */}
+                      <span className="min-w-0 flex-1 font-medium">
                         {l.displayName?.trim() || li?.name || "—"}
                         {l.specText?.trim() ? <span className="font-normal text-muted-foreground"> {l.specText.trim()}</span> : null}
                       </span>

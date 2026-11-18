@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { computeVat } from "@/lib/transaction";
 import { resolveSiteId } from "@/lib/site";
+import { resolveCustomRebarItems } from "@/lib/rebar-item";
 import { type Book } from "@/lib/book";
 
 export type QuoteActionResult = { ok: true; id?: string } | { ok: false; error: string };
@@ -116,7 +117,10 @@ export async function createQuote(formData: FormData): Promise<QuoteActionResult
     if (!proj) sourceProjectId = null;
   }
 
-  const lines = parsed.lines.map((l) => {
+  // 길이 직접 입력(비공인 길이) 라인 — 임시 품목 id 를 실제 품목으로(없으면 생성).
+  const resolvedLines = await resolveCustomRebarItems(supabase, parsed.lines);
+  if ("error" in resolvedLines) return { ok: false, error: resolvedLines.error };
+  const lines = resolvedLines.lines.map((l) => {
     const manual = l.manual_amount != null && l.manual_amount > 0;
     const lineSubtotal = manual
       ? Math.round(l.manual_amount!)
@@ -183,7 +187,10 @@ export async function updateQuote(quoteId: string, formData: FormData): Promise<
 
   const supabase = await createClient();
   const siteId = await resolveSiteId(supabase, parsed.site_id, parsed.site_name); // 현장 이름이 바뀌면 그 현장으로 다시 연결
-  const lines = parsed.lines.map((l) => {
+  // 길이 직접 입력(비공인 길이) 라인 — 임시 품목 id 를 실제 품목으로(없으면 생성).
+  const resolvedLines = await resolveCustomRebarItems(supabase, parsed.lines);
+  if ("error" in resolvedLines) return { ok: false, error: resolvedLines.error };
+  const lines = resolvedLines.lines.map((l) => {
     const manual = l.manual_amount != null && l.manual_amount > 0;
     const lineSubtotal = manual
       ? Math.round(l.manual_amount!)

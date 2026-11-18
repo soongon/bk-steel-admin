@@ -18,16 +18,13 @@ import { type Book, type BookView, BOOK_LABEL, BOOKS } from "@/lib/book";
 import { type CompanyProfile } from "@/lib/company-profile";
 import { BookBadge } from "@/components/admin/book-badge";
 import { TradingStatement, type StatementData } from "@/components/admin/trading-statement";
+import { isRebarItem, isSelectableRebarItem, sortRebar, calculateRebarWeight } from "@/lib/rebar";
 import {
-  isRebarItem,
-  isSelectableRebarItem,
-  sortRebar,
-  calculateRebarWeight,
-  parseRebarLength,
-  customRebarItemId,
-  customRebarItem,
-  REBAR_CUSTOM_LENGTH_MAX,
-} from "@/lib/rebar";
+  useRebarCustomLength,
+  RebarCustomLengthInputs,
+  RebarCustomLengthToggle,
+  REBAR_CUSTOM_LENGTH_HINT,
+} from "@/components/admin/rebar-custom-length";
 import {
   type LineDraft,
   UNIT_OPTIONS,
@@ -160,36 +157,11 @@ export function SaleFormDialog({
 
   // 품목 — 목록에서 고르거나(pickedItemId), 길이 직접 입력(6.5M 등 목록에 없는 길이, 가닥 단위).
   const [pickedItemId, setItemId] = useState("");
-  const [customLen, setCustomLen] = useState(false);
-  const [customSpec, setCustomSpec] = useState("");
-  const [customGrade, setCustomGrade] = useState("SD400");
-  const [customLenStr, setCustomLenStr] = useState("");
-  const customLengthM = parseRebarLength(customLenStr);
-  // 직접 입력한 규격·강종·길이의 품목 id — 이미 있으면 그 품목, 없으면 임시 id(저장할 때 서버가 품목을 만든다).
-  const customItemId = useMemo(() => {
-    if (!customLen || !customSpec || !customGrade || customLengthM == null) return "";
-    const existing = masterItems.find(
-      (i) =>
-        isRebarItem(i) &&
-        i.rebar_spec_code === customSpec &&
-        i.rebar_grade_code === customGrade &&
-        Number(i.length_m) === customLengthM,
-    );
-    return existing?.id ?? customRebarItemId(customSpec, customGrade, customLengthM);
-  }, [customLen, customSpec, customGrade, customLengthM, masterItems]);
-  const itemId = customLen ? customItemId : pickedItemId;
+  const custom = useRebarCustomLength(masterItems, lines);
+  const resetCustomLen = custom.reset;
+  const itemId = custom.on ? custom.itemId : pickedItemId;
   // 품목 마스터 + 아직 품목이 없는 직접 입력 길이(임시 품목) — 환산·명세표 미리보기·직렬화가 같은 목록을 쓴다.
-  const items = useMemo(() => {
-    const ids = new Set([...lines.map((l) => l.itemId), customItemId]);
-    const virtual = [...ids].map(customRebarItem).filter((v): v is NonNullable<typeof v> => v !== null);
-    return virtual.length > 0 ? [...masterItems, ...virtual] : masterItems;
-  }, [masterItems, lines, customItemId]);
-  const customGrades = useMemo(() => {
-    const set = new Set(masterItems.filter(isRebarItem).map((i) => i.rebar_grade_code).filter((g): g is string => !!g));
-    set.add("SD400");
-    const mpa = (g: string) => parseInt(g.replace(/\D/g, ""), 10) || 0;
-    return [...set].sort((a, b) => mpa(a) - mpa(b) || a.localeCompare(b));
-  }, [masterItems]);
+  const items = custom.items;
   const selectedItem = items.find((i) => i.id === itemId);
   const rebarSpec = selectedItem?.rebar_spec_code
     ? rebarSpecs.find((s) => s.spec_code === selectedItem.rebar_spec_code)
@@ -317,9 +289,7 @@ export function SaleFormDialog({
         // 라인 편집 — 기존 라인 프리필, 입력칸 초기화.
         setLines(editing.lines ?? []);
         setItemId("");
-        setCustomLen(false);
-        setCustomSpec("");
-        setCustomLenStr("");
+        resetCustomLen();
         setItemKind("rebar");
         setSteelName("");
         setSteelSpec("");
@@ -335,9 +305,7 @@ export function SaleFormDialog({
         setPartnerInput("");
         setSiteName("");
         setItemId("");
-        setCustomLen(false);
-        setCustomSpec("");
-        setCustomLenStr("");
+        resetCustomLen();
         setItemKind("rebar");
         setUnit("ea");
         setTonMetric(false);
@@ -351,7 +319,7 @@ export function SaleFormDialog({
         setNotes("");
       }
     }
-  }, [open, editing, view, today]);
+  }, [open, editing, view, today, resetCustomLen]);
 
   // 거래명세표 공급자(우리) — B 책은 SL 정보로 발행.
   const company = companies.find((c) => c.book === (book === "b" ? "sl" : book)) ?? null;
@@ -389,7 +357,7 @@ export function SaleFormDialog({
     if (itemKind === "steel") {
       if (!steelName.trim()) { setError("품목명을 입력해주세요."); return; }
     } else if (!itemId) {
-      setError(customLen ? `규격을 고르고 길이(${REBAR_CUSTOM_LENGTH_MAX}m 이하)를 입력해주세요.` : "품목을 선택해주세요."); return;
+      setError(custom.on ? REBAR_CUSTOM_LENGTH_HINT : "품목을 선택해주세요."); return;
     }
     if (qty <= 0) { setError("수량을 입력해주세요."); return; }
     if (manualMode ? manualAmount <= 0 : unitPrice <= 0) {
@@ -401,7 +369,7 @@ export function SaleFormDialog({
       { itemKind, itemId: effItemId, unit, qty, unitPrice, tonMetric, manualAmount: manualMode ? manualAmount : null, displayName: effDisplayName, specText: effSpecText },
     ]);
     setItemId("");
-    setCustomSpec(""); // 길이 직접 입력은 길이·강종을 남겨 둔다(같은 길이로 규격만 바꿔 이어 넣기)
+    custom.clearSpec(); // 길이 직접 입력은 길이·강종을 남겨 둔다(같은 길이로 규격만 바꿔 이어 넣기)
     setSteelName("");
     setSteelSpec("");
     setQtyStr("");
@@ -415,7 +383,7 @@ export function SaleFormDialog({
   }
   function clearLineInputs() {
     setItemId("");
-    setCustomSpec(""); // 길이 직접 입력은 길이·강종을 남겨 둔다(같은 길이로 규격만 바꿔 이어 넣기)
+    custom.clearSpec(); // 길이 직접 입력은 길이·강종을 남겨 둔다(같은 길이로 규격만 바꿔 이어 넣기)
     setSteelName("");
     setSteelSpec("");
     setQtyStr("");
@@ -648,7 +616,7 @@ export function SaleFormDialog({
                         onClick={() => {
                           setItemKind(k);
                           setItemId("");
-                          setCustomLen(false);
+                          custom.setOn(false);
                           setSteelName("");
                           setSteelSpec("");
                         }}
@@ -675,46 +643,8 @@ export function SaleFormDialog({
                         className="flex-1"
                       />
                     </div>
-                  ) : customLen ? (
-                    // 길이 직접 입력 — 규격·강종을 고르고 길이(m)를 넣는다. 384px 폼에 세 칸이 들어가게 좁게.
-                    <div className="flex gap-1">
-                      <select
-                        value={customSpec}
-                        onChange={(e) => setCustomSpec(e.target.value)}
-                        aria-label="규격"
-                        className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-1 text-sm"
-                      >
-                        <option value="">규격</option>
-                        {rebarSpecs.map((sp) => (
-                          <option key={sp.spec_code} value={sp.spec_code}>
-                            {sp.spec_code}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={customGrade}
-                        onChange={(e) => setCustomGrade(e.target.value)}
-                        aria-label="강종"
-                        className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-1 text-sm"
-                      >
-                        {customGrades.map((g) => (
-                          <option key={g} value={g}>
-                            {g}
-                          </option>
-                        ))}
-                      </select>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max={REBAR_CUSTOM_LENGTH_MAX}
-                        value={customLenStr}
-                        onChange={(e) => setCustomLenStr(e.target.value)}
-                        placeholder="길이 m"
-                        aria-label="길이(m)"
-                        className="w-[4.5rem] shrink-0 px-2"
-                      />
-                    </div>
+                  ) : custom.on ? (
+                    <RebarCustomLengthInputs custom={custom} rebarSpecs={rebarSpecs} />
                   ) : (
                     <select
                       value={itemId}
@@ -734,22 +664,16 @@ export function SaleFormDialog({
 
               {/* 길이 직접 입력 토글 — 목록에 없는 길이(6.5M 등). 가닥 단위만, 입력한 길이의 무게(가닥 × 단위중량 × 길이)로 청구. */}
               {itemKind === "rebar" ? (
-                <label className="flex w-fit items-center gap-1.5 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={customLen}
-                    onChange={(e) => {
-                      setCustomLen(e.target.checked);
-                      setItemId("");
-                      if (e.target.checked) {
-                        setUnit("ea");
-                        setTonMetric(false);
-                      }
-                    }}
-                    className="size-3.5 accent-foreground"
-                  />
-                  길이 직접 입력 — 목록에 없는 길이(6.5M 등, 가닥 단위)
-                </label>
+                <RebarCustomLengthToggle
+                  custom={custom}
+                  onToggle={(on) => {
+                    setItemId("");
+                    if (on) {
+                      setUnit("ea");
+                      setTonMetric(false);
+                    }
+                  }}
+                />
               ) : null}
 
               {/* 단위 칸을 조금 넓게 — '가닥/EA (톤기준)'이 384px 폼에서 잘리지 않게. */}
@@ -762,7 +686,7 @@ export function SaleFormDialog({
                       setUnit(u.unit);
                       setTonMetric(u.tonMetric);
                     }}
-                    disabled={customLen && itemKind === "rebar"} // 길이 직접 입력은 가닥만
+                    disabled={custom.on && itemKind === "rebar"} // 길이 직접 입력은 가닥만
                     className="h-8 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60"
                   >
                     {UNIT_OPTIONS.map((u) => (
